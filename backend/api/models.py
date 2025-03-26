@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 import uuid
 from django.utils import timezone
+from django.db.models import JSONField
 
 class Client(models.Model):
     """
@@ -15,7 +16,14 @@ class Client(models.Model):
     email = models.EmailField(blank=True, null=True, verbose_name="Email")
     phone = models.CharField(max_length=50, blank=True, null=True, verbose_name="Telefone")
     address = models.CharField(blank=True, null=True, verbose_name="Morada")
-    
+    account_manager = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='clients_managed',
+        verbose_name="Gestor de Conta"
+    )
+
     #Informações Financeiras
     monthly_fee = models.DecimalField(
         max_digits=10, 
@@ -140,7 +148,7 @@ class Task(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
     completed_at = models.DateTimeField(blank=True, null=True, verbose_name="Concluída em")
-    
+
     class Meta:
         verbose_name = "Tarefa"
         verbose_name_plural = "Tarefas"
@@ -342,3 +350,29 @@ class ClientProfitability(models.Model):
             
         self.is_profitable = self.profit > 0 if self.profit is not None else None
         return self.profit  
+    
+class Profile(models.Model):
+    """
+    Armaneza os dados do user que está logged
+    como o seu preço à hora, a sua responsabilidade, etc
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Preço à Hora")
+    role = models.CharField(max_length=100, verbose_name="Função")
+    access_level = models.CharField(max_length=100, verbose_name="Nível de Acesso")
+    phone = models.CharField(max_length=100, verbose_name="Telefone")
+    productivity_metrics = JSONField(
+        default=dict, 
+        verbose_name="Métricas de Produtividade"
+    )
+
+    class Meta:
+        verbose_name = "Perfil"
+        verbose_name_plural = "Perfis"
+
+    def __str__(self):
+        return f"{self.user.username} - {self.role}"
+    
+
+        

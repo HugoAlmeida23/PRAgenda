@@ -1,5 +1,5 @@
 
-    class User {
+    class User { //done 
         +username: string
         +email: string
         +password: string
@@ -8,17 +8,16 @@
     }
     
     class Profile {
+    done
         +user: User
         +hourly_rate: decimal
         +role: string
         +access_level: string
         +phone: string
-        +photo: string
         +productivity_metrics: JSON
-        +notification_preferences: JSON
     }
     
-    class Client {
+    class Client { done
         +id: UUID
         +name: string
         +nif: string
@@ -33,7 +32,7 @@
         +updated_at: datetime
     }
     
-    class TaskCategory {
+    class TaskCategory { done
         +id: UUID
         +name: string
         +description: text
@@ -42,7 +41,7 @@
         +created_at: datetime
     }
     
-    class Task {
+    class Task { done
         +id: UUID
         +title: string
         +description: text
@@ -52,17 +51,11 @@
         +created_by: User
         +status: string
         +priority: integer
-        +automated_priority: integer
         +deadline: datetime
         +estimated_time_minutes: integer
         +created_at: datetime
         +updated_at: datetime
         +completed_at: datetime
-        +requires_approval: boolean
-        +approved_by: User
-        +approval_date: datetime
-        +is_recurring: boolean
-        +recurrence_pattern: JSON
         +calculate_profitability()
     }
     
@@ -147,6 +140,7 @@
     
     class ClientProfitability {
         +id: UUID
+    
         +client: Client
         +year: integer
         +month: integer
