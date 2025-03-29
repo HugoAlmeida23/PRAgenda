@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 import uuid
 from django.utils import timezone
+from decimal import Decimal
 from django.db.models import JSONField
 
 class Client(models.Model):
@@ -28,7 +29,7 @@ class Client(models.Model):
     monthly_fee = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 
-        default=0,
+        default=Decimal('0.00'),
         verbose_name="Avença Mensal", 
         blank=True, null=True
     )
@@ -297,19 +298,19 @@ class ClientProfitability(models.Model):
     time_cost = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 
-        default=0,
+        default=Decimal('0.00'),
         verbose_name="Custo do Tempo"
     )
     total_expenses = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 
-        default=0,
+        default=Decimal('0.00'),
         verbose_name="Despesas Totais"
     )
     monthly_fee = models.DecimalField(
         max_digits=10, 
         decimal_places=2, 
-        default=0,
+        default=Decimal('0.00'),
         verbose_name="Avença Mensal"
     )
     profit = models.DecimalField(
@@ -358,7 +359,8 @@ class Profile(models.Model):
     """
 
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Preço à Hora")
+    from decimal import Decimal
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), verbose_name="Preço à Hora")
     role = models.CharField(max_length=100, verbose_name="Função")
     access_level = models.CharField(max_length=100, verbose_name="Nível de Acesso")
     phone = models.CharField(max_length=100, verbose_name="Telefone")

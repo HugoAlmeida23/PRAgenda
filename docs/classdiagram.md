@@ -7,8 +7,8 @@
         +date_joined: datetime
     }
     
-    class Profile {
-    done
+    class Profile {  done
+  
         +user: User
         +hourly_rate: decimal
         +role: string

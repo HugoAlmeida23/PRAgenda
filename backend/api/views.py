@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from rest_framework import generics, viewsets
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from .serializers import UserSerializer
-from supabase import create_client, Client
+from supabase.client import create_client, Client
 from django.conf import settings
 import logging
 import os 
@@ -15,8 +15,8 @@ logger = logging.getLogger('citius-app')
 
 # Initialize Supabase client (not used for file upload directly but may be used for DB interaction)
 supabase: Client = create_client(
-    os.getenv('SUPABASE_URL'),
-    os.getenv('SUPABASE_ACCESS_KEY')
+    os.getenv('SUPABASE_URL') or "default_supabase_url",
+    os.getenv('SUPABASE_ACCESS_KEY') or "default_supabase_access_key"
 )
 
 logger = logging.getLogger('citius-app')

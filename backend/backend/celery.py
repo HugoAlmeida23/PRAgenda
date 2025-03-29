@@ -19,7 +19,7 @@ app.autodiscover_tasks()
 app.conf.beat_schedule = {
     'scrape-citius-every-hour': {
         'task': 'api.tasks.scheduled_citius_scrape',
-        'schedule': crontab(minute=0),  # Runs every hour at the top of the hour
+        'schedule': crontab(minute='0'),  # Runs every hour at the top of the hour
     },
 }
 
