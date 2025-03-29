@@ -46,8 +46,7 @@ class Client(models.Model):
     
     def __str__(self):
         return self.name
-    
-    
+       
 class TaskCategory(models.Model):
     """
     Categorias de tarefas contábeis.
@@ -167,8 +166,7 @@ class Task(models.Model):
             self.completed_at = None
             
         super(Task, self).save(*args, **kwargs)
-        
-        
+              
 class TimeEntry(models.Model):
     """
     Registro de tempo gasto em tarefas para clientes.
@@ -363,7 +361,7 @@ class Profile(models.Model):
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), verbose_name="Preço à Hora")
     role = models.CharField(max_length=100, verbose_name="Função")
     access_level = models.CharField(max_length=100, verbose_name="Nível de Acesso")
-    phone = models.CharField(max_length=100, verbose_name="Telefone")
+    phone = models.CharField(max_length=100, blank=True, verbose_name="Telefone")
     productivity_metrics = JSONField(
         default=dict, 
         verbose_name="Métricas de Produtividade"
@@ -376,5 +374,25 @@ class Profile(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.role}"
     
+    
+# Add this at the end of your models.py file
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        Profile.objects.create(
+            user=instance,
+            hourly_rate=0.0,
+            role='New User',
+            access_level='Standard',
+            phone=''
+        )
+
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    if hasattr(instance, 'profile'):
+        instance.profile.save()
 
         

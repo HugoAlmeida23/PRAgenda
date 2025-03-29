@@ -81,6 +81,13 @@ function Header() {
             <div className="tooltip">Dashboard</div>
           </li>
           <li>
+            <a href="./profile" onClick={isMobile ? toggleSidebar : undefined}>
+              <span className="icon fas fa-user text-white"></span>
+              <span className="item-name">Profile</span>
+            </a>
+            <div className="tooltip">Profile</div>
+          </li>
+          <li>
             <a href="./logout" onClick={isMobile ? toggleSidebar : undefined}>
               <span className="icon fa-solid fa-arrow-right-from-bracket text-white"></span>
               <span className="item-name">Sair</span>
