@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import Header from "../components/Header";
 import api from "../api";
+import "../styles/Home.css"
 
 const Profile = () => {
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,7 @@ const Profile = () => {
       setLoading(false);
     }
   };
-  
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData({
@@ -119,7 +120,7 @@ const Profile = () => {
 
   return (
     <div className="main">
-      <Header />
+      <Header>
       <div
         className="p-6 bg-gray-100 min-h-screen"
         style={{ marginLeft: "3%" }}
@@ -136,9 +137,9 @@ const Profile = () => {
               {!editing ? (
                 <>
                   <div className="mb-4">
-                    <h2 className="text-lg font-semibold">User Information</h2>
+                    <h2 className="text-lg font-semibold">User</h2>
                     <p className="text-gray-700">
-                      Username: {profile?.username}
+                      {profile?.username}
                     </p>
                   </div>
 
@@ -167,20 +168,11 @@ const Profile = () => {
                         {profile?.phone || "Not specified"}
                       </p>
                     </div>
-                    <div>
-                      <h3 className="font-medium">Productivity Metrics</h3>
-                      <p className="text-gray-700">
-                        {profile?.productivity_metrics &&
-                        typeof profile.productivity_metrics === "object"
-                          ? JSON.stringify(profile.productivity_metrics)
-                          : profile?.productivity_metrics || "Not specified"}
-                      </p>
-                    </div>
                   </div>
 
                   <button
                     onClick={() => setEditing(true)}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md"
+                    className="bg-blue-600 hover:bg-blue-600 text-white px-4 py-2 rounded-md"
                   >
                     Edit Profile
                   </button>
@@ -250,28 +242,10 @@ const Profile = () => {
                       className="w-full p-2 border border-gray-300 rounded-md"
                     />
                   </div>
-
-                  <div className="mb-6">
-                    <label
-                      className="block text-gray-700 mb-2"
-                      htmlFor="productivity_metrics"
-                    >
-                      Productivity Metrics
-                    </label>
-                    <input
-                      type="text"
-                      id="productivity_metrics"
-                      name="productivity_metrics"
-                      value={formData.productivity_metrics}
-                      onChange={handleInputChange}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                    />
-                  </div>
-
-                  <div className="flex space-x-4">
+                  <div className="flex space-x-4 ">
                     <button
                       type="submit"
-                      className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md"
+                      className="bg-green-600 hover:bg-green-600 text-white px-4 py-2 rounded-md mr-2"
                       disabled={loading}
                     >
                       Save Changes
@@ -279,7 +253,7 @@ const Profile = () => {
                     <button
                       type="button"
                       onClick={() => setEditing(false)}
-                      className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                      className="bg-gray-600 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
                       disabled={loading}
                     >
                       Cancel
@@ -291,6 +265,7 @@ const Profile = () => {
           )}
         </div>
       </div>
+      </Header>
     </div>
   );
 };

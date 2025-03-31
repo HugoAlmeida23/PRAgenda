@@ -3,14 +3,17 @@ import "../styles/Header.css";
 import simpleLogo from "../assets/simplelogo.png";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 
-function Header() {
-  const [collapsed, setCollapsed] = useState(true); // Sidebar collapsed by default
+function Header({ children }) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   // Check if viewing on mobile device
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth <= 768);
+      if (window.innerWidth <= 768) {
+        setSidebarCollapsed(true);
+      }
     };
     
     // Initial check
@@ -23,79 +26,134 @@ function Header() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Expand the sidebar when hovering (desktop only)
-  const handleMouseEnter = () => {
-    if (!isMobile) {
-      setCollapsed(false);
-    }
-  };
-
-  // Collapse the sidebar when mouse leaves (desktop only)
-  const handleMouseLeave = () => {
-    if (!isMobile) {
-      setCollapsed(true);
-    }
-  };
-
-  // Toggle sidebar for mobile
+  // Toggle sidebar
   const toggleSidebar = () => {
-    setCollapsed(!collapsed);
+    setSidebarCollapsed(!sidebarCollapsed);
   };
 
   return (
-    <div className={`sidebar-container ${collapsed ? "collapsed" : ""} ${isMobile ? "mobile" : ""}`}>
-      {/* Mobile toggle button */}
-      {isMobile && (
-        <button 
-          className="mobile-toggle-btn" 
-          onClick={toggleSidebar}
-          aria-label={collapsed ? "Open sidebar" : "Close sidebar"}
-        >
-          <i className={`fas ${collapsed ? "fa-bars" : "fa-times"}`}></i>
-        </button>
-      )}
-      
-      {/* Sidebar overlay for mobile - closes sidebar when clicking outside */}
-      {isMobile && !collapsed && (
-        <div className="sidebar-overlay" onClick={toggleSidebar}></div>
-      )}
-      
-      <aside onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
-        <a href="/" className="logo-wrapper">
-          <img
-            src={simpleLogo}
-            alt="UI Kit Logo"
-            style={{ width: "24px", height: "24px" }}
-          />
-          <span className="brand-name">PRAGENDA</span>
-        </a>
+    <div className="app-layout">
+      {/* Top Header */}
+      <header className="top-header">
+        <div className="header-left">
+          <button 
+            className="sidebar-toggle" 
+            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <i className="fas fa-bars"></i>
+          </button>
+          
+          <div className="brand">
+            <img src={simpleLogo} alt="PRAGENDA Logo" />
+            <span className="brand-name">PRAGENDA</span>
+          </div>
+        </div>
+        
+        <div className="header-search">
+          <div className="search-container">
+            <i className="fas fa-search"></i>
+            <input type="text" placeholder="Search..." />
+          </div>
+        </div>
+        
+        <div className="header-actions">
+          <button className="action-button" aria-label="Help">
+            <i className="fas fa-question-circle"></i>
+          </button>
+          
+          <button className="action-button" aria-label="Notifications">
+            <i className="fas fa-bell"></i>
+            <span className="notification-badge">3</span>
+          </button>
+          
+          <div className="user-profile">
+            <div className="user-info">
+              <span className="user-name">Hugo Almeida</span>
+              <span className="user-role">Administrator</span>
+            </div>
+          </div>
+        </div>
+      </header>
 
-        <div className="separator"></div>
+      {/* Main Layout with Sidebar and Content */}
+      <div className="main-layout">
+        {/* Sidebar Navigation */}
+        <nav className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+          {isMobile && sidebarCollapsed ? null : (
+            <>
+              <ul className="nav-menu">
+                <li className="nav-item active">
+                  <a href="./" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-tachometer-alt"></i>
+                    <span>Dashboard</span>
+                  </a>
+                </li>
+                <li className="nav-item">
+                  <a href="./tasks" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-tasks"></i>
+                    <span>Tasks</span>
+                  </a>
+                </li>
+                <li className="nav-item">
+                  <a href="./timeentry" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-clock"></i>
+                    <span>Time Entry</span>
+                  </a>
+                </li>
+                <li className="nav-item">
+                  <a href="./clients" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-users"></i>
+                    <span>Clientes</span>
+                  </a>
+                </li>
+                
+                <li className="nav-section-title">
+                  <span>ACCOUNT</span>
+                </li>
+                
+                <li className="nav-item">
+                  <a href="./profile" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-user-circle"></i>
+                    <span>Profile</span>
+                  </a>
+                </li>
+                <li className="nav-item">
+                  <a href="./settings">
+                    <i className="fas fa-cog"></i>
+                    <span>Settings</span>
+                  </a>
+                </li>
+                <li className="nav-item logout">
+                  <a href="./logout" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-sign-out-alt"></i>
+                    <span>Sair</span>
+                  </a>
+                </li>
+              </ul>
+              
+              <div className="sidebar-footer">
+                <div className="workspace-info">
+                  <div className="workspace-icon">P</div>
+                  <div className="workspace-details">
+                    <span className="workspace-name">PRAGENDA Workspace</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </nav>
 
-        <ul className="menu-items">
-          <li>
-            <a href="./" onClick={isMobile ? toggleSidebar : undefined}>
-              <span className="icon fas fa-chart-bar text-white"></span>
-              <span className="item-name">Dashboard</span>
-            </a>
-            <div className="tooltip">Dashboard</div>
-          </li>
-          <li>
-            <a href="./profile" onClick={isMobile ? toggleSidebar : undefined}>
-              <span className="icon fas fa-user text-white"></span>
-              <span className="item-name">Profile</span>
-            </a>
-            <div className="tooltip">Profile</div>
-          </li>
-          <li>
-            <a href="./logout" onClick={isMobile ? toggleSidebar : undefined}>
-              <span className="icon fa-solid fa-arrow-right-from-bracket text-white"></span>
-              <span className="item-name">Sair</span>
-            </a>
-            <div className="tooltip">Sair</div>
-          </li>
-        </ul>
-      </aside>
+        {/* Mobile overlay */}
+        {isMobile && !sidebarCollapsed && (
+          <div className="sidebar-overlay" onClick={toggleSidebar}></div>
+        )}
+
+        {/* Main Content */}
+        <main className="main-content">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

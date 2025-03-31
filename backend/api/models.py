@@ -73,159 +73,34 @@ class TaskCategory(models.Model):
     def __str__(self):
         return self.name
     
-class Task(models.Model):
+class WorkflowDefinition(models.Model):
     """
-    Tarefas a serem realizadas para os clientes.
+    Defines a workflow template that can be applied to tasks.
     """
-    STATUS_CHOICES = [
-        ('pending', 'Pendente'),
-        ('in_progress', 'Em Progresso'),
-        ('completed', 'Concluída'),
-        ('cancelled', 'Cancelada')
-    ]
-    
-    PRIORITY_CHOICES = [
-        (1, 'Urgente'),
-        (2, 'Alta'),
-        (3, 'Média'),
-        (4, 'Baixa'),
-        (5, 'Pode Esperar')
-    ]
-    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=200, verbose_name="Título")
+    name = models.CharField(max_length=100, verbose_name="Nome")
     description = models.TextField(blank=True, null=True, verbose_name="Descrição")
-    
-    # Relações
-    client = models.ForeignKey(
-        Client, 
-        on_delete=models.CASCADE, 
-        related_name='tasks',
-        verbose_name="Cliente"
-    )
-    category = models.ForeignKey(
-        TaskCategory, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        related_name='tasks',
-        verbose_name="Categoria"
-    )
-    assigned_to = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        related_name='assigned_tasks',
-        verbose_name="Atribuído a"
-    )
     created_by = models.ForeignKey(
         User, 
         on_delete=models.SET_NULL, 
         null=True, 
-        related_name='created_tasks',
+        related_name='created_workflows',
         verbose_name="Criado por"
-    )
-    
-    # Status e prioridade
-    status = models.CharField(
-        max_length=20, 
-        choices=STATUS_CHOICES, 
-        default='pending',
-        verbose_name="Status"
-    )
-    priority = models.IntegerField(
-        choices=PRIORITY_CHOICES, 
-        default=3,
-        verbose_name="Prioridade"
-    )
-    
-    # Datas
-    deadline = models.DateTimeField(blank=True, null=True, verbose_name="Prazo")
-    estimated_time_minutes = models.PositiveIntegerField(
-        blank=True, 
-        null=True,
-        verbose_name="Tempo Estimado (minutos)"
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
-    completed_at = models.DateTimeField(blank=True, null=True, verbose_name="Concluída em")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    
+    class Meta:
+        verbose_name = "Definição de Fluxo de Trabalho"
+        verbose_name_plural = "Definições de Fluxo de Trabalho"
+        ordering = ["-created_at"]
+    
+    def __str__(self):
+        return self.name
 
-    class Meta:
-        verbose_name = "Tarefa"
-        verbose_name_plural = "Tarefas"
-        ordering = ["priority", "deadline"]
-    
-    def __str__(self):
-        return f"{self.title} - {self.client.name}"
-    
-    def save(self, *args, **kwargs):
-        # Se o status mudou para 'completed', registrar a data de conclusão
-        if self.status == 'completed' and self.completed_at is None:
-            self.completed_at = timezone.now()
-        # Se o status mudou de 'completed', limpar a data de conclusão
-        elif self.status != 'completed':
-            self.completed_at = None
-            
-        super(Task, self).save(*args, **kwargs)
-              
-class TimeEntry(models.Model):
-    """
-    Registro de tempo gasto em tarefas para clientes.
-    Este é o coração do sistema de tracking de tempo.
-    """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    # Relações
-    user = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='time_entries',
-        verbose_name="Usuário"
-    )
-    client = models.ForeignKey(
-        Client, 
-        on_delete=models.CASCADE, 
-        related_name='time_entries',
-        verbose_name="Cliente"
-    )
-    task = models.ForeignKey(
-        Task, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        related_name='time_entries',
-        verbose_name="Tarefa"
-    )
-    category = models.ForeignKey(
-        TaskCategory, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True,
-        verbose_name="Categoria"
-    )
-    
-    # Detalhes do tempo
-    description = models.TextField(verbose_name="Descrição")
-    minutes_spent = models.PositiveIntegerField(verbose_name="Minutos Gastos")
-    date = models.DateField(default=timezone.now, verbose_name="Data")
-    start_time = models.TimeField(null=True, blank=True, verbose_name="Hora de Início")
-    end_time = models.TimeField(null=True, blank=True, verbose_name="Hora de Término")
-    
-    # Metadados
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
-    original_text = models.TextField(
-        blank=True, 
-        null=True, 
-        verbose_name="Texto Original"
-    )  # Para guardar o texto natural inserido pelo usuário
-    
-    class Meta:
-        verbose_name = "Registro de Tempo"
-        verbose_name_plural = "Registros de Tempo"
-        ordering = ["-date", "-created_at"]
-    
-    def __str__(self):
-        return f"{self.client.name} - {self.minutes_spent}min - {self.date}"
-    
+
+
 class Expense(models.Model):
     """
     Despesas que podem estar associadas a clientes.
@@ -395,4 +270,546 @@ def save_user_profile(sender, instance, **kwargs):
     if hasattr(instance, 'profile'):
         instance.profile.save()
 
+class AutoTimeTracking(models.Model):
+    """
+    Tracks user activity automatically for time entry generation.
+    This model stores data related to automatic time tracking sessions.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='auto_time_tracking',
+        verbose_name="Usuário"
+    )
+    start_time = models.DateTimeField(verbose_name="Hora de Início")
+    end_time = models.DateTimeField(null=True, blank=True, verbose_name="Hora de Término")
+    activity_data = models.JSONField(default=dict, verbose_name="Dados de Atividade")
+    processed = models.BooleanField(default=False, verbose_name="Processado")
+    converted_to_entries = models.JSONField(
+        default=list, 
+        verbose_name="Convertido em Registros"
+    )
+    
+    class Meta:
+        verbose_name = "Rastreamento Automático"
+        verbose_name_plural = "Rastreamentos Automáticos"
+        ordering = ["-start_time"]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.start_time}"
+    
+    
+class NLPProcessor(models.Model):
+    """
+    Model that stores patterns and entities for natural language processing.
+    Used for extracting information from user text inputs.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    pattern = models.CharField(max_length=500, verbose_name="Padrão")
+    entity_type = models.CharField(max_length=100, verbose_name="Tipo de Entidade")
+    confidence = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        default=Decimal('0.00'),
+        verbose_name="Confiança"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+    usage_count = models.PositiveIntegerField(default=0, verbose_name="Contador de Uso")
+    
+    class Meta:
+        verbose_name = "Processador NLP"
+        verbose_name_plural = "Processadores NLP"
+        ordering = ["-usage_count", "-confidence"]
+    
+    def __str__(self):
+        return f"{self.entity_type}: {self.pattern}"
+    
+    @classmethod
+    def process_text(cls, text, user=None):
+        """
+        Process a natural language text and extract relevant information.
         
+        Args:
+            text (str): The text to process
+            user (User, optional): The user who created the text
+            
+        Returns:
+            dict: Extracted information including:
+                - clients: List of identified client objects
+                - categories: List of identified task category objects
+                - times: List of durations in minutes
+                - activities: List of activity descriptions
+        """
+        results = {
+            'clients': [],
+            'categories': [],
+            'times': [],
+            'activities': [],
+            'confidence': 0.0
+        }
+        
+        if not text:
+            return results
+            
+        # This is a simplified implementation - in a real system, this would
+        # use more sophisticated NLP techniques or external NLP services
+        
+        # 1. Find client mentions
+        from .models import Client
+        clients = Client.objects.filter(is_active=True)
+        
+        for client in clients:
+            if client.name.lower() in text.lower():
+                results['clients'].append(client)
+                
+        # 2. Find categories
+        from .models import TaskCategory
+        categories = TaskCategory.objects.all()
+        
+        for category in categories:
+            if category.name.lower() in text.lower():
+                results['categories'].append(category)
+                
+        # 3. Extract time information using regex
+        import re
+        
+        # Match patterns like "2 hours", "30 minutes", "2h", "30m", "2.5 hours", etc.
+        hour_patterns = [
+            r'(\d+\.?\d*)\s*hours?',
+            r'(\d+\.?\d*)\s*h(?:rs?)?',
+        ]
+        
+        minute_patterns = [
+            r'(\d+)\s*minutes?',
+            r'(\d+)\s*mins?',
+            r'(\d+)\s*m(?:in)?',
+        ]
+        
+        for pattern in hour_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    hours = float(match)
+                    minutes = int(hours * 60)
+                    results['times'].append(minutes)
+                except ValueError:
+                    continue
+                    
+        for pattern in minute_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    minutes = int(match)
+                    results['times'].append(minutes)
+                except ValueError:
+                    continue
+        
+        # 4. Extract activities
+        # This is highly simplified - in a real implementation, this would use
+        # more advanced NLP techniques to identify activities
+        
+        activity_keywords = [
+            "preparation", "review", "meeting", "call", "email", "report",
+            "tax", "accounting", "declaration", "invoice", "expense",
+            "reconciliation", "payroll", "financial", "statement", "audit"
+        ]
+        
+        for keyword in activity_keywords:
+            if keyword in text.lower():
+                # Find the sentence containing the keyword
+                sentences = re.split(r'[.!?]', text)
+                for sentence in sentences:
+                    if keyword in sentence.lower():
+                        results['activities'].append(sentence.strip())
+                        break
+        
+        # Calculate confidence - this is a very simple heuristic
+        if results['clients'] and results['times']:
+            results['confidence'] = 0.8
+        elif results['clients'] or results['times']:
+            results['confidence'] = 0.5
+        else:
+            results['confidence'] = 0.2
+            
+        # Increment usage count for matching patterns
+        for pattern in cls.objects.filter(entity_type__in=['client', 'category', 'time']):
+            if re.search(pattern.pattern, text, re.IGNORECASE):
+                pattern.usage_count += 1
+                pattern.save()
+        
+        return results
+        
+    @staticmethod
+    def create_time_entries_from_text(text, user, client_id=None, date=None):
+        """
+        Create TimeEntry objects based on natural language text.
+        
+        Args:
+            text (str): The natural language description
+            user (User): The user creating the entry
+            client_id (UUID, optional): Default client if not detected in text
+            date (date, optional): The date for the entry, defaults to today
+            
+        Returns:
+            list: Created TimeEntry objects
+        """
+        from .models import TimeEntry, Client
+        
+        if not date:
+            date = timezone.now().date()
+            
+        # Process the text
+        results = NLPProcessor.process_text(text, user)
+        created_entries = []
+        
+        # If no clients found in text but a default is provided
+        if not results['clients'] and client_id:
+            try:
+                default_client = Client.objects.get(id=client_id)
+                results['clients'] = [default_client]
+            except Client.DoesNotExist:
+                pass
+                
+        # If no time found, use a default of 1 hour
+        if not results['times']:
+            results['times'] = [60]  # 60 minutes = 1 hour
+            
+        # If no activities found, use the original text
+        if not results['activities']:
+            results['activities'] = [text]
+            
+        # Create time entries
+        # If multiple clients and times, try to match them logically
+        if len(results['clients']) > 1 and len(results['times']) > 1:
+            # This is a simplified approach - in a real implementation,
+            # you'd want more sophisticated matching
+            for i, client in enumerate(results['clients']):
+                if i < len(results['times']):
+                    minutes = results['times'][i]
+                else:
+                    minutes = results['times'][0]  # Use first time as default
+                    
+                if i < len(results['activities']):
+                    description = results['activities'][i]
+                else:
+                    description = text  # Use original text if no matching activity
+                    
+                # Create the entry
+                entry = TimeEntry.objects.create(
+                    user=user,
+                    client=client,
+                    minutes_spent=minutes,
+                    description=description,
+                    date=date,
+                    original_text=text
+                )
+                created_entries.append(entry)
+        else:
+            # Simpler case: one client or one time
+            client = results['clients'][0] if results['clients'] else None
+            minutes = results['times'][0] if results['times'] else 60
+            description = results['activities'][0] if results['activities'] else text
+            
+            if client:
+                entry = TimeEntry.objects.create(
+                    user=user,
+                    client=client,
+                    minutes_spent=minutes,
+                    description=description,
+                    date=date,
+                    original_text=text
+                )
+                created_entries.append(entry)
+                
+        return created_entries
+    
+class WorkflowDefinition(models.Model):
+    """
+    Defines a workflow template that can be applied to tasks.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, verbose_name="Nome")
+    description = models.TextField(blank=True, null=True, verbose_name="Descrição")
+    created_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='created_workflows',
+        verbose_name="Criado por"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    
+    class Meta:
+        verbose_name = "Definição de Fluxo de Trabalho"
+        verbose_name_plural = "Definições de Fluxo de Trabalho"
+        ordering = ["-created_at"]
+    
+    def __str__(self):
+        return self.name
+
+
+class WorkflowStep(models.Model):
+    """
+    Defines a step within a workflow.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workflow = models.ForeignKey(
+        WorkflowDefinition, 
+        on_delete=models.CASCADE, 
+        related_name='steps',
+        verbose_name="Fluxo de Trabalho"
+    )
+    name = models.CharField(max_length=100, verbose_name="Nome")
+    description = models.TextField(blank=True, null=True, verbose_name="Descrição")
+    order = models.PositiveIntegerField(verbose_name="Ordem")
+    assign_to = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='assigned_workflow_steps',
+        verbose_name="Atribuir a"
+    )
+    requires_approval = models.BooleanField(default=False, verbose_name="Requer Aprovação")
+    approver_role = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True,
+        verbose_name="Papel do Aprovador"
+    )
+    next_steps = models.JSONField(
+        default=list, 
+        verbose_name="Próximos Passos",
+        help_text="List of possible next step IDs"
+    )
+    previous_steps = models.JSONField(
+        default=list, 
+        verbose_name="Passos Anteriores",
+        help_text="List of possible previous step IDs"
+    )
+    
+    class Meta:
+        verbose_name = "Passo de Fluxo de Trabalho"
+        verbose_name_plural = "Passos de Fluxo de Trabalho"
+        ordering = ["workflow", "order"]
+        unique_together = ["workflow", "order"]
+    
+    def __str__(self):
+        return f"{self.workflow.name} - {self.name}"
+
+
+class TaskApproval(models.Model):
+    """
+    Records approvals for workflow steps in tasks.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    task = models.ForeignKey(
+        'Task', 
+        on_delete=models.CASCADE, 
+        related_name='approvals',
+        verbose_name="Tarefa"
+    )
+    workflow_step = models.ForeignKey(
+        WorkflowStep, 
+        on_delete=models.CASCADE, 
+        related_name='task_approvals',
+        verbose_name="Passo do Fluxo"
+    )
+    approved_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True,
+        related_name='task_approvals',
+        verbose_name="Aprovado por"
+    )
+    approved_at = models.DateTimeField(auto_now_add=True, verbose_name="Aprovado em")
+    approved = models.BooleanField(default=True, verbose_name="Aprovado")
+    comment = models.TextField(blank=True, null=True, verbose_name="Comentário")
+    
+    class Meta:
+        verbose_name = "Aprovação de Tarefa"
+        verbose_name_plural = "Aprovações de Tarefas"
+        ordering = ["-approved_at"]
+        unique_together = ["task", "workflow_step", "approved_by"]
+    
+    def __str__(self):
+        status = "aprovado" if self.approved else "rejeitado"
+        return f"Passo {self.workflow_step.name} {status} por {self.approved_by.username}"
+    
+class Task(models.Model):
+    """
+    Tarefas a serem realizadas para os clientes.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pendente'),
+        ('in_progress', 'Em Progresso'),
+        ('completed', 'Concluída'),
+        ('cancelled', 'Cancelada')
+    ]
+    
+    PRIORITY_CHOICES = [
+        (1, 'Urgente'),
+        (2, 'Alta'),
+        (3, 'Média'),
+        (4, 'Baixa'),
+        (5, 'Pode Esperar')
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=200, verbose_name="Título")
+    description = models.TextField(blank=True, null=True, verbose_name="Descrição")
+    
+    # Relações
+    client = models.ForeignKey(
+        Client, 
+        on_delete=models.CASCADE, 
+        related_name='tasks',
+        verbose_name="Cliente"
+    )
+    category = models.ForeignKey(
+        TaskCategory, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='tasks',
+        verbose_name="Categoria"
+    )
+    assigned_to = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='assigned_tasks',
+        verbose_name="Atribuído a"
+    )
+    created_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='created_tasks',
+        verbose_name="Criado por"
+    )
+    
+    # Status e prioridade
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='pending',
+        verbose_name="Status"
+    )
+    priority = models.IntegerField(
+        choices=PRIORITY_CHOICES, 
+        default=3,
+        verbose_name="Prioridade"
+    )
+    
+    # Datas
+    deadline = models.DateTimeField(blank=True, null=True, verbose_name="Prazo")
+    estimated_time_minutes = models.PositiveIntegerField(
+        blank=True, 
+        null=True,
+        verbose_name="Tempo Estimado (minutos)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+    completed_at = models.DateTimeField(blank=True, null=True, verbose_name="Concluída em")
+    workflow = models.ForeignKey(
+        WorkflowDefinition,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks',
+        verbose_name="Fluxo de Trabalho"
+    )
+    current_workflow_step = models.ForeignKey(
+        WorkflowStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='current_tasks',
+        verbose_name="Passo Atual do Fluxo"
+    )
+    workflow_comment = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Comentário do Fluxo"
+    )
+    class Meta:
+        verbose_name = "Tarefa"
+        verbose_name_plural = "Tarefas"
+        ordering = ["priority", "deadline"]
+    
+    def __str__(self):
+        return f"{self.title} - {self.client.name}"
+    
+    def save(self, *args, **kwargs):
+        # Se o status mudou para 'completed', registrar a data de conclusão
+        if self.status == 'completed' and self.completed_at is None:
+            self.completed_at = timezone.now()
+        # Se o status mudou de 'completed', limpar a data de conclusão
+        elif self.status != 'completed':
+            self.completed_at = None
+            
+        super(Task, self).save(*args, **kwargs)
+              
+class TimeEntry(models.Model):
+    """
+    Registro de tempo gasto em tarefas para clientes.
+    Este é o coração do sistema de tracking de tempo.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Relações
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='time_entries',
+        verbose_name="Usuário"
+    )
+    client = models.ForeignKey(
+        Client, 
+        on_delete=models.CASCADE, 
+        related_name='time_entries',
+        verbose_name="Cliente"
+    )
+    task = models.ForeignKey(
+        Task, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='time_entries',
+        verbose_name="Tarefa"
+    )
+    category = models.ForeignKey(
+        TaskCategory, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        verbose_name="Categoria"
+    )
+    
+    # Detalhes do tempo
+    description = models.TextField(verbose_name="Descrição")
+    minutes_spent = models.PositiveIntegerField(verbose_name="Minutos Gastos")
+    date = models.DateField(default=timezone.now, verbose_name="Data")
+    start_time = models.TimeField(null=True, blank=True, verbose_name="Hora de Início")
+    end_time = models.TimeField(null=True, blank=True, verbose_name="Hora de Término")
+    
+    # Metadados
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    original_text = models.TextField(
+        blank=True, 
+        null=True, 
+        verbose_name="Texto Original"
+    )  # Para guardar o texto natural inserido pelo usuário
+    
+    class Meta:
+        verbose_name = "Registro de Tempo"
+        verbose_name_plural = "Registros de Tempo"
+        ordering = ["-date", "-created_at"]
+    
+    def __str__(self):
+        return f"{self.client.name} - {self.minutes_spent}min - {self.date}"
+    

@@ -10,6 +10,11 @@ router.register(r'tasks', views.TaskViewSet, basename='task')
 router.register(r'time-entries', views.TimeEntryViewSet, basename='time-entry')
 router.register(r'expenses', views.ExpenseViewSet, basename='expense')
 router.register(r'client-profitability', views.ClientProfitabilityViewSet, basename='client-profitability')
+router.register(r'nlp-processor', views.NLPProcessorViewSet, basename='nlp-processor')
+router.register(r'auto-time-tracking', views.AutoTimeTrackingViewSet, basename='auto-time-tracking')
+router.register(r'workflow-definitions', views.WorkflowDefinitionViewSet)
+router.register(r'workflow-steps', views.WorkflowStepViewSet)
+router.register(r'task-approvals', views.TaskApprovalViewSet, basename='task-approval')
 
 urlpatterns = [
     path("register/", views.CreateUserView.as_view(), name="register"),

@@ -6,7 +6,10 @@ import Home from "./pages/Home"
 import NotFound from "./pages/NotFound"
 import ProtectedRoute from "./components/ProtectedRoute"
 import Profile from "./pages/Profile"
+import TimeEntry from "./pages/TimeEntry"
 import { ToastContainer } from 'react-toastify';
+import ClientManagement from "./pages/ClientManagement"
+import TaskManagement from "./pages/TaskManagement"
 
 
 function Logout() {
@@ -36,6 +39,30 @@ function App() {
           element={
             <ProtectedRoute>
               <Profile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/clients"
+          element={
+            <ProtectedRoute>
+              <ClientManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/timeentry"
+          element={
+            <ProtectedRoute>
+              <TimeEntry />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tasks"
+          element={
+            <ProtectedRoute>
+              <TaskManagement />
             </ProtectedRoute>
           }
         />
