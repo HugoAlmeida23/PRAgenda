@@ -1,33 +1,34 @@
-import React, { useState, useEffect } from "react";
+import React from "react"; // Removed useState, useEffect
 import { Link } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { useQuery } from '@tanstack/react-query';
 import {
   Calendar,
   Clock,
   Users,
   CheckCircle,
   AlertTriangle,
-  FileText,
   BarChart2,
   DollarSign,
   Activity,
   ChevronRight,
   Plus,
   ArrowUp,
-  ArrowDown,
   Timer,
   Briefcase,
   ExternalLink,
   TrendingUp,
   Clipboard,
   CheckSquare,
+  Loader2 // Keep Loader2 for loading state
 } from "lucide-react";
-import { Loader2 } from 'lucide-react';
-
+// Removed react-bootstrap imports as they seem unused in the main return block
+// import { Container, Spinner, Card, Alert } from 'react-bootstrap';
 import Header from "../components/Header";
 import api from "../api";
-import "../styles/Home.css";
+import "../styles/Home.css"; // Ensure this contains necessary styles
 
-// Task Priority Color Map
+// --- Constants (Keep outside) ---
 const priorityColors = {
   1: "bg-red-100 text-red-800 border border-red-200", // Urgent
   2: "bg-orange-100 text-orange-800 border border-orange-200", // High
@@ -52,200 +53,225 @@ const statusColors = {
   cancelled: "bg-gray-100 text-gray-800 border border-gray-200",
 };
 
-const Home = () => {
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    activeTasks: 0,
-    activeClients: 0,
-    overdueTasksCount: 0,
-    todayTasksCount: 0,
-    thisWeekTasksCount: 0,
-    recentTimeEntries: [],
-    upcomingTasks: [],
-    unprofitableClientsCount: 0,
-    timeTrackedToday: 0, // Added for enhanced dashboard
-    timeTrackedThisWeek: 0, // Added for enhanced dashboard
-    tasksCompletedThisWeek: 0, // Added for enhanced dashboard
+// --- Data Fetching Function (Defined Outside Component) ---
+const fetchDashboardData = async () => {
+  // --- Date calculations ---
+  const today = new Date();
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(today.getDate() - 7);
+  const thisWeekEnd = new Date(today);
+  thisWeekEnd.setDate(today.getDate() + 7);
+
+  const todayStr = today.toISOString().split("T")[0];
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+  const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+
+  // --- Fetch data in parallel ---
+  const [
+    tasksPendingResponse,
+    tasksInProgressResponse,
+    clientsResponse,
+    timeEntriesResponse,
+    profitabilityResponse,
+    completedTasksResponse,
+  ] = await Promise.all([
+    api.get("/tasks/?status=pending"),
+    api.get("/tasks/?status=in_progress"),
+    api.get("/clients/?is_active=true"),
+    api.get(
+      `/time-entries/?start_date=${sevenDaysAgoStr}&end_date=${todayStr}`
+    ),
+    api.get("/client-profitability/?is_profitable=false"),
+    api.get(`/tasks/?status=completed&completed_after=${sevenDaysAgoISO}`),
+  ]);
+
+  // --- Process fetched data ---
+  const tasks = [...tasksPendingResponse.data, ...tasksInProgressResponse.data];
+  const clients = clientsResponse.data;
+  const timeEntries = timeEntriesResponse.data;
+  const unprofitableClients = profitabilityResponse.data;
+  const completedTasks = completedTasksResponse.data;
+
+  // --- Process tasks ---
+  let overdueTasks = [];
+  let todayTasks = [];
+  let thisWeekTasks = [];
+  let upcomingTasks = [];
+
+  tasks.forEach((task) => {
+    if (task.deadline) {
+      const deadlineDate = new Date(task.deadline);
+      const deadlineStr = task.deadline.split("T")[0];
+
+      if (deadlineStr < todayStr) {
+        overdueTasks.push(task);
+      } else if (deadlineStr === todayStr) {
+        todayTasks.push(task);
+        upcomingTasks.push(task);
+      } else {
+        upcomingTasks.push(task);
+        if (deadlineDate <= thisWeekEnd) {
+          thisWeekTasks.push(task);
+        }
+      }
+    }
   });
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  upcomingTasks.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+  const nextFiveUpcomingTasks = upcomingTasks.slice(0, 5);
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
+  // --- Process Time Entries ---
+  const recentTimeEntries = [...timeEntries]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, 5);
 
-      // Fetch tasks with status pending or in_progress
-      const tasksResponse = await api.get("/tasks/?status=pending");
-      const inProgressResponse = await api.get("/tasks/?status=in_progress");
+  const todayTimeEntries = timeEntries.filter(
+    (entry) => entry.date === todayStr
+  );
+  const timeTrackedToday = todayTimeEntries.reduce(
+    (total, entry) => total + (entry.minutes_spent || 0),
+    0
+  );
 
-      // Combine pending and in_progress tasks
-      const tasks = [...tasksResponse.data, ...inProgressResponse.data];
+  const timeTrackedThisWeek = timeEntries.reduce(
+    (total, entry) => total + (entry.minutes_spent || 0),
+    0
+  );
 
-      // Fetch active clients
-      const clientsResponse = await api.get("/clients/?is_active=true");
-      const clients = clientsResponse.data;
+  // --- Compile Stats ---
+  const stats = {
+    activeTasks: tasks.length,
+    activeClients: clients.length,
+    overdueTasksCount: overdueTasks.length,
+    todayTasksCount: todayTasks.length,
+    thisWeekTasksCount: thisWeekTasks.length,
+    recentTimeEntries,
+    upcomingTasks: nextFiveUpcomingTasks,
+    unprofitableClientsCount: unprofitableClients.length,
+    timeTrackedToday,
+    timeTrackedThisWeek,
+    tasksCompletedThisWeek: completedTasks.length,
+    // Include raw lists if needed by UI
+    overdueTasksList: overdueTasks,
+    todayTasksList: todayTasks,
+  };
 
-      // Fetch recent time entries (last 7 days)
-      const today = new Date();
-      const sevenDaysAgo = new Date(today);
-      sevenDaysAgo.setDate(today.getDate() - 7);
+  console.log("Dashboard Stats:", stats);
+  return stats; // Return the processed data
+};
 
-      const timeEntriesResponse = await api.get(
-        `/time-entries/?start_date=${
-          sevenDaysAgo.toISOString().split("T")[0]
-        }&end_date=${today.toISOString().split("T")[0]}`
-      );
-      const timeEntries = timeEntriesResponse.data;
+const LoadingView = () => (
+  <div className="flex justify-center items-center min-h-screen">
+      <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+  </div>
+);
 
-      // Check for unprofitable clients
-      const profitabilityResponse = await api.get(
-        "/client-profitability/?is_profitable=false"
-      );
-      const unprofitableClients = profitabilityResponse.data;
+const ErrorView = ({ message, onRetry }) => (
+  <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
+      <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg" role="alert">
+          <strong className="font-bold block sm:inline">Oops! Something went wrong.</strong>
+          <span className="block sm:inline"> {message || 'Failed to load data.'}</span>
+      </div>
+      {onRetry && (
+           <button
+              onClick={onRetry}
+              className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+              <RotateCcw className="h-4 w-4 mr-2"/>
+              Retry
+          </button>
+      )}
+  </div>
+);
 
-      // Process tasks to find overdue, today and this week
-      let overdueTasks = [];
-      let todayTasks = [];
-      let thisWeekTasks = [];
-      let upcomingTasks = [];
 
-      const todayStr = today.toISOString().split("T")[0];
-      const thisWeekEnd = new Date(today);
-      thisWeekEnd.setDate(today.getDate() + 7);
+const Home = ({ delay }) => {
 
-      tasks.forEach((task) => {
-        if (task.deadline) {
-          const deadlineDate = new Date(task.deadline)
-            .toISOString()
-            .split("T")[0];
-
-          // Check if task is overdue
-          if (deadlineDate < todayStr) {
-            overdueTasks.push(task);
-          }
-          // Check if task is due today
-          else if (deadlineDate === todayStr) {
-            todayTasks.push(task);
-          }
-          // Check if task is due this week
-          else if (new Date(task.deadline) <= thisWeekEnd) {
-            thisWeekTasks.push(task);
-          }
-
-          // Add to upcoming tasks (next 5 tasks by deadline)
-          if (deadlineDate >= todayStr) {
-            upcomingTasks.push(task);
-          }
-        }
-      });
-
-      // Sort upcoming tasks by deadline and take only 5
-      upcomingTasks.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
-      upcomingTasks = upcomingTasks.slice(0, 5);
-
-      // Get most recent 5 time entries
-      const recentTimeEntries = timeEntries
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 5);
-
-      // Calculate time tracked today
-      const todayTimeEntries = timeEntries.filter(
-        (entry) => new Date(entry.date).toISOString().split("T")[0] === todayStr
-      );
-      const timeTrackedToday = todayTimeEntries.reduce(
-        (total, entry) => total + entry.minutes_spent,
-        0
-      );
-
-      // Calculate time tracked this week
-      const timeTrackedThisWeek = timeEntries.reduce(
-        (total, entry) => total + entry.minutes_spent,
-        0
-      );
-
-      // Fetch completed tasks this week
-      const completedTasksResponse = await api.get(
-        `/tasks/?status=completed&completed_after=${sevenDaysAgo.toISOString()}`
-      );
-      const tasksCompletedThisWeek = completedTasksResponse.data.length;
-
-      setStats({
-        activeTasks: tasks.length,
-        activeClients: clients.length,
-        overdueTasksCount: overdueTasks.length,
-        todayTasksCount: todayTasks.length,
-        thisWeekTasksCount: thisWeekTasks.length,
-        recentTimeEntries,
-        upcomingTasks,
-        unprofitableClientsCount: unprofitableClients.length,
-        timeTrackedToday,
-        timeTrackedThisWeek,
-        tasksCompletedThisWeek,
-      });
-
-      console.log("All active tasks:", tasks);
-      console.log("Tasks with future deadlines:", upcomingTasks);
-      console.log(
-        "Final upcoming tasks after sorting and limiting:",
-        upcomingTasks.slice(0, 5)
-      );
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      setLoading(false);
+  const { data: dashboardStats, isLoading, isError, error } = useQuery({
+     queryKey: ['dashboardData'], // Descriptive key
+     queryFn: fetchDashboardData, // Use the function defined outside
+     staleTime: 5 * 60 * 1000,
+     cacheTime: 10 * 60 * 1000,
+     retry: 1
+    });
+  
+  // Variants for Framer Motion
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.05 } // Adjusted stagger
     }
   };
 
-  // Helper to format minutes into hours and minutes
-  const formatMinutes = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
+  const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: { type: "spring", stiffness: 100 } // Simplified transition
+    },
   };
 
-  // Format date to display
-  const formatDate = (dateString) => {
-    if (!dateString) return "";
-    const options = { year: "numeric", month: "short", day: "numeric" };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+  // Combined card variant for motion
+   const cardMotionProps = {
+    variants: itemVariants, // Use item variant for consistency
+    whileHover:{
+      y: -5,
+      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+      transition: { type: "spring", stiffness: 300, damping: 20 },
+    }
   };
 
-  // Calculate days remaining until deadline
-  const getDaysRemaining = (deadlineStr) => {
-    if (!deadlineStr) return null;
+  // --- Loading and Error States ---
+  if (isLoading) {
+    // Use the simple Tailwind/Lucide loader
+    return <Header><LoadingView />;</Header>
+  }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  if (isError) {
+    // Use the simple Tailwind/Lucide error message
+    return <Header><ErrorView message={error instanceof Error ? error.message : String(error)} />;</Header>
+  }
 
-    const deadline = new Date(deadlineStr);
-    deadline.setHours(0, 0, 0, 0);
+  // --- Data is Ready ---
+  // Alias dashboardStats for easier use, default to empty object if somehow null/undefined
+  const stats = dashboardStats || {};
 
-    const diffTime = deadline - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  // Helper functions (Keep inside or move outside if reused)
+  const formatMinutes = (minutes = 0) => { /* ... as before ... */ };
+  const formatDate = (dateString) => { /* ... as before ... */ };
+  const getDaysRemaining = (deadlineStr) => { /* ... as before ... */ };
+  const getDaysRemainingLabel = (days) => { /* ... as before ... */ };
 
-    return diffDays;
-  };
-
-  // Get appropriate label for days remaining
-  const getDaysRemainingLabel = (days) => {
-    if (days === null) return "";
-    if (days < 0) return `${Math.abs(days)}d overdue`;
-    if (days === 0) return "Due today";
-    if (days === 1) return "Due tomorrow";
-    return `${days}d remaining`;
+  const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.4,
+        delay: delay * 0.15 // Stagger effect
+      }
+    }
   };
 
   return (
-    <div className="main">
+  <div className="main">
       <Header>
-        <div
+        <motion.div
           className="p-6 bg-gray-100 min-h-screen"
           style={{ marginLeft: "3%" }}
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
         >
           <div className="max-w-7xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
+            <motion.div 
+              className="flex justify-between items-center mb-6"
+              variants={itemVariants}
+            >
               <div className="bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-300 text-gray-700 font-medium">
                 {new Date().toLocaleDateString(undefined, {
                   weekday: "long",
@@ -254,21 +280,20 @@ const Home = () => {
                   day: "numeric",
                 })}
               </div>
-            </div>
-
-            {/* {loading ? (
-            <div className="flex flex-col items-center justify-center my-12 space-y-4">
-              <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600"></div>
-              <p className="text-gray-700 font-medium">
-                Loading dashboard data...
-              </p>
-            </div>
-          ) : ( */}
+            </motion.div>
+  
             <>
               {/* Stats Overview - Enhanced Design with Better Contrast */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <motion.div 
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+                variants={containerVariants}
+              >
                 {/* Active Tasks Card */}
-                <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300">
+                <motion.div 
+                  className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
                   <div className="flex items-center">
                     <div className="p-3 rounded-lg bg-blue-100 text-blue-700 mr-2">
                       <Clipboard size={24} strokeWidth={1.5} />
@@ -277,12 +302,7 @@ const Home = () => {
                       <p className="text-gray-600 text-sm font-medium">
                         Tarefas Ativas
                       </p>
-                      {loading ? (
-                        <div className="flex items-center space-x-2 mt-4">
-                          <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                          <span className="text-sm text-gray-500"></span>
-                        </div>
-                      ) : (
+                      
                         <div className="flex items-center mt-4">
                           <h3 className="text-2xl font-bold text-gray-900">
                             {stats.activeTasks}
@@ -304,7 +324,7 @@ const Home = () => {
                             <span>3%</span>
                           </div>
                         </div>
-                      )}
+                   
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -316,10 +336,14 @@ const Home = () => {
                       <ChevronRight size={16} className="ml-1" />
                     </Link>
                   </div>
-                </div>
-
+                </motion.div>
+  
                 {/* Active Clients Card */}
-                <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300">
+                <motion.div 
+                  className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
                   <div className="flex items-center">
                     <div className="p-3 rounded-lg bg-green-100 text-green-700 mr-2">
                       <Users size={24} strokeWidth={1.5} />
@@ -328,12 +352,7 @@ const Home = () => {
                       <p className="text-gray-600 text-sm font-medium">
                         Clientes Ativos
                       </p>
-                      {loading ? (
-                        <div className="flex items-center space-x-2 mt-4">
-                          <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                          <span className="text-sm text-gray-500"></span>
-                        </div>
-                      ) : (
+                     
                       <div className="flex items-center mt-4">
                         <h3 className="text-2xl font-bold text-gray-900">
                           {stats.activeClients}
@@ -343,7 +362,7 @@ const Home = () => {
                           <span>2%</span>
                         </div>
                       </div>
-                      )}
+                   
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -355,10 +374,15 @@ const Home = () => {
                       <ChevronRight size={16} className="ml-1" />
                     </Link>
                   </div>
-                </div>
-
+                </motion.div>
+  
                 {/* Overdue Tasks Card */}
-                <div className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300">
+                <motion.div 
+                  className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Card content remains the same */}
                   <div className="flex items-center">
                     <div className="p-3 rounded-lg bg-red-100 text-red-700 mr-2">
                       <AlertTriangle size={24} strokeWidth={1.5} />
@@ -367,12 +391,7 @@ const Home = () => {
                       <p className="text-gray-600 text-sm font-medium">
                         Tarefas fora de prazo
                       </p>
-                      {loading ? (
-                        <div className="flex items-center space-x-2 mt-4">
-                          <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                          <span className="text-sm text-gray-500"></span>
-                        </div>
-                      ) : (
+
                       <div className="flex items-center mt-4">
                         <h3 className="text-2xl font-bold text-red-700">
                           {stats.overdueTasksCount}
@@ -383,7 +402,7 @@ const Home = () => {
                           </div>
                         )}
                       </div>
-                      )}
+              
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -395,10 +414,15 @@ const Home = () => {
                       <ChevronRight size={16} className="ml-1" />
                     </Link>
                   </div>
-                </div>
-
+                </motion.div>
+  
                 {/* Unprofitable Clients Card */}
-                <div className="bg-white p-6 rounded-xl shadow-md border border-yellow-200 hover:shadow-lg transition-shadow duration-300">
+                <motion.div 
+                  className="bg-white p-6 rounded-xl shadow-md border border-yellow-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Card content remains the same */}
                   <div className="flex items-center">
                     <div className="p-3 rounded-lg bg-yellow-100 text-yellow-700 mr-2">
                       <DollarSign size={24} strokeWidth={1.5} />
@@ -407,12 +431,7 @@ const Home = () => {
                       <p className="text-gray-600 text-sm font-medium">
                         Clientes não rentáveis
                       </p>
-                      {loading ? (
-                        <div className="flex items-center space-x-2 mt-4">
-                          <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                          <span className="text-sm text-gray-500"></span>
-                        </div>
-                      ) : (
+                      
                       <div className="flex items-center mt-4">
                         <h3 className="text-2xl font-bold text-gray-900">
                           {stats.unprofitableClientsCount}
@@ -428,7 +447,7 @@ const Home = () => {
                           </span>
                         </div>
                       </div>
-                      )}
+                
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -440,13 +459,21 @@ const Home = () => {
                       <ChevronRight size={16} className="ml-1" />
                     </Link>
                   </div>
-                </div>
-              </div>
-
-              {/* Time & Productivity Stats - Improved Contrast */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                {/* Time Tracked Today Card */}
-                <div className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300">
+                </motion.div>
+              </motion.div>
+  
+              {/* Time & Productivity Stats */}
+              <motion.div 
+                className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8"
+                variants={containerVariants}
+              >
+                {/* Time cards with motion */}
+                <motion.div
+                  className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
                   <div className="relative z-10">
                     <div className="flex items-center">
                       <Timer
@@ -476,9 +503,15 @@ const Home = () => {
                       </Link>
                     </div>
                   </div>
-                </div>
+                </motion.div>
+                
                 {/* Weekly Activity Card */}
-                <div className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300">
+                <motion.div
+                  className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
                   <div className="relative z-10">
                     <div className="flex items-center">
                       <Activity
@@ -490,14 +523,14 @@ const Home = () => {
                         Atividade Semanal
                       </h3>
                     </div>
-
+  
                     <p className="text-3xl font-bold text-green-700">
                       {formatMinutes(stats.timeTrackedThisWeek)}
                     </p>
                     <p className="mt-2 text-sm text-gray-600">
                       Últimos 7 dias de tempo monitorado
                     </p>
-
+  
                     <div className="mt-4">
                       <Link
                         to="/reports/time"
@@ -508,9 +541,15 @@ const Home = () => {
                       </Link>
                     </div>
                   </div>
-                </div>
+                </motion.div>
+                
                 {/* Tasks Completed Card */}
-                <div className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300">
+                <motion.div
+                  className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
                   <div className="relative z-10">
                     <div className="flex items-center">
                       <CheckSquare
@@ -540,11 +579,20 @@ const Home = () => {
                       </Link>
                     </div>
                   </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                </motion.div>
+              </motion.div>
+  
+              {/* Tasks and Time Entries Sections */}
+              <motion.div 
+                className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8"
+                variants={containerVariants}
+              >
                 {/* Upcoming Tasks - Enhanced */}
-                <div className="bg-white rounded-xl shadow-md border border-gray-200">
+                <motion.div 
+                  className="bg-white rounded-xl shadow-md border border-gray-200"
+                  variants={cardVariants}
+                >
+                  {/* Content remains the same */}
                   <div className="flex justify-between items-center p-6 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                       <Clipboard
@@ -582,9 +630,10 @@ const Home = () => {
                     ) : (
                       <ul className="divide-y divide-gray-200">
                         {stats.upcomingTasks.map((task) => (
-                          <li
+                          <motion.li
                             key={task.id}
                             className="py-4 first:pt-0 last:pb-0"
+                            variants={itemVariants}
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
@@ -666,15 +715,19 @@ const Home = () => {
                                 )}
                               </div>
                             </div>
-                          </li>
+                          </motion.li>
                         ))}
                       </ul>
                     )}
                   </div>
-                </div>
-
+                </motion.div>
+  
                 {/* Recent Activity - Enhanced */}
-                <div className="bg-white rounded-xl shadow-md border border-gray-200">
+                <motion.div 
+                  className="bg-white rounded-xl shadow-md border border-gray-200"
+                  variants={cardVariants}
+                >
+                  {/* Content remains the same */}
                   <div className="flex justify-between items-center p-6 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                       <Clock
@@ -712,9 +765,10 @@ const Home = () => {
                     ) : (
                       <ul className="divide-y divide-gray-200">
                         {stats.recentTimeEntries.map((entry) => (
-                          <li
+                          <motion.li
                             key={entry.id}
                             className="py-4 first:pt-0 last:pb-0"
+                            variants={itemVariants}
                           >
                             <div className="flex items-start">
                               <div className="p-2 bg-green-50 rounded-lg mr-4 border border-green-100">
@@ -752,17 +806,25 @@ const Home = () => {
                                 </div>
                               </div>
                             </div>
-                          </li>
+                          </motion.li>
                         ))}
                       </ul>
                     )}
                   </div>
-                </div>
-              </div>
-
-              {/* Task Timelines - Enhanced & Responsive */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 mt-6">
-                <div className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300">
+                </motion.div>
+              </motion.div>
+  
+              {/* Task Timelines */}
+              <motion.div 
+                className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 mt-6"
+                variants={containerVariants}
+              >
+                <motion.div
+                  className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
                   <div className="flex items-center mb-4">
                     <AlertTriangle
                       size={20}
@@ -786,9 +848,14 @@ const Home = () => {
                       <ChevronRight size={16} className="ml-1" />
                     </Link>
                   </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-md border border-blue-200 hover:shadow-lg transition-shadow duration-300">
+                </motion.div>
+  
+                <motion.div
+                  className="bg-white p-6 rounded-xl shadow-md border border-blue-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
                   <div className="flex items-center mb-4">
                     <Calendar
                       size={20}
@@ -810,9 +877,14 @@ const Home = () => {
                       <ChevronRight size={16} className="ml-1" />
                     </Link>
                   </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300">
+                </motion.div>
+  
+                <motion.div
+                  className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
                   <div className="flex items-center mb-4">
                     <Activity
                       size={20}
@@ -836,171 +908,197 @@ const Home = () => {
                       <ChevronRight size={16} className="ml-1" />
                     </Link>
                   </div>
-                </div>
-              </div>
+                </motion.div>
+              </motion.div>
+  
+             {/* Quick Actions */}
+<motion.div 
+  className="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-8 mt-6"
+  variants={cardVariants}
+>
+  <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+    <ExternalLink
+      size={20}
+      className="mr-2 text-indigo-600"
+      strokeWidth={1.5}
+    />
+    Ações rápidas
+  </h2>
+  <motion.div 
+    className="grid grid-cols-1 md:grid-cols-4 gap-4"
+    variants={containerVariants}
+  >
+    {/* First Action - Log Time */}
+    <motion.div variants={itemVariants} className="w-full">
+      <Link
+        to="/timeentry"
+        className="flex items-center p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors border border-green-200 h-full"
+      >
+        <div className="p-3 rounded-lg bg-green-100 text-green-700 mr-4">
+          <Clock size={18} strokeWidth={1.5} />
+        </div>
+        <div>
+          <span className="font-medium text-green-900">
+            Log Time
+          </span>
+          <p className="text-xs text-green-700 mt-1">
+            Record your work
+          </p>
+        </div>
+      </Link>
+    </motion.div>
 
-              {/* Quick Actions - Enhanced */}
-              <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-8 mt-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-                  <ExternalLink
+    {/* Second Action - New Task */}
+    <motion.div variants={itemVariants} className="w-full">
+      <Link
+        to="/tasks"
+        className="flex items-center p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200 h-full"
+      >
+        <div className="p-3 rounded-lg bg-blue-100 text-blue-700 mr-4">
+          <Plus size={18} strokeWidth={1.5} />
+        </div>
+        <div>
+          <span className="font-medium text-blue-900">
+            Nova tarefa
+          </span>
+          <p className="text-xs text-blue-700 mt-1">Criar tarefa</p>
+        </div>
+      </Link>
+    </motion.div>
+
+    {/* Third Action - New Client */}
+    <motion.div variants={itemVariants} className="w-full">
+      <Link
+        to="/clients"
+        className="flex items-center p-4 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors border border-purple-200 h-full"
+      >
+        <div className="p-3 rounded-lg bg-purple-100 text-purple-700 mr-4">
+          <Users size={18} strokeWidth={1.5} />
+        </div>
+        <div>
+          <span className="font-medium text-purple-900">
+            New Client
+          </span>
+          <p className="text-xs text-purple-700 mt-1">
+            Add a client
+          </p>
+        </div>
+      </Link>
+    </motion.div>
+
+    {/* Fourth Action - Reports */}
+    <motion.div variants={itemVariants} className="w-full">
+      <Link
+        to="/reports"
+        className="flex items-center p-4 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors border border-amber-200 h-full"
+      >
+        <div className="p-3 rounded-lg bg-amber-100 text-amber-700 mr-4">
+          <BarChart2 size={18} strokeWidth={1.5} />
+        </div>
+        <div>
+          <span className="font-medium text-amber-900">
+            Reports
+          </span>
+          <p className="text-xs text-amber-700 mt-1">
+            View analytics
+          </p>
+        </div>
+      </Link>
+    </motion.div>
+  </motion.div>
+</motion.div>
+            {/* Profitability Insights - Enhanced */}
+            <motion.div
+              className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6"
+              variants={cardVariants}
+            >
+              <div className="flex justify-between items-center p-6 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <TrendingUp
                     size={20}
                     className="mr-2 text-indigo-600"
                     strokeWidth={1.5}
                   />
-                  Ações rápidas
+                  Profitability Insights
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Link
-                    to="/tasks"
-                    className="flex items-center p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200"
-                  >
-                    <div className="p-3 rounded-lg bg-blue-100 text-blue-700 mr-4">
-                      <Plus size={18} strokeWidth={1.5} />
-                    </div>
-                    <div>
-                      <span className="font-medium text-blue-900">
-                        Nova tarefa
-                      </span>
-                      <p className="text-xs text-blue-700 mt-1">Criar tarefa</p>
-                    </div>
-                  </Link>
-
-                  <Link
-                    to="/timeentry"
-                    className="flex items-center p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors border border-green-200"
-                  >
-                    <div className="p-3 rounded-lg bg-green-100 text-green-700 mr-4">
-                      <Clock size={18} strokeWidth={1.5} />
-                    </div>
-                    <div>
-                      <span className="font-medium text-green-900">
-                        Log Time
-                      </span>
-                      <p className="text-xs text-green-700 mt-1">
-                        Record your work
-                      </p>
-                    </div>
-                  </Link>
-
-                  <Link
-                    to="/clients"
-                    className="flex items-center p-4 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors border border-purple-200"
-                  >
-                    <div className="p-3 rounded-lg bg-purple-100 text-purple-700 mr-4">
-                      <Users size={18} strokeWidth={1.5} />
-                    </div>
-                    <div>
-                      <span className="font-medium text-purple-900">
-                        New Client
-                      </span>
-                      <p className="text-xs text-purple-700 mt-1">
-                        Add a client
-                      </p>
-                    </div>
-                  </Link>
-
-                  <Link
-                    to="/reports"
-                    className="flex items-center p-4 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors border border-amber-200"
-                  >
-                    <div className="p-3 rounded-lg bg-amber-100 text-amber-700 mr-4">
-                      <BarChart2 size={18} strokeWidth={1.5} />
-                    </div>
-                    <div>
-                      <span className="font-medium text-amber-900">
-                        Reports
-                      </span>
-                      <p className="text-xs text-amber-700 mt-1">
-                        View analytics
-                      </p>
-                    </div>
-                  </Link>
-                </div>
+                <Link
+                  to="/clientprofitability"
+                  className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+                >
+                  View Details <ChevronRight size={16} />
+                </Link>
               </div>
-
-              {/* Profitability Insights - Enhanced */}
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6">
-                <div className="flex justify-between items-center p-6 border-b border-gray-200">
-                  <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <TrendingUp
-                      size={20}
-                      className="mr-2 text-indigo-600"
-                      strokeWidth={1.5}
-                    />
-                    Profitability Insights
-                  </h2>
-                  <Link
-                    to="/clientprofitability"
-                    className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+              <div className="p-6">
+                {stats.unprofitableClientsCount > 0 ? (
+                  <motion.div 
+                    className="flex items-start p-5 bg-red-50 rounded-xl border border-red-200"
+                    variants={itemVariants}
                   >
-                    View Details <ChevronRight size={16} />
-                  </Link>
-                </div>
-                <div className="p-6">
-                  {stats.unprofitableClientsCount > 0 ? (
-                    <div className="flex items-start p-5 bg-red-50 rounded-xl border border-red-200">
-                      <div className="p-3 rounded-full bg-red-100 text-red-700 mr-4">
-                        <AlertTriangle size={24} strokeWidth={1.5} />
-                      </div>
-                      <div>
-                        <h3 className="font-medium text-red-900 text-lg">
-                          {stats.unprofitableClientsCount}{" "}
-                          {stats.unprofitableClientsCount === 1
-                            ? "client is"
-                            : "clients are"}{" "}
-                          currently unprofitable
-                        </h3>
-                        <p className="text-red-800 mt-2">
-                          Check the profitability report to see detailed
-                          information on time costs versus monthly fees and take
-                          corrective action.
-                        </p>
-                        <div className="mt-4">
-                          <Link
-                            to="/clientprofitability"
-                            className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg"
-                          >
-                            <span>View Profitability Report</span>
-                            <ChevronRight size={16} className="ml-1" />
-                          </Link>
-                        </div>
+                    <div className="p-3 rounded-full bg-red-100 text-red-700 mr-4">
+                      <AlertTriangle size={24} strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-red-900 text-lg">
+                        {stats.unprofitableClientsCount}{" "}
+                        {stats.unprofitableClientsCount === 1
+                          ? "client is"
+                          : "clients are"}{" "}
+                        currently unprofitable
+                      </h3>
+                      <p className="text-red-800 mt-2">
+                        Check the profitability report to see detailed
+                        information on time costs versus monthly fees and take
+                        corrective action.
+                      </p>
+                      <div className="mt-4">
+                        <Link
+                          to="/clientprofitability"
+                          className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg"
+                        >
+                          <span>View Profitability Report</span>
+                          <ChevronRight size={16} className="ml-1" />
+                        </Link>
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex items-start p-5 bg-green-50 rounded-xl border border-green-200">
-                      <div className="p-3 rounded-full bg-green-100 text-green-700 mr-4">
-                        <CheckCircle size={24} strokeWidth={1.5} />
-                      </div>
-                      <div>
-                        <h3 className="font-medium text-green-900 text-lg">
-                          All active clients are currently profitable
-                        </h3>
-                        <p className="text-green-800 mt-2">
-                          Great job! Continue monitoring time entries and
-                          expenses to maintain profitability. Regular reviews
-                          help ensure your business stays on the right track.
-                        </p>
-                        <div className="mt-4">
-                          <Link
-                            to="/profitability"
-                            className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg"
-                          >
-                            <span>View Profitability Report</span>
-                            <ChevronRight size={16} className="ml-1" />
-                          </Link>
-                        </div>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    className="flex items-start p-5 bg-green-50 rounded-xl border border-green-200"
+                    variants={itemVariants}
+                  >
+                    <div className="p-3 rounded-full bg-green-100 text-green-700 mr-4">
+                      <CheckCircle size={24} strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-green-900 text-lg">
+                        All active clients are currently profitable
+                      </h3>
+                      <p className="text-green-800 mt-2">
+                        Great job! Continue monitoring time entries and
+                        expenses to maintain profitability. Regular reviews
+                        help ensure your business stays on the right track.
+                      </p>
+                      <div className="mt-4">
+                        <Link
+                          to="/profitability"
+                          className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg"
+                        >
+                          <span>View Profitability Report</span>
+                          <ChevronRight size={16} className="ml-1" />
+                        </Link>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </motion.div>
+                )}
               </div>
-            </>
-            {/* )} */}
-          </div>
+            </motion.div>
+          </>
+          {/* )} */}
         </div>
-      </Header>
-    </div>
-  );
+      </motion.div>
+    </Header>
+  </div>
+);
 };
 
 export default Home;

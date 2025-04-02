@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo, useCallback } from "react"; // Removed useEffect
 import { toast } from "react-toastify";
 import Header from "../components/Header";
 import api from "../api";
 import "../styles/Home.css";
+import { motion, AnimatePresence } from "framer-motion";
+import { useQuery } from '@tanstack/react-query';
 import {
   CheckCircle,
   Clock,
@@ -19,365 +21,434 @@ import {
   ChevronUp,
   Tag,
   ArrowUp,
+  RotateCcw,
   ArrowDown,
 } from "lucide-react";
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
+import { Loader2 } from 'lucide-react';
+
+const STATUS_OPTIONS = [
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const PRIORITY_OPTIONS = [
+  { value: 1, label: "Urgent", color: "text-red-600" }, // Simplified color for example
+  { value: 2, label: "High", color: "text-orange-600" },
+  { value: 3, label: "Medium", color: "text-yellow-600" },
+  { value: 4, label: "Low", color: "text-blue-600" },
+  { value: 5, label: "Can Wait", color: "text-gray-500" },
+];
+
+// --- Helper Components (Simplified Loading/Error for Tailwind) ---
+const LoadingView = () => (
+  <div className="flex justify-center items-center min-h-screen">
+      <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+  </div>
+);
+
+const ErrorView = ({ message, onRetry }) => (
+    <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
+        <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg" role="alert">
+            <strong className="font-bold block sm:inline">Oops! Something went wrong.</strong>
+            <span className="block sm:inline"> {message || 'Failed to load data.'}</span>
+        </div>
+        {onRetry && (
+             <button
+                onClick={onRetry}
+                className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+                <RotateCcw className="h-4 w-4 mr-2"/>
+                Retry
+            </button>
+        )}
+    </div>
+);
+
+
+// --- Data Fetching Function (Outside Component) ---
+const fetchTaskManagementData = async () => {
+    console.log("Fetching task management data...");
+    const [tasksRes, clientsRes, usersRes, categoriesRes] = await Promise.all([
+        api.get("/tasks/"),
+        api.get("/clients/?is_active=true"), // Fetch only active clients for dropdowns
+        api.get("/profiles/"), // Assuming profiles are users
+        api.get("/task-categories/")
+    ]);
+    console.log("Data fetched:", { tasks: tasksRes.data.length, clients: clientsRes.data.length, users: usersRes.data.length, categories: categoriesRes.data.length });
+    return {
+        tasks: tasksRes.data || [],
+        clients: clientsRes.data || [],
+        users: usersRes.data || [],
+        categories: categoriesRes.data || [],
+    };
+};
+
+// --- Main Component ---
 const TaskManagement = () => {
-  const [loading, setLoading] = useState(true);
-  const [tasks, setTasks] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [filteredTasks, setFilteredTasks] = useState([]);
+  // --- React Query Client ---
+  const queryClient = useQueryClient();
+
+  // --- Local UI State ---
   const [selectedTask, setSelectedTask] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [showNaturalLanguageForm, setShowNaturalLanguageForm] = useState(false);
   const [naturalLanguageInput, setNaturalLanguageInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortConfig, setSortConfig] = useState({
-    key: "deadline",
-    direction: "asc",
-  });
-  const [filters, setFilters] = useState({
-    status: "",
-    client: "",
-    priority: "",
-    assignedTo: "",
-    category: "",
-  });
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    client: "",
-    category: "",
-    assigned_to: "",
-    status: "pending",
-    priority: 3,
-    deadline: "",
-    estimated_time_minutes: "",
+  const [sortConfig, setSortConfig] = useState({ key: "deadline", direction: "asc" });
+  const [filters, setFilters] = useState({ status: "", client: "", priority: "", assignedTo: "", category: "" });
+
+  // Function to initialize or reset form data
+   const getInitialFormData = () => ({
+    title: "", description: "", client: "", category: "", assigned_to: "",
+    status: "pending", priority: 3, deadline: "", estimated_time_minutes: "",
   });
 
-  const STATUS_OPTIONS = [
-    { value: "pending", label: "Pending" },
-    { value: "in_progress", label: "In Progress" },
-    { value: "completed", label: "Completed" },
-    { value: "cancelled", label: "Cancelled" },
-  ];
+  const [formData, setFormData] = useState(getInitialFormData());
 
-  const PRIORITY_OPTIONS = [
-    { value: 1, label: "Urgent", color: "bg-red-100 text-red-800" },
-    { value: 2, label: "High", color: "bg-orange-100 text-orange-800" },
-    { value: 3, label: "Medium", color: "bg-yellow-100 text-yellow-800" },
-    { value: 4, label: "Low", color: "bg-blue-100 text-blue-800" },
-    { value: 5, label: "Can Wait", color: "bg-gray-100 text-gray-800" },
-  ];
+  // Initialize formData state
+  useState(() => {
+      setFormData(getInitialFormData());
+  });
 
-  useEffect(() => {
-    fetchData();
-  }, []);
 
-  useEffect(() => {
-    if (tasks.length > 0) {
-      applyFiltersAndSort();
-    }
-  }, [searchTerm, filters, sortConfig, tasks]);
+  // --- Data Fetching using React Query ---
+  const { data, isLoading: isLoadingData, isError, error, refetch } = useQuery({
+    queryKey: ['taskManagementData'], // Unique key for this data set
+    queryFn: fetchTaskManagementData,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    // Keep previous data while refetching for smoother UX
+    // keepPreviousData: true, // Consider enabling if pagination/infinite scroll is added
+  });
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
+  // Extracted data lists (provide defaults)
+  const tasks = data?.tasks ?? [];
+  const clients = data?.clients ?? [];
+  const users = data?.users ?? [];
+  const categories = data?.categories ?? [];
 
-      // Fetch tasks
-      const tasksResponse = await api.get("/tasks/");
-      setTasks(tasksResponse.data);
-      setFilteredTasks(tasksResponse.data);
 
-      // Fetch clients for dropdown
-      const clientsResponse = await api.get("/clients/");
-      setClients(clientsResponse.data);
+  // --- Mutations using React Query ---
 
-      // Fetch users for dropdown
-      const usersResponse = await api.get("/profiles/");
-      setUsers(usersResponse.data);
-
-      // Fetch categories for dropdown
-      const categoriesResponse = await api.get("/task-categories/");
-      setCategories(categoriesResponse.data);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      toast.error("Failed to load task data");
-    } finally {
-      setLoading(false);
-    }
+  // Base mutation options for invalidation
+  const mutationOptions = {
+      onSuccess: () => {
+          console.log("Mutation successful, invalidating taskManagementData query");
+          queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
+          resetForm(); // Close form and reset fields after success
+      },
+      onError: (err, variables, context) => {
+          console.error("Mutation failed:", err);
+          const errorMessage = err.response?.data?.detail || err.message || "An error occurred";
+          toast.error(`Failed: ${errorMessage}`);
+      },
   };
 
-  const applyFiltersAndSort = () => {
+  // Create Task Mutation
+  const createTaskMutation = useMutation({
+      mutationFn: (newTaskData) => api.post("/tasks/", newTaskData),
+      ...mutationOptions,
+      onSuccess: () => {
+          toast.success("Task created successfully");
+          mutationOptions.onSuccess(); // Call base onSuccess
+      }
+  });
+
+  // Update Task Mutation
+  const updateTaskMutation = useMutation({
+      mutationFn: ({ id, updatedData }) => api.put(`/tasks/${id}/`, updatedData),
+      ...mutationOptions,
+      onSuccess: () => {
+          toast.success("Task updated successfully");
+          mutationOptions.onSuccess();
+      }
+  });
+
+   // Update Task Status Mutation (using PATCH)
+  const updateTaskStatusMutation = useMutation({
+      mutationFn: ({ id, status }) => api.patch(`/tasks/${id}/`, { status }),
+       onSuccess: (data, variables) => { // variables contains { id, status }
+          toast.success(`Task marked as ${variables.status}`);
+          queryClient.invalidateQueries({ queryKey: ['taskManagementData'] }); // Only invalidate, don't reset form
+      },
+      onError: (err) => {
+          console.error("Error updating task status:", err);
+          toast.error("Failed to update task status");
+      }
+  });
+
+
+  // Delete Task Mutation
+  const deleteTaskMutation = useMutation({
+      mutationFn: (taskId) => api.delete(`/tasks/${taskId}/`),
+      onSuccess: () => {
+          toast.success("Task deleted successfully");
+          queryClient.invalidateQueries({ queryKey: ['taskManagementData'] }); // Only invalidate
+      },
+       onError: (err) => {
+          console.error("Error deleting task:", err);
+          toast.error("Failed to delete task");
+      }
+  });
+
+   // Natural Language Task Creation Mutation (Example)
+   const createNlpTaskMutation = useMutation({
+        mutationFn: (nlpData) => api.post("/tasks/", nlpData), // Assuming same endpoint
+        ...mutationOptions, // Use base options
+        onSuccess: () => {
+            toast.success("Task created from text");
+            setNaturalLanguageInput(""); // Clear input
+            setShowNaturalLanguageForm(false); // Close NL form
+            mutationOptions.onSuccess(); // Invalidate and reset main form (if open)
+        },
+        onError: (err) => {
+            console.error("Error creating NLP task:", err);
+            toast.error("Failed to create task from text");
+        }
+   });
+
+
+  // --- Client-Side Filtering and Sorting using useMemo ---
+  const filteredAndSortedTasks = useMemo(() => {
+    if (!tasks) return []; // Guard against initial undefined state
+    console.log(`Memo: Filtering/Sorting ${tasks.length} tasks. Filters:`, filters, `Search:`, searchTerm, `Sort:`, sortConfig);
+
     let result = [...tasks];
 
     // Apply search term
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      result = result.filter(
-        (task) =>
-          task.title.toLowerCase().includes(term) ||
-          (task.description && task.description.toLowerCase().includes(term))
+      result = result.filter(task =>
+        task.title?.toLowerCase().includes(term) ||
+        task.description?.toLowerCase().includes(term) ||
+        clients.find(c => c.id === task.client)?.name.toLowerCase().includes(term) || // Search client name
+        users.find(u => u.id === task.assigned_to)?.username.toLowerCase().includes(term) // Search assignee username
       );
     }
 
     // Apply filters
-    if (filters.status) {
-      result = result.filter((task) => task.status === filters.status);
-    }
-    if (filters.client) {
-      result = result.filter((task) => task.client === filters.client);
-    }
-    if (filters.priority) {
-      result = result.filter(
-        (task) => task.priority === parseInt(filters.priority)
-      );
-    }
-    if (filters.assignedTo) {
-      result = result.filter((task) => task.assigned_to === filters.assignedTo);
-    }
-    if (filters.category) {
-      result = result.filter((task) => task.category === filters.category);
-    }
+    if (filters.status) result = result.filter(task => task.status === filters.status);
+    if (filters.client) result = result.filter(task => task.client === filters.client);
+    if (filters.priority) result = result.filter(task => task.priority === parseInt(filters.priority));
+    if (filters.assignedTo) result = result.filter(task => task.assigned_to === filters.assignedTo);
+    if (filters.category) result = result.filter(task => task.category === filters.category);
 
     // Apply sorting
     if (sortConfig.key) {
       result.sort((a, b) => {
-        if (a[sortConfig.key] === null) return 1;
-        if (b[sortConfig.key] === null) return -1;
-        
-        if (sortConfig.key === "deadline") {
-          // For deadline, we need to convert to Date objects
-          const dateA = a.deadline ? new Date(a.deadline) : null;
-          const dateB = b.deadline ? new Date(b.deadline) : null;
-          
-          if (!dateA) return 1;
-          if (!dateB) return -1;
-          
-          return sortConfig.direction === "asc" 
-            ? dateA - dateB 
-            : dateB - dateA;
-        }
-        
-        // For other fields, compare directly
-        if (a[sortConfig.key] < b[sortConfig.key]) {
-          return sortConfig.direction === "asc" ? -1 : 1;
-        }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
-          return sortConfig.direction === "asc" ? 1 : -1;
-        }
-        return 0;
+         let valA = a[sortConfig.key];
+         let valB = b[sortConfig.key];
+
+         // Handle nulls consistently (e.g., nulls last)
+         if (valA === null || valA === undefined) return 1;
+         if (valB === null || valB === undefined) return -1;
+
+        // Specific handling for dates
+         if (sortConfig.key === "deadline") {
+            valA = new Date(valA);
+            valB = new Date(valB);
+            return sortConfig.direction === "asc" ? valA - valB : valB - valA;
+         }
+
+         // Specific handling for related fields (client name, assignee username) - requires lookup
+         if (sortConfig.key === "client") {
+             valA = clients.find(c => c.id === valA)?.name?.toLowerCase() || '';
+             valB = clients.find(c => c.id === valB)?.name?.toLowerCase() || '';
+         } else if (sortConfig.key === "assigned_to") {
+             valA = users.find(u => u.id === valA)?.username?.toLowerCase() || '';
+             valB = users.find(u => u.id === valB)?.username?.toLowerCase() || '';
+         } else if (typeof valA === 'string') {
+             // Default string comparison (case-insensitive)
+             valA = valA.toLowerCase();
+             valB = valB.toLowerCase();
+         }
+
+         // General comparison
+         if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+         if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+         return 0;
       });
     }
+    console.log(`Memo Result: ${result.length} tasks`);
+    return result;
+  }, [tasks, clients, users, searchTerm, filters, sortConfig]); // Dependencies for re-calculation
 
-    setFilteredTasks(result);
-  };
 
-  const handleSort = (key) => {
-    let direction = "asc";
-    if (sortConfig.key === key && sortConfig.direction === "asc") {
-      direction = "desc";
-    }
-    setSortConfig({ key, direction });
-  };
+  // --- Event Handlers ---
 
-  const handleInputChange = (e) => {
+  // useCallback for stable function references where needed (e.g., passed as props)
+  const handleSort = useCallback((key) => {
+    setSortConfig(current => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }, []); // Empty dependency array as it doesn't depend on component state/props
+
+  const handleInputChange = useCallback((e) => {
     const { name, value, type } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === "number" ? (value ? parseInt(value) : "") : value,
-    });
-  };
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === "number" ? (value ? parseInt(value, 10) : "") : value,
+    }));
+  }, []);
 
-  const handleFilterChange = (e) => {
+  const handleFilterChange = useCallback((e) => {
     const { name, value } = e.target;
-    setFilters({
-      ...filters,
-      [name]: value,
-    });
-  };
+    setFilters(prev => ({ ...prev, [name]: value }));
+  }, []);
 
-  const handleSearchChange = (e) => {
+   const handleSearchChange = useCallback((e) => {
     setSearchTerm(e.target.value);
-  };
+  }, []);
 
-  const handleNaturalLanguageInputChange = (e) => {
+  const resetFilters = useCallback(() => {
+    setFilters({ status: "", client: "", priority: "", assignedTo: "", category: "" });
+    setSearchTerm("");
+    setSortConfig({ key: "deadline", direction: "asc" }); // Optionally reset sort
+  }, []);
+
+
+   const handleNaturalLanguageInputChange = useCallback((e) => {
     setNaturalLanguageInput(e.target.value);
-  };
+  }, []);
 
-  const handleNaturalLanguageSubmit = async (e) => {
+  // Handle submission from the main form
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    try {
-      setLoading(true);
+    if (selectedTask) {
+      // Update
+      updateTaskMutation.mutate({ id: selectedTask.id, updatedData: formData });
+    } else {
+      // Create
+      createTaskMutation.mutate(formData);
+    }
+  }, [selectedTask, formData, createTaskMutation, updateTaskMutation]); // Dependencies
 
-      // In a real implementation, this would call your NLPProcessor backend
-      // For now, we'll create a simple task based on the text
-      
-      // Extract dates using a simple regex - this is a placeholder for real NLP
-      const deadlineMatch = naturalLanguageInput.match(/(by|until|before|till)\s(\d{1,2}(st|nd|rd|th)?\s\w+|\w+\s\d{1,2}(st|nd|rd|th)?|\d{4}-\d{2}-\d{2})/i);
-      
-      // Extract priority based on keywords
-      let priority = 3; // Default is medium
-      if (naturalLanguageInput.toLowerCase().includes("urgent")) {
-        priority = 1;
-      } else if (naturalLanguageInput.toLowerCase().includes("high priority")) {
-        priority = 2;
-      } else if (naturalLanguageInput.toLowerCase().includes("low priority")) {
-        priority = 4;
-      }
-      
-      // Extract client based on client list (very simplified)
-      let clientId = null;
-      for (const client of clients) {
-        if (naturalLanguageInput.toLowerCase().includes(client.name.toLowerCase())) {
-          clientId = client.id;
-          break;
+   // Handle NLP form submission
+  const handleNaturalLanguageSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    if (!naturalLanguageInput.trim()) {
+        toast.error("Please enter some text to create a task.");
+        return;
+    }
+
+    // --- Basic NLP Placeholder ---
+    // This section should ideally call a dedicated backend NLP service
+    // Extract dates (very basic regex, needs improvement or library like 'chrono-node')
+    const deadlineMatch = naturalLanguageInput.match(/by (\d{4}-\d{2}-\d{2})/i); // Simple YYYY-MM-DD match
+    let deadline = deadlineMatch ? deadlineMatch[1] : null;
+
+    // Extract priority
+    let priority = 3; // Default Medium
+    if (/urgent/i.test(naturalLanguageInput)) priority = 1;
+    else if (/high priority/i.test(naturalLanguageInput)) priority = 2;
+    else if (/low priority/i.test(naturalLanguageInput)) priority = 4;
+
+    // Extract client (very basic)
+    let clientId = null;
+    for (const client of clients) {
+        // Use word boundaries for better matching
+        const clientRegex = new RegExp(`\\b${client.name}\\b`, 'i');
+        if (clientRegex.test(naturalLanguageInput)) {
+            clientId = client.id;
+            break;
         }
-      }
-      
-      // Create a simple task with extracted information
-      const response = await api.post("/tasks/", {
-        title: naturalLanguageInput.split(".")[0], // Use first sentence as title
-        description: naturalLanguageInput,
-        client: clientId || formData.client, // Use matched client or selected default
-        status: "pending",
-        priority: priority,
-        deadline: deadlineMatch ? new Date().toISOString() : null // Just a placeholder
-      });
-
-      toast.success("Task created from natural language input");
-      setNaturalLanguageInput("");
-      setShowNaturalLanguageForm(false);
-      await fetchData();
-    } catch (error) {
-      console.error("Error creating task:", error);
-      toast.error("Failed to create task from text");
-    } finally {
-      setLoading(false);
     }
-  };
+    // --- End Basic NLP Placeholder ---
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
+    const nlpTaskData = {
+      title: naturalLanguageInput.substring(0, 100), // Use first 100 chars as title example
+      description: naturalLanguageInput,
+      client: clientId, // Use matched client if found
+      status: "pending",
+      priority: priority,
+      deadline: deadline,
+    };
 
-      if (selectedTask) {
-        // Update existing task
-        await api.put(`/tasks/${selectedTask.id}/`, formData);
-        toast.success("Task updated successfully");
-      } else {
-        // Create new task
-        await api.post("/tasks/", formData);
-        toast.success("Task created successfully");
-      }
+    createNlpTaskMutation.mutate(nlpTaskData);
 
-      // Reset form and refresh data
-      resetForm();
-      await fetchData();
-    } catch (error) {
-      console.error("Error saving task:", error);
-      toast.error("Failed to save task");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [naturalLanguageInput, clients, createNlpTaskMutation]);
 
-  const selectTaskForEdit = (task) => {
+
+  // Prepare a task for editing
+  const selectTaskForEdit = useCallback((task) => {
     setSelectedTask(task);
     setFormData({
-      title: task.title,
+      title: task.title || "",
       description: task.description || "",
       client: task.client || "",
       category: task.category || "",
       assigned_to: task.assigned_to || "",
       status: task.status || "pending",
       priority: task.priority || 3,
-      deadline: task.deadline ? task.deadline.split("T")[0] : "",
+      deadline: task.deadline ? task.deadline.split("T")[0] : "", // Format for date input
       estimated_time_minutes: task.estimated_time_minutes || "",
     });
     setShowForm(true);
-    setShowNaturalLanguageForm(false);
-  };
+    setShowNaturalLanguageForm(false); // Close NLP form if open
+  }, []);
 
-  const confirmDelete = async (taskId) => {
-    if (window.confirm("Are you sure you want to delete this task?")) {
-      try {
-        await api.delete(`/tasks/${taskId}/`);
-        toast.success("Task deleted successfully");
-        await fetchData();
-      } catch (error) {
-        console.error("Error deleting task:", error);
-        toast.error("Failed to delete task");
-      }
-    }
-  };
-
-  const resetForm = () => {
+  // Reset form state
+  const resetForm = useCallback(() => {
     setSelectedTask(null);
-    setFormData({
-      title: "",
-      description: "",
-      client: "",
-      category: "",
-      assigned_to: "",
-      status: "pending",
-      priority: 3,
-      deadline: "",
-      estimated_time_minutes: "",
-    });
+    setFormData(getInitialFormData());
     setShowForm(false);
-  };
+    setShowNaturalLanguageForm(false);
+    setNaturalLanguageInput("");
+  }, []);
 
-  const updateTaskStatus = async (task, newStatus) => {
-    try {
-      await api.patch(`/tasks/${task.id}/`, {
-        status: newStatus,
-      });
-      toast.success(`Task marked as ${newStatus}`);
-      await fetchData();
-    } catch (error) {
-      console.error("Error updating task status:", error);
-      toast.error("Failed to update task status");
+  // Confirm and trigger delete
+  const confirmDelete = useCallback((taskId) => {
+      // Could use a modal here instead of window.confirm
+    if (window.confirm("Are you sure you want to delete this task? This action cannot be undone.")) {
+        deleteTaskMutation.mutate(taskId);
     }
-  };
+  }, [deleteTaskMutation]);
 
-  const resetFilters = () => {
-    setFilters({
-      status: "",
-      client: "",
-      priority: "",
-      assignedTo: "",
-      category: "",
-    });
-    setSearchTerm("");
-  };
+  // Trigger status update
+   const updateTaskStatusHandler = useCallback((task, newStatus) => {
+       updateTaskStatusMutation.mutate({ id: task.id, status: newStatus });
+   }, [updateTaskStatusMutation]);
 
-  // Format date to display
+
+  // --- Helper Functions (can be moved outside if not using component state) ---
   const formatDate = (dateString) => {
     if (!dateString) return "No deadline";
-    const options = { year: "numeric", month: "short", day: "numeric" };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
   };
-
-  // Check if a deadline is passed
+  
   const isOverdue = (deadline) => {
     if (!deadline) return false;
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const taskDate = new Date(deadline);
-    return taskDate < today;
+    today.setHours(0, 0, 0, 0); // Set to beginning of day for fair comparison
+    const deadlineDate = new Date(deadline);
+    deadlineDate.setHours(0, 0, 0, 0);
+    return deadlineDate < today;
+  };
+  
+  const getPriorityInfo = (priorityValue) => {
+    const priority = PRIORITY_OPTIONS.find(p => p.value === priorityValue) || PRIORITY_OPTIONS[2]; // Default to Medium if not found
+    return {
+      label: priority.label,
+      color: priority.color
+    };
   };
 
-  // Get the priority label and color
-  const getPriorityInfo = (priorityValue) => {
-    const priorityOption = PRIORITY_OPTIONS.find(
-      (option) => option.value === priorityValue
-    );
-    return priorityOption || PRIORITY_OPTIONS[2]; // Default to Medium if not found
-  };
+  // --- Render Logic ---
+
+  // Show loading indicator while initial data is loading
+  if (isLoadingData) {
+    return <Header><LoadingView />;</Header>  }
+
+  // Show error message if initial data fetching failed
+  if (isError) {
+    return <Header><ErrorView message={error?.message || "Could not load task data."} onRetry={refetch} />;</Header>
+  }
 
   return (
     <div className="main">
@@ -470,9 +541,7 @@ const TaskManagement = () => {
                   <button
                     type="submit"
                     className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md"
-                    disabled={loading}
                   >
-                    {loading ? "Processing..." : "Process Text"}
                   </button>
                 </div>
               </form>
@@ -635,13 +704,9 @@ const TaskManagement = () => {
                   <button
                     type="submit"
                     className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
-                    disabled={loading}
+                    
                   >
-                    {loading
-                      ? "Saving..."
-                      : selectedTask
-                      ? "Update Task"
-                      : "Create Task"}
+                    
                   </button>
                 </div>
               </form>
@@ -776,14 +841,10 @@ const TaskManagement = () => {
           {/* Task List */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <h2 className="text-xl font-semibold p-6 border-b">
-              Tasks ({filteredTasks.length})
+              Tasks ({filteredAndSortedTasks.length})
             </h2>
 
-            {loading ? (
-              <div className="p-6 flex justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-              </div>
-            ) : filteredTasks.length === 0 ? (
+            { filteredAndSortedTasks.length === 0 ? (
               <div className="p-6 text-center text-gray-500">
                 No tasks found. {searchTerm || Object.values(filters).some(val => val)
                   ? "Try adjusting your filters."
@@ -888,7 +949,7 @@ const TaskManagement = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredTasks.map((task) => (
+                    {filteredAndSortedTasks.map((task) => (
                       <tr key={task.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="font-medium text-gray-900">
