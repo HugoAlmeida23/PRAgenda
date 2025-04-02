@@ -525,33 +525,6 @@ class NLPProcessor(models.Model):
                 
         return created_entries
     
-class WorkflowDefinition(models.Model):
-    """
-    Defines a workflow template that can be applied to tasks.
-    """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=100, verbose_name="Nome")
-    description = models.TextField(blank=True, null=True, verbose_name="Descrição")
-    created_by = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        related_name='created_workflows',
-        verbose_name="Criado por"
-    )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
-    is_active = models.BooleanField(default=True, verbose_name="Ativo")
-    
-    class Meta:
-        verbose_name = "Definição de Fluxo de Trabalho"
-        verbose_name_plural = "Definições de Fluxo de Trabalho"
-        ordering = ["-created_at"]
-    
-    def __str__(self):
-        return self.name
-
-
 class WorkflowStep(models.Model):
     """
     Defines a step within a workflow.

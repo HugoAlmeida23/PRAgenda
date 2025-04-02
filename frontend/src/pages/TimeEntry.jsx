@@ -275,7 +275,7 @@ const TimeEntry = () => {
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold">Time Entries</h1>
             <div className="flex space-x-3">
-              <button
+              {/* <button
                 onClick={() => {
                   setShowAutoTracking(!showAutoTracking);
                   if (showForm) setShowForm(false);
@@ -284,7 +284,7 @@ const TimeEntry = () => {
               >
                 <Clock size={18} className="mr-2" />
                 {showAutoTracking ? "Hide Auto Tracking" : "Auto Tracking"}
-              </button>
+              </button> */}
               <button
                 onClick={() => {
                   setShowForm(!showForm);
@@ -407,7 +407,8 @@ const TimeEntry = () => {
                           <option value="">Select Task (Optional)</option>
                           {tasks
                             .filter(task => !formData.client || task.client === formData.client)
-                            .map((task) => (
+                            .filter(task => task.status !== "completed")
+                            .map(task => (
                               <option key={task.id} value={task.id}>
                                 {task.title}
                               </option>
@@ -516,65 +517,65 @@ const TimeEntry = () => {
             </div>
           )}
 
-          <div className="bg-white p-6 rounded-lg shadow mb-6">
-            <h2 className="text-xl font-semibold mb-4">Filters</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <div>
-                <label className="block text-gray-700 mb-2">Start Date</label>
-                <input
-                  type="date"
-                  name="startDate"
-                  value={filters.startDate}
-                  onChange={handleFilterChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
+<div className="bg-white p-6 rounded-lg shadow mb-6">
+  <h2 className="text-xl font-semibold mb-4">Filters</h2>
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+    <div>
+      <label className="block text-gray-700 mb-2">Start Date</label>
+      <input
+        type="date"
+        name="startDate"
+        value={filters.startDate}
+        onChange={handleFilterChange}
+        className="w-full p-2 border border-gray-300 rounded-md"
+      />
+    </div>
 
-              <div>
-                <label className="block text-gray-700 mb-2">End Date</label>
-                <input
-                  type="date"
-                  name="endDate"
-                  value={filters.endDate}
-                  onChange={handleFilterChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
+    <div>
+      <label className="block text-gray-700 mb-2">End Date</label>
+      <input
+        type="date"
+        name="endDate"
+        value={filters.endDate}
+        onChange={handleFilterChange}
+        className="w-full p-2 border border-gray-300 rounded-md"
+      />
+    </div>
 
-              <div>
-                <label className="block text-gray-700 mb-2">Client</label>
-                <select
-                  name="client"
-                  value={filters.client}
-                  onChange={handleFilterChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="">All Clients</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-end space-x-2">
-                <button
-                  onClick={applyFilters}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
-                >
-                  <Filter size={18} className="mr-2" />
-                  Apply Filters
-                </button>
-                <button
-                  onClick={resetFilters}
-                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
-                >
-                  Reset
-                </button>
-              </div>
-            </div>
-          </div>
+    <div>
+      <label className="block text-gray-700 mb-2">Client</label>
+      <select
+        name="client"
+        value={filters.client}
+        onChange={handleFilterChange}
+        className="w-full p-2 border border-gray-300 rounded-md"
+      >
+        <option value="">All Clients</option>
+        {clients.map((client) => (
+          <option key={client.id} value={client.id}>
+            {client.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  </div>
+  
+  <div className="flex justify-end space-x-3">
+    <button
+      onClick={resetFilters}
+      className="px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 rounded-md transition-colors"
+    >
+      Reset
+    </button>
+    <button
+      onClick={applyFilters}
+      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors"
+    >
+      <Filter size={18} className="mr-2" />
+      Apply Filters
+    </button>
+  </div>
+</div>
 
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <h2 className="text-xl font-semibold p-6 border-b">Time Entry Records</h2>

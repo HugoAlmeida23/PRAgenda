@@ -10,6 +10,7 @@ import TimeEntry from "./pages/TimeEntry"
 import { ToastContainer } from 'react-toastify';
 import ClientManagement from "./pages/ClientManagement"
 import TaskManagement from "./pages/TaskManagement"
+import ClientProfitability from "./pages/ClientProfitability"
 
 
 function Logout() {
@@ -55,6 +56,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TimeEntry />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/clientprofitability"
+          element={
+            <ProtectedRoute>
+              <ClientProfitability />
             </ProtectedRoute>
           }
         />

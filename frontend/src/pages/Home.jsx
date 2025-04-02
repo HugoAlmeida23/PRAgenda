@@ -930,7 +930,7 @@ const Home = () => {
                     Profitability Insights
                   </h2>
                   <Link
-                    to="/profitability"
+                    to="/clientprofitability"
                     className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
                   >
                     View Details <ChevronRight size={16} />
@@ -957,7 +957,7 @@ const Home = () => {
                         </p>
                         <div className="mt-4">
                           <Link
-                            to="/profitability"
+                            to="/clientprofitability"
                             className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg"
                           >
                             <span>View Profitability Report</span>

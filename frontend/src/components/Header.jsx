@@ -90,15 +90,21 @@ function Header({ children }) {
                   </a>
                 </li>
                 <li className="nav-item">
+                  <a href="./clientprofitability" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-users"></i>
+                    <span>Rentabilidade</span>
+                  </a>
+                </li>
+                <li className="nav-item">
                   <a href="./tasks" onClick={isMobile ? toggleSidebar : undefined}>
                     <i className="fas fa-tasks"></i>
-                    <span>Tasks</span>
+                    <span>Tarefas</span>
                   </a>
                 </li>
                 <li className="nav-item">
                   <a href="./timeentry" onClick={isMobile ? toggleSidebar : undefined}>
                     <i className="fas fa-clock"></i>
-                    <span>Time Entry</span>
+                    <span>Registo de Tempos</span>
                   </a>
                 </li>
                 <li className="nav-item">
@@ -107,6 +113,7 @@ function Header({ children }) {
                     <span>Clientes</span>
                   </a>
                 </li>
+                
                 
                 <li className="nav-section-title">
                   <span>ACCOUNT</span>

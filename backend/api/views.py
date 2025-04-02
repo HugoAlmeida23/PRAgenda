@@ -14,6 +14,8 @@ from .serializers import UserSerializer, NLPProcessorSerializer, WorkflowDefinit
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
+from .utils import update_profitability_for_period, update_current_month_profitability
+
 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
@@ -169,26 +171,65 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-
 class ClientProfitabilityViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ClientProfitabilitySerializer
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         queryset = ClientProfitability.objects.all()
-        # Filter by year/month if provided
-        year = self.request.GET.get('year')
-        month = self.request.GET.get('month')
-        if year:
-            queryset = queryset.filter(year=year)
-        if month:
-            queryset = queryset.filter(month=month)
-        # Filter by client if provided
-        client_id = self.request.GET.get('client')
+        
+        # Filtrar por ano/mês se fornecido
+        year = self.request.query_params.get('year')
+        month = self.request.query_params.get('month')
+        if year and month:
+            queryset = queryset.filter(year=year, month=month)
+        
+        # Filtrar por cliente se fornecido
+        client_id = self.request.query_params.get('client')
         if client_id:
             queryset = queryset.filter(client_id=client_id)
+            
+        # Filtrar por rentabilidade se especificado
+        is_profitable = self.request.query_params.get('is_profitable')
+        if is_profitable is not None:
+            is_profitable_bool = is_profitable.lower() == 'true'
+            queryset = queryset.filter(is_profitable=is_profitable_bool)
+            
         return queryset
     
+    @action(detail=False, methods=['post'])
+    def refresh_data(self, request):
+        """
+        Endpoint para recalcular dados de rentabilidade.
+        Pode ser chamado com year e month para atualizar um período específico,
+        ou sem parâmetros para atualizar o mês atual.
+        """
+        year = request.data.get('year')
+        month = request.data.get('month')
+        
+        if year and month:
+            try:
+                year = int(year)
+                month = int(month)
+                count = update_profitability_for_period(year, month)
+                return Response({
+                    'status': 'success',
+                    'message': f'Dados de rentabilidade atualizados para {month}/{year}',
+                    'updated_count': count
+                }, status=status.HTTP_200_OK)
+            except ValueError:
+                return Response({
+                    'status': 'error',
+                    'message': 'Ano e mês devem ser valores numéricos'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # Sem parâmetros, atualiza o mês atual
+            count = update_current_month_profitability()
+            return Response({
+                'status': 'success',
+                'message': 'Dados de rentabilidade atualizados para o mês atual',
+                'updated_count': count
+            }, status=status.HTTP_200_OK)
 class NLPProcessorViewSet(viewsets.ModelViewSet):
     queryset = NLPProcessor.objects.all()
     serializer_class = NLPProcessorSerializer
