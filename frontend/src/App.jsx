@@ -12,6 +12,8 @@ import ClientManagement from "./pages/ClientManagement"
 import TaskManagement from "./pages/TaskManagement"
 import ClientProfitability from "./pages/ClientProfitability"
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import OrganizationManagement from "./pages/OrganizationManagement"
+import LimitedDashboard from "./pages/LimitedDashboard"
 
 const queryClient = new QueryClient();
 
@@ -77,6 +79,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TaskManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/organization"
+          element={
+            <ProtectedRoute>
+              <OrganizationManagement />
             </ProtectedRoute>
           }
         />

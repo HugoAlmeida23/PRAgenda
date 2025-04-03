@@ -5,6 +5,114 @@ from django.utils import timezone
 from decimal import Decimal
 from django.db.models import JSONField
 
+
+class Organization(models.Model):
+    """
+    Representa uma organização ou empresa que utiliza o sistema.
+    Múltiplos perfis (Profile) podem pertencer a uma organização.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, verbose_name="Nome")
+    description = models.TextField(blank=True, null=True, verbose_name="Descrição")
+    address = models.CharField(max_length=255, blank=True, null=True, verbose_name="Morada")
+    phone = models.CharField(max_length=50, blank=True, null=True, verbose_name="Telefone")
+    email = models.EmailField(blank=True, null=True, verbose_name="Email de Contacto")
+    logo = models.CharField(max_length=255, blank=True, null=True, verbose_name="Logo URL")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    
+    # Campos adicionais que podem ser úteis
+    subscription_plan = models.CharField(max_length=50, blank=True, null=True, verbose_name="Plano de Subscrição")
+    max_users = models.PositiveIntegerField(default=5, verbose_name="Máximo de Utilizadores")
+    settings = models.JSONField(default=dict, verbose_name="Configurações")
+    
+    class Meta:
+        verbose_name = "Organização"
+        verbose_name_plural = "Organizações"
+        ordering = ["name"]
+    
+    def __str__(self):
+        return self.name
+    
+# Modified profile model with enhanced permissions
+class Profile(models.Model):
+    """
+    Armaneza os dados do user que está logged
+    como o seu preço à hora, a sua responsabilidade, etc
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    organization = models.ForeignKey(
+        Organization, 
+        on_delete=models.CASCADE, 
+        related_name='members',
+        null=True, 
+        blank=True,
+        verbose_name="Organização"
+    )
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), verbose_name="Preço à Hora")
+    role = models.CharField(max_length=100, verbose_name="Função")
+    access_level = models.CharField(max_length=100, verbose_name="Nível de Acesso")
+    phone = models.CharField(max_length=100, blank=True, verbose_name="Telefone")
+    productivity_metrics = JSONField(
+        default=dict, 
+        verbose_name="Métricas de Produtividade"
+    )
+    
+    # Campos para permissões na organização
+    is_org_admin = models.BooleanField(default=False, verbose_name="Administrador da Organização")
+    can_assign_tasks = models.BooleanField(default=False, verbose_name="Pode Atribuir Tarefas")
+    can_manage_clients = models.BooleanField(default=False, verbose_name="Pode Gerir Clientes")
+    
+    # Novos campos para permissões granulares
+    visible_clients = models.ManyToManyField(
+        'Client', 
+        blank=True, 
+        related_name='visible_to_profiles',
+        verbose_name="Clientes Visíveis"
+    )
+    can_view_all_clients = models.BooleanField(default=False, verbose_name="Pode Ver Todos os Clientes")
+    can_view_analytics = models.BooleanField(default=False, verbose_name="Pode Ver Análises")
+    can_view_profitability = models.BooleanField(default=False, verbose_name="Pode Ver Rentabilidade")
+    
+    class Meta:
+        verbose_name = "Perfil"
+        verbose_name_plural = "Perfis"
+
+    def __str__(self):
+        return f"{self.user.username} - {self.role}"
+    
+    def get_organization_colleagues(self):
+        """Retorna todos os perfis da mesma organização, exceto o próprio."""
+        if not self.organization:
+            return Profile.objects.none()
+            
+        return Profile.objects.filter(
+            organization=self.organization
+        ).exclude(id=self.id)
+    
+    def can_manage_profile(self, profile):
+        """Verifica se este perfil pode gerir outro perfil."""
+        # Admins da organização podem gerir qualquer perfil na mesma organização
+        if self.is_org_admin and self.organization and self.organization == profile.organization:
+            return True
+        return False
+    
+    def get_accessible_clients(self):
+        """Returns clients the user can access based on permissions."""
+        if self.is_org_admin or self.can_view_all_clients:
+            # Administrators and users with full access can see all organization clients
+            return Client.objects.filter(organization=self.organization)
+        else:
+            # Other users can only see clients explicitly granted to them
+            return self.visible_clients.all()
+    
+    def can_access_client(self, client):
+        """Check if user can access a specific client."""
+        if self.is_org_admin or self.can_view_all_clients:
+            return client.organization == self.organization
+        else:
+            return self.visible_clients.filter(id=client.id).exists()
 class Client(models.Model):
     """
     Cliente do escritório de contabilidade.
@@ -32,6 +140,14 @@ class Client(models.Model):
         default=Decimal('0.00'),
         verbose_name="Avença Mensal", 
         blank=True, null=True
+    )
+    
+    organization = models.ForeignKey(
+        Organization, 
+        on_delete=models.CASCADE, 
+        related_name='clients',
+        null=True,  # Definir como null=False após migração de dados existentes
+        verbose_name="Organização"
     )
     
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
@@ -225,31 +341,7 @@ class ClientProfitability(models.Model):
         self.is_profitable = self.profit > 0 if self.profit is not None else None
         return self.profit  
     
-class Profile(models.Model):
-    """
-    Armaneza os dados do user que está logged
-    como o seu preço à hora, a sua responsabilidade, etc
-    """
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    from decimal import Decimal
-    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), verbose_name="Preço à Hora")
-    role = models.CharField(max_length=100, verbose_name="Função")
-    access_level = models.CharField(max_length=100, verbose_name="Nível de Acesso")
-    phone = models.CharField(max_length=100, blank=True, verbose_name="Telefone")
-    productivity_metrics = JSONField(
-        default=dict, 
-        verbose_name="Métricas de Produtividade"
-    )
-
-    class Meta:
-        verbose_name = "Perfil"
-        verbose_name_plural = "Perfis"
-
-    def __str__(self):
-        return f"{self.user.username} - {self.role}"
-    
-    
 # Add this at the end of your models.py file
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -785,4 +877,5 @@ class TimeEntry(models.Model):
     
     def __str__(self):
         return f"{self.client.name} - {self.minutes_spent}min - {self.date}"
+    
     

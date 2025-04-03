@@ -1,7 +1,7 @@
 import React from "react"; // Removed useState, useEffect
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from "@tanstack/react-query";
 import {
   Calendar,
   Clock,
@@ -20,7 +20,7 @@ import {
   TrendingUp,
   Clipboard,
   CheckSquare,
-  Loader2 // Keep Loader2 for loading state
+  Loader2, // Keep Loader2 for loading state
 } from "lucide-react";
 // Removed react-bootstrap imports as they seem unused in the main return block
 // import { Container, Spinner, Card, Alert } from 'react-bootstrap';
@@ -162,47 +162,58 @@ const fetchDashboardData = async () => {
 
 const LoadingView = () => (
   <div className="flex justify-center items-center min-h-screen">
-      <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+    <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
   </div>
 );
 
 const ErrorView = ({ message, onRetry }) => (
   <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
-      <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg" role="alert">
-          <strong className="font-bold block sm:inline">Oops! Something went wrong.</strong>
-          <span className="block sm:inline"> {message || 'Failed to load data.'}</span>
-      </div>
-      {onRetry && (
-           <button
-              onClick={onRetry}
-              className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-              <RotateCcw className="h-4 w-4 mr-2"/>
-              Retry
-          </button>
-      )}
+    <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
+    <div
+      className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg"
+      role="alert"
+    >
+      <strong className="font-bold block sm:inline">
+        Oops! Something went wrong.
+      </strong>
+      <span className="block sm:inline">
+        {" "}
+        {message || "Failed to load data."}
+      </span>
+    </div>
+    {onRetry && (
+      <button
+        onClick={onRetry}
+        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      >
+        <RotateCcw className="h-4 w-4 mr-2" />
+        Retry
+      </button>
+    )}
   </div>
 );
 
+const LimitedDashboard = ({ delay }) => {
+  const {
+    data: dashboardStats,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ["dashboardData"], // Descriptive key
+    queryFn: fetchDashboardData, // Use the function defined outside
+    staleTime: 5 * 60 * 1000,
+    cacheTime: 10 * 60 * 1000,
+    retry: 1,
+  });
 
-const Home = ({ delay }) => {
-
-  const { data: dashboardStats, isLoading, isError, error } = useQuery({
-     queryKey: ['dashboardData'], // Descriptive key
-     queryFn: fetchDashboardData, // Use the function defined outside
-     staleTime: 5 * 60 * 1000,
-     cacheTime: 10 * 60 * 1000,
-     retry: 1
-    });
-  
   // Variants for Framer Motion
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: { staggerChildren: 0.05 } // Adjusted stagger
-    }
+      transition: { staggerChildren: 0.05 }, // Adjusted stagger
+    },
   };
 
   const itemVariants = {
@@ -210,29 +221,41 @@ const Home = ({ delay }) => {
     visible: {
       y: 0,
       opacity: 1,
-      transition: { type: "spring", stiffness: 100 } // Simplified transition
+      transition: { type: "spring", stiffness: 100 }, // Simplified transition
     },
   };
 
   // Combined card variant for motion
-   const cardMotionProps = {
+  const cardMotionProps = {
     variants: itemVariants, // Use item variant for consistency
-    whileHover:{
+    whileHover: {
       y: -5,
-      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+      boxShadow:
+        "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
       transition: { type: "spring", stiffness: 300, damping: 20 },
-    }
+    },
   };
 
   // --- Loading and Error States ---
   if (isLoading) {
     // Use the simple Tailwind/Lucide loader
-    return <Header><LoadingView />;</Header>
+    return (
+      <Header>
+        <LoadingView />;
+      </Header>
+    );
   }
 
   if (isError) {
     // Use the simple Tailwind/Lucide error message
-    return <Header><ErrorView message={error instanceof Error ? error.message : String(error)} />;</Header>
+    return (
+      <Header>
+        <ErrorView
+          message={error instanceof Error ? error.message : String(error)}
+        />
+        ;
+      </Header>
+    );
   }
 
   // --- Data is Ready ---
@@ -240,10 +263,18 @@ const Home = ({ delay }) => {
   const stats = dashboardStats || {};
 
   // Helper functions (Keep inside or move outside if reused)
-  const formatMinutes = (minutes = 0) => { /* ... as before ... */ };
-  const formatDate = (dateString) => { /* ... as before ... */ };
-  const getDaysRemaining = (deadlineStr) => { /* ... as before ... */ };
-  const getDaysRemainingLabel = (days) => { /* ... as before ... */ };
+  const formatMinutes = (minutes = 0) => {
+    /* ... as before ... */
+  };
+  const formatDate = (dateString) => {
+    /* ... as before ... */
+  };
+  const getDaysRemaining = (deadlineStr) => {
+    /* ... as before ... */
+  };
+  const getDaysRemainingLabel = (days) => {
+    /* ... as before ... */
+  };
 
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -252,13 +283,13 @@ const Home = ({ delay }) => {
       y: 0,
       transition: {
         duration: 0.4,
-        delay: delay * 0.15 // Stagger effect
-      }
-    }
+        delay: delay * 0.15, // Stagger effect
+      },
+    },
   };
 
   return (
-  <div className="main">
+    <div className="main">
       <Header>
         <motion.div
           className="p-6 bg-gray-100 min-h-screen"
@@ -268,7 +299,7 @@ const Home = ({ delay }) => {
           animate="visible"
         >
           <div className="max-w-7xl mx-auto">
-            <motion.div 
+            <motion.div
               className="flex justify-between items-center mb-6"
               variants={itemVariants}
             >
@@ -281,15 +312,15 @@ const Home = ({ delay }) => {
                 })}
               </div>
             </motion.div>
-  
+
             <>
               {/* Stats Overview - Enhanced Design with Better Contrast */}
-              <motion.div 
+              <motion.div
                 className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
                 variants={containerVariants}
               >
                 {/* Active Tasks Card */}
-                <motion.div 
+                <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300"
                   variants={cardVariants}
                   whileHover="hover"
@@ -302,29 +333,28 @@ const Home = ({ delay }) => {
                       <p className="text-gray-600 text-sm font-medium">
                         Tarefas Ativas
                       </p>
-                      
-                        <div className="flex items-center mt-4">
-                          <h3 className="text-2xl font-bold text-gray-900">
-                            {stats.activeTasks}
-                          </h3>
-                          <div className="ml-2 flex items-center text-xs text-blue-700">
-                            <svg
-                              className="mr-1 h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M5 15l7-7 7 7"
-                              />
-                            </svg>
-                            <span>3%</span>
-                          </div>
+
+                      <div className="flex items-center mt-4">
+                        <h3 className="text-2xl font-bold text-gray-900">
+                          {stats.activeTasks}
+                        </h3>
+                        <div className="ml-2 flex items-center text-xs text-blue-700">
+                          <svg
+                            className="mr-1 h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 15l7-7 7 7"
+                            />
+                          </svg>
+                          <span>3%</span>
                         </div>
-                   
+                      </div>
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -337,9 +367,9 @@ const Home = ({ delay }) => {
                     </Link>
                   </div>
                 </motion.div>
-  
+
                 {/* Active Clients Card */}
-                <motion.div 
+                <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300"
                   variants={cardVariants}
                   whileHover="hover"
@@ -352,7 +382,7 @@ const Home = ({ delay }) => {
                       <p className="text-gray-600 text-sm font-medium">
                         Clientes Ativos
                       </p>
-                     
+
                       <div className="flex items-center mt-4">
                         <h3 className="text-2xl font-bold text-gray-900">
                           {stats.activeClients}
@@ -362,7 +392,6 @@ const Home = ({ delay }) => {
                           <span>2%</span>
                         </div>
                       </div>
-                   
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -375,9 +404,9 @@ const Home = ({ delay }) => {
                     </Link>
                   </div>
                 </motion.div>
-  
+
                 {/* Overdue Tasks Card */}
-                <motion.div 
+                <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300"
                   variants={cardVariants}
                   whileHover="hover"
@@ -402,7 +431,6 @@ const Home = ({ delay }) => {
                           </div>
                         )}
                       </div>
-              
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200">
@@ -415,137 +443,8 @@ const Home = ({ delay }) => {
                     </Link>
                   </div>
                 </motion.div>
-  
-                {/* Unprofitable Clients Card */}
-                <motion.div 
-                  className="bg-white p-6 rounded-xl shadow-md border border-yellow-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
-                >
-                  {/* Card content remains the same */}
-                  <div className="flex items-center">
-                    <div className="p-3 rounded-lg bg-yellow-100 text-yellow-700 mr-2">
-                      <DollarSign size={24} strokeWidth={1.5} />
-                    </div>
-                    <div className="ml-4">
-                      <p className="text-gray-600 text-sm font-medium">
-                        Clientes não rentáveis
-                      </p>
-                      
-                      <div className="flex items-center mt-4">
-                        <h3 className="text-2xl font-bold text-gray-900">
-                          {stats.unprofitableClientsCount}
-                        </h3>
-                        <div className="ml-2 flex items-center text-xs text-yellow-700">
-                          <span>
-                            {Math.round(
-                              (stats.unprofitableClientsCount /
-                                Math.max(stats.activeClients, 1)) *
-                                100
-                            )}
-                            %
-                          </span>
-                        </div>
-                      </div>
-                
-                    </div>
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <Link
-                      to="/profitability"
-                      className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
-                    >
-                      <span>Ver relatório de rentabilidade</span>
-                      <ChevronRight size={16} className="ml-1" />
-                    </Link>
-                  </div>
-                </motion.div>
-              </motion.div>
-  
-              {/* Time & Productivity Stats */}
-              <motion.div 
-                className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8"
-                variants={containerVariants}
-              >
-                {/* Time cards with motion */}
                 <motion.div
-                  className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
-                >
-                  {/* Content remains the same */}
-                  <div className="relative z-10">
-                    <div className="flex items-center">
-                      <Timer
-                        size={24}
-                        className="mr-2 text-blue-600"
-                        strokeWidth={1.5}
-                      />
-                      <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                        Hoje
-                      </h3>
-                    </div>
-                    <div className="mt-3">
-                      <p className="text-3xl font-bold text-green-700">
-                        {formatMinutes(stats.timeTrackedToday)}
-                      </p>
-                    </div>
-                    <p className="mt-2 text-sm text-gray-600">
-                      Total de tempo monitorado hoje
-                    </p>
-                    <div className="mt-4 ">
-                      <Link
-                        to="/timeentry"
-                        className="bg-white text-blue-700 hover:bg-gray-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
-                      >
-                        <Clock size={16} className="mr-2" />
-                        <span>Tempo de registro</span>
-                      </Link>
-                    </div>
-                  </div>
-                </motion.div>
-                
-                {/* Weekly Activity Card */}
-                <motion.div
-                  className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
-                >
-                  {/* Content remains the same */}
-                  <div className="relative z-10">
-                    <div className="flex items-center">
-                      <Activity
-                        className="mr-2 text-blue-600"
-                        size={24}
-                        strokeWidth={1.5}
-                      />
-                      <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                        Atividade Semanal
-                      </h3>
-                    </div>
-  
-                    <p className="text-3xl font-bold text-green-700">
-                      {formatMinutes(stats.timeTrackedThisWeek)}
-                    </p>
-                    <p className="mt-2 text-sm text-gray-600">
-                      Últimos 7 dias de tempo monitorado
-                    </p>
-  
-                    <div className="mt-4">
-                      <Link
-                        to="/reports/time"
-                        className="bg-white text-purple-700 hover:bg-gray-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
-                      >
-                        <BarChart2 size={16} className="mr-2" />
-                        <span>Ver relatório de tempo</span>
-                      </Link>
-                    </div>
-                  </div>
-                </motion.div>
-                
-                {/* Tasks Completed Card */}
-                <motion.div
-                  className="bg-gradient p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300"
                   variants={cardVariants}
                   whileHover="hover"
                 >
@@ -580,15 +479,154 @@ const Home = ({ delay }) => {
                     </div>
                   </div>
                 </motion.div>
+
               </motion.div>
-  
+
+              {/* Time & Productivity Stats */}
+              <motion.div
+                className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
+                variants={containerVariants}
+              >
+                {/* Time cards with motion */}
+                <motion.div
+                  className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
+                  <div className="relative z-10">
+                    <div className="flex items-center">
+                      <Timer
+                        size={24}
+                        className="mr-2 text-blue-600"
+                        strokeWidth={1.5}
+                      />
+                      <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                        Hoje
+                      </h3>
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-3xl font-bold text-green-700">
+                        {formatMinutes(stats.timeTrackedToday)}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-600">
+                      Total de tempo monitorado hoje
+                    </p>
+                    <div className="mt-4 ">
+                      <Link
+                        to="/timeentry"
+                        className="bg-white text-blue-700 hover:bg-gray-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
+                      >
+                        <Clock size={16} className="mr-2" />
+                        <span>Tempo de registro</span>
+                      </Link>
+                    </div>
+                  </div>
+                </motion.div>
+                <motion.div
+                  className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
+                  <div className="flex items-center mb-4">
+                    <Activity
+                      size={20}
+                      className="text-green-600 mr-2"
+                      strokeWidth={1.5}
+                    />
+                    <h3 className="font-semibold text-gray-900">Esta semana</h3>
+                  </div>
+                  <div className="text-3xl font-bold text-green-700">
+                    {stats.thisWeekTasksCount}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600">
+                    tarefas que virão esta semana
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <Link
+                      to="/tasks?due=this-week"
+                      className="text-green-600 hover:text-green-800 text-sm flex items-center"
+                    >
+                      <span>Veja as tarefas desta semana</span>
+                      <ChevronRight size={16} className="ml-1" />
+                    </Link>
+                  </div>
+                </motion.div>
+                {/* Weekly Activity Card */}
+                <motion.div
+                  className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
+                  <div className="relative z-10">
+                    <div className="flex items-center">
+                      <Activity
+                        className="mr-2 text-blue-600"
+                        size={24}
+                        strokeWidth={1.5}
+                      />
+                      <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                        Atividade Semanal
+                      </h3>
+                    </div>
+
+                    <p className="text-3xl font-bold text-green-700">
+                      {formatMinutes(stats.timeTrackedThisWeek)}
+                    </p>
+                    <p className="mt-2 text-sm text-gray-600">
+                      Últimos 7 dias de tempo monitorado
+                    </p>
+
+                    <div className="mt-4">
+                      <Link
+                        to="/reports/time"
+                        className="bg-white text-purple-700 hover:bg-gray-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
+                      >
+                        <BarChart2 size={16} className="mr-2" />
+                        <span>Ver relatório de tempo</span>
+                      </Link>
+                    </div>
+                  </div>
+                </motion.div>
+                <motion.div
+                  className="bg-white p-6 rounded-xl shadow-md border border-blue-200 hover:shadow-lg transition-shadow duration-300"
+                  variants={cardVariants}
+                  whileHover="hover"
+                >
+                  {/* Content remains the same */}
+                  <div className="flex items-center mb-4">
+                    <Calendar
+                      size={20}
+                      className="text-blue-600 mr-2"
+                      strokeWidth={1.5}
+                    />
+                    <h3 className="font-semibold text-gray-900">Hoje</h3>
+                  </div>
+                  <div className="text-3xl font-bold text-blue-700">
+                    {stats.todayTasksCount}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600">tarefas hoje</div>
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <Link
+                      to="/tasks?due=today"
+                      className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+                    >
+                      <span>Ver as tarefas de hoje</span>
+                      <ChevronRight size={16} className="ml-1" />
+                    </Link>
+                  </div>
+                </motion.div>
+              </motion.div>
               {/* Tasks and Time Entries Sections */}
-              <motion.div 
+              <motion.div
                 className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8"
                 variants={containerVariants}
               >
                 {/* Upcoming Tasks - Enhanced */}
-                <motion.div 
+                <motion.div
                   className="bg-white rounded-xl shadow-md border border-gray-200"
                   variants={cardVariants}
                 >
@@ -721,9 +759,9 @@ const Home = ({ delay }) => {
                     )}
                   </div>
                 </motion.div>
-  
+
                 {/* Recent Activity - Enhanced */}
-                <motion.div 
+                <motion.div
                   className="bg-white rounded-xl shadow-md border border-gray-200"
                   variants={cardVariants}
                 >
@@ -813,292 +851,111 @@ const Home = ({ delay }) => {
                   </div>
                 </motion.div>
               </motion.div>
-  
-              {/* Task Timelines */}
-              <motion.div 
-                className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 mt-6"
-                variants={containerVariants}
+              {/* Quick Actions */}
+              <motion.div
+                className="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-8"
+                variants={cardVariants}
               >
-                <motion.div
-                  className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
-                >
-                  {/* Content remains the same */}
-                  <div className="flex items-center mb-4">
-                    <AlertTriangle
-                      size={20}
-                      className="text-red-600 mr-2"
-                      strokeWidth={1.5}
-                    />
-                    <h3 className="font-semibold text-gray-900">Atrasada</h3>
-                  </div>
-                  <div className="text-3xl font-bold text-red-700">
-                    {stats.overdueTasksCount}
-                  </div>
-                  <div className="mt-2 text-sm text-gray-600">
-                    tarefas precisam de atenção imediata
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <Link
-                      to="/tasks?status=pending&overdue=true"
-                      className="text-red-600 hover:text-red-800 text-sm flex items-center"
-                    >
-                      <span>Resolver tarefas atrasadas</span>
-                      <ChevronRight size={16} className="ml-1" />
-                    </Link>
-                  </div>
-                </motion.div>
-  
-                <motion.div
-                  className="bg-white p-6 rounded-xl shadow-md border border-blue-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
-                >
-                  {/* Content remains the same */}
-                  <div className="flex items-center mb-4">
-                    <Calendar
-                      size={20}
-                      className="text-blue-600 mr-2"
-                      strokeWidth={1.5}
-                    />
-                    <h3 className="font-semibold text-gray-900">Hoje</h3>
-                  </div>
-                  <div className="text-3xl font-bold text-blue-700">
-                    {stats.todayTasksCount}
-                  </div>
-                  <div className="mt-2 text-sm text-gray-600">tarefas hoje</div>
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <Link
-                      to="/tasks?due=today"
-                      className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
-                    >
-                      <span>Ver as tarefas de hoje</span>
-                      <ChevronRight size={16} className="ml-1" />
-                    </Link>
-                  </div>
-                </motion.div>
-  
-                <motion.div
-                  className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
-                >
-                  {/* Content remains the same */}
-                  <div className="flex items-center mb-4">
-                    <Activity
-                      size={20}
-                      className="text-green-600 mr-2"
-                      strokeWidth={1.5}
-                    />
-                    <h3 className="font-semibold text-gray-900">Esta semana</h3>
-                  </div>
-                  <div className="text-3xl font-bold text-green-700">
-                    {stats.thisWeekTasksCount}
-                  </div>
-                  <div className="mt-2 text-sm text-gray-600">
-                    tarefas que virão esta semana
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <Link
-                      to="/tasks?due=this-week"
-                      className="text-green-600 hover:text-green-800 text-sm flex items-center"
-                    >
-                      <span>Veja as tarefas desta semana</span>
-                      <ChevronRight size={16} className="ml-1" />
-                    </Link>
-                  </div>
-                </motion.div>
-              </motion.div>
-  
-             {/* Quick Actions */}
-<motion.div 
-  className="bg-white p-6 rounded-xl shadow-md border border-gray-200 mb-8 mt-6"
-  variants={cardVariants}
->
-  <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-    <ExternalLink
-      size={20}
-      className="mr-2 text-indigo-600"
-      strokeWidth={1.5}
-    />
-    Ações rápidas
-  </h2>
-  <motion.div 
-    className="grid grid-cols-1 md:grid-cols-4 gap-4"
-    variants={containerVariants}
-  >
-    {/* First Action - Log Time */}
-    <motion.div variants={itemVariants} className="w-full">
-      <Link
-        to="/timeentry"
-        className="flex items-center p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors border border-green-200 h-full"
-      >
-        <div className="p-3 rounded-lg bg-green-100 text-green-700 mr-4">
-          <Clock size={18} strokeWidth={1.5} />
-        </div>
-        <div>
-          <span className="font-medium text-green-900">
-            Log Time
-          </span>
-          <p className="text-xs text-green-700 mt-1">
-            Record your work
-          </p>
-        </div>
-      </Link>
-    </motion.div>
-
-    {/* Second Action - New Task */}
-    <motion.div variants={itemVariants} className="w-full">
-      <Link
-        to="/tasks"
-        className="flex items-center p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200 h-full"
-      >
-        <div className="p-3 rounded-lg bg-blue-100 text-blue-700 mr-4">
-          <Plus size={18} strokeWidth={1.5} />
-        </div>
-        <div>
-          <span className="font-medium text-blue-900">
-            Nova tarefa
-          </span>
-          <p className="text-xs text-blue-700 mt-1">Criar tarefa</p>
-        </div>
-      </Link>
-    </motion.div>
-
-    {/* Third Action - New Client */}
-    <motion.div variants={itemVariants} className="w-full">
-      <Link
-        to="/clients"
-        className="flex items-center p-4 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors border border-purple-200 h-full"
-      >
-        <div className="p-3 rounded-lg bg-purple-100 text-purple-700 mr-4">
-          <Users size={18} strokeWidth={1.5} />
-        </div>
-        <div>
-          <span className="font-medium text-purple-900">
-            New Client
-          </span>
-          <p className="text-xs text-purple-700 mt-1">
-            Add a client
-          </p>
-        </div>
-      </Link>
-    </motion.div>
-
-    {/* Fourth Action - Reports */}
-    <motion.div variants={itemVariants} className="w-full">
-      <Link
-        to="/reports"
-        className="flex items-center p-4 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors border border-amber-200 h-full"
-      >
-        <div className="p-3 rounded-lg bg-amber-100 text-amber-700 mr-4">
-          <BarChart2 size={18} strokeWidth={1.5} />
-        </div>
-        <div>
-          <span className="font-medium text-amber-900">
-            Reports
-          </span>
-          <p className="text-xs text-amber-700 mt-1">
-            View analytics
-          </p>
-        </div>
-      </Link>
-    </motion.div>
-  </motion.div>
-</motion.div>
-            {/* Profitability Insights - Enhanced */}
-            <motion.div
-              className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6"
-              variants={cardVariants}
-            >
-              <div className="flex justify-between items-center p-6 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <TrendingUp
+                <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                  <ExternalLink
                     size={20}
                     className="mr-2 text-indigo-600"
                     strokeWidth={1.5}
                   />
-                  Profitability Insights
+                  Ações rápidas
                 </h2>
-                <Link
-                  to="/clientprofitability"
-                  className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+                <motion.div
+                  className="grid grid-cols-1 md:grid-cols-4 gap-4"
+                  variants={containerVariants}
                 >
-                  View Details <ChevronRight size={16} />
-                </Link>
-              </div>
-              <div className="p-6">
-                {stats.unprofitableClientsCount > 0 ? (
-                  <motion.div 
-                    className="flex items-start p-5 bg-red-50 rounded-xl border border-red-200"
-                    variants={itemVariants}
-                  >
-                    <div className="p-3 rounded-full bg-red-100 text-red-700 mr-4">
-                      <AlertTriangle size={24} strokeWidth={1.5} />
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-red-900 text-lg">
-                        {stats.unprofitableClientsCount}{" "}
-                        {stats.unprofitableClientsCount === 1
-                          ? "client is"
-                          : "clients are"}{" "}
-                        currently unprofitable
-                      </h3>
-                      <p className="text-red-800 mt-2">
-                        Check the profitability report to see detailed
-                        information on time costs versus monthly fees and take
-                        corrective action.
-                      </p>
-                      <div className="mt-4">
-                        <Link
-                          to="/clientprofitability"
-                          className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg"
-                        >
-                          <span>View Profitability Report</span>
-                          <ChevronRight size={16} className="ml-1" />
-                        </Link>
+                  {/* First Action - Log Time */}
+                  <motion.div variants={itemVariants} className="w-full">
+                    <Link
+                      to="/timeentry"
+                      className="flex items-center p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors border border-green-200 h-full"
+                    >
+                      <div className="p-3 rounded-lg bg-green-100 text-green-700 mr-4">
+                        <Clock size={18} strokeWidth={1.5} />
                       </div>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    className="flex items-start p-5 bg-green-50 rounded-xl border border-green-200"
-                    variants={itemVariants}
-                  >
-                    <div className="p-3 rounded-full bg-green-100 text-green-700 mr-4">
-                      <CheckCircle size={24} strokeWidth={1.5} />
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-green-900 text-lg">
-                        All active clients are currently profitable
-                      </h3>
-                      <p className="text-green-800 mt-2">
-                        Great job! Continue monitoring time entries and
-                        expenses to maintain profitability. Regular reviews
-                        help ensure your business stays on the right track.
-                      </p>
-                      <div className="mt-4">
-                        <Link
-                          to="/profitability"
-                          className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg"
-                        >
-                          <span>View Profitability Report</span>
-                          <ChevronRight size={16} className="ml-1" />
-                        </Link>
+                      <div>
+                        <span className="font-medium text-green-900">
+                          Log Time
+                        </span>
+                        <p className="text-xs text-green-700 mt-1">
+                          Record your work
+                        </p>
                       </div>
-                    </div>
+                    </Link>
                   </motion.div>
-                )}
-              </div>
-            </motion.div>
-          </>
-          {/* )} */}
-        </div>
-      </motion.div>
-    </Header>
-  </div>
-);
+
+                  {/* Second Action - New Task */}
+                  <motion.div variants={itemVariants} className="w-full">
+                    <Link
+                      to="/tasks"
+                      className="flex items-center p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-200 h-full"
+                    >
+                      <div className="p-3 rounded-lg bg-blue-100 text-blue-700 mr-4">
+                        <Plus size={18} strokeWidth={1.5} />
+                      </div>
+                      <div>
+                        <span className="font-medium text-blue-900">
+                          Nova tarefa
+                        </span>
+                        <p className="text-xs text-blue-700 mt-1">
+                          Criar tarefa
+                        </p>
+                      </div>
+                    </Link>
+                  </motion.div>
+
+                  {/* Third Action - New Client */}
+                  <motion.div variants={itemVariants} className="w-full">
+                    <Link
+                      to="/clients"
+                      className="flex items-center p-4 bg-purple-50 hover:bg-purple-100 rounded-xl transition-colors border border-purple-200 h-full"
+                    >
+                      <div className="p-3 rounded-lg bg-purple-100 text-purple-700 mr-4">
+                        <Users size={18} strokeWidth={1.5} />
+                      </div>
+                      <div>
+                        <span className="font-medium text-purple-900">
+                          New Client
+                        </span>
+                        <p className="text-xs text-purple-700 mt-1">
+                          Add a client
+                        </p>
+                      </div>
+                    </Link>
+                  </motion.div>
+
+                  {/* Fourth Action - Reports */}
+                  <motion.div variants={itemVariants} className="w-full">
+                    <Link
+                      to="/reports"
+                      className="flex items-center p-4 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors border border-amber-200 h-full"
+                    >
+                      <div className="p-3 rounded-lg bg-amber-100 text-amber-700 mr-4">
+                        <BarChart2 size={18} strokeWidth={1.5} />
+                      </div>
+                      <div>
+                        <span className="font-medium text-amber-900">
+                          Reports
+                        </span>
+                        <p className="text-xs text-amber-700 mt-1">
+                          View analytics
+                        </p>
+                      </div>
+                    </Link>
+                  </motion.div>
+                </motion.div>
+              </motion.div>
+            </>
+            {/* )} */}
+          </div>
+        </motion.div>
+      </Header>
+    </div>
+  );
 };
 
-export default Home;
+export default LimitedDashboard;

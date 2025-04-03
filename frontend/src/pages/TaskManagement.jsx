@@ -19,10 +19,7 @@ import {
   User,
   ChevronDown,
   ChevronUp,
-  Tag,
-  ArrowUp,
   RotateCcw,
-  ArrowDown,
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 

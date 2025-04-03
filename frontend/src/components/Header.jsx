@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "../styles/Header.css";
 import simpleLogo from "../assets/simplelogo.png";
 import "@fortawesome/fontawesome-free/css/all.min.css";
@@ -6,6 +6,8 @@ import "@fortawesome/fontawesome-free/css/all.min.css";
 function Header({ children }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
   // Check if viewing on mobile device
   useEffect(() => {
@@ -26,9 +28,28 @@ function Header({ children }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setUserDropdownOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [dropdownRef]);
+
   // Toggle sidebar
   const toggleSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);
+  };
+
+  // Toggle user dropdown
+  const toggleUserDropdown = () => {
+    setUserDropdownOpen(!userDropdownOpen);
   };
 
   return (
@@ -45,8 +66,8 @@ function Header({ children }) {
           </button>
           
           <div className="brand">
-            <img src={simpleLogo} alt="PRAGENDA Logo" />
-            <span className="brand-name">PRAGENDA</span>
+            <img src={simpleLogo} alt="TarefAi Logo" />
+            <span className="brand-name">TarefAi</span>
           </div>
         </div>
         
@@ -67,11 +88,63 @@ function Header({ children }) {
             <span className="notification-badge">3</span>
           </button>
           
-          <div className="user-profile">
-            <div className="user-info">
-              <span className="user-name">Hugo Almeida</span>
-              <span className="user-role">Administrator</span>
+          <div className="user-profile-wrapper" ref={dropdownRef}>
+            <div 
+              className="user-profile"
+              onClick={toggleUserDropdown}
+            >
+              <div className="avatar-circle">
+                <span>HA</span>
+              </div>
+              <div className="user-info">
+                <span className="user-name">Hugo Almeida</span>
+                <span className="user-role">Administrator</span>
+              </div>
+              <i className={`fas fa-chevron-${userDropdownOpen ? 'up' : 'down'} dropdown-icon`}></i>
             </div>
+            
+            {userDropdownOpen && (
+              <div className="user-dropdown">
+                <div className="dropdown-header">
+                  <div className="avatar-circle-large">
+                    <span>HA</span>
+                  </div>
+                  <div>
+                    <p className="dropdown-name">Hugo Almeida</p>
+                    <p className="dropdown-email">hugo@tarefai.com</p>
+                  </div>
+                </div>
+                
+                <ul className="dropdown-menu">
+                  <li>
+                    <a href="/profile">
+                      <i className="fas fa-user"></i>
+                      <span>Perfil</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a href="/billing">
+                      <i className="fas fa-credit-card"></i>
+                      <span>Subscrição</span>
+                    </a>
+                  </li>
+                  <li className="divider"></li>
+                  <li>
+                    <a href="/help">
+                      <i className="fas fa-question-circle"></i>
+                      <span>Ajuda & Suporte</span>
+                    </a>
+                  </li>
+                  <li className="divider"></li>
+                  <li className="logout-item">
+                    <a href="/logout">
+                      <i className="fas fa-sign-out-alt"></i>
+                      <span>Sair</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -113,37 +186,19 @@ function Header({ children }) {
                     <span>Clientes</span>
                   </a>
                 </li>
-                
-                
-                <li className="nav-section-title">
-                  <span>ACCOUNT</span>
-                </li>
-                
                 <li className="nav-item">
-                  <a href="./profile" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-user-circle"></i>
-                    <span>Profile</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./settings">
-                    <i className="fas fa-cog"></i>
-                    <span>Settings</span>
-                  </a>
-                </li>
-                <li className="nav-item logout">
-                  <a href="./logout" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-sign-out-alt"></i>
-                    <span>Sair</span>
+                  <a href="./organization" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-users"></i>
+                    <span>Organização</span>
                   </a>
                 </li>
               </ul>
               
               <div className="sidebar-footer">
                 <div className="workspace-info">
-                  <div className="workspace-icon">P</div>
+                  <div className="workspace-icon">T</div>
                   <div className="workspace-details">
-                    <span className="workspace-name">PRAGENDA Workspace</span>
+                    <span className="workspace-name">TarefAi</span>
                   </div>
                 </div>
               </div>

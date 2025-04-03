@@ -1,27 +1,21 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import Header from "../components/Header";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api";
 import "../styles/Home.css";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   DollarSign,
   TrendingUp,
-  TrendingDown,
   Clock,
   Calendar,
-  Search,
-  Filter,
-  BarChart2,
   PieChart,
   Users,
   AlertTriangle,
   ChevronDown,
   ChevronUp,
   ChevronRight,
-  ArrowUp,
-  ArrowDown,
-  Plus,
   Download,
   RefreshCw,
   Briefcase,
@@ -29,22 +23,107 @@ import {
   CreditCard,
 } from "lucide-react";
 
-/**
- * Componente de Análise de Rentabilidade de Clientes
- *
- * Este componente fornece uma análise detalhada da rentabilidade dos clientes,
- * incluindo receitas, custos, margens de lucro e tendências ao longo do tempo.
- * Permite filtrar, classificar e visualizar dados detalhados para cada cliente.
- */
+// Animation variants remain the same
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+      when: "beforeChildren",
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: { type: "spring", stiffness: 300, damping: 24 },
+  },
+};
+
+const cardVariants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: {
+      type: "spring",
+      stiffness: 300,
+      damping: 24,
+    },
+  },
+  hover: {
+    y: -5,
+    boxShadow:
+      "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+    transition: {
+      type: "spring",
+      stiffness: 300,
+      damping: 20,
+    },
+  },
+};
+
+const months = [
+  { value: 1, label: "Janeiro" },
+  { value: 2, label: "Fevereiro" },
+  { value: 3, label: "Março" },
+  { value: 4, label: "Abril" },
+  { value: 5, label: "Maio" },
+  { value: 6, label: "Junho" },
+  { value: 7, label: "Julho" },
+  { value: 8, label: "Agosto" },
+  { value: 9, label: "Setembro" },
+  { value: 10, label: "Outubro" },
+  { value: 11, label: "Novembro" },
+  { value: 12, label: "Dezembro" },
+];
+
+// Generate years for dropdown (current year and 5 years back)
+const generateYears = () => {
+  const currentYear = new Date().getFullYear();
+  const years = [];
+  for (let i = 0; i < 6; i++) {
+    years.push(currentYear - i);
+  }
+  return years;
+};
+
+const years = generateYears();
+
+// Data fetching functions (outside component)
+const fetchProfitabilityData  = async (year, month) => {
+  // First recalculate data
+  await api.post("/client-profitability/refresh_data/", {
+    year,
+    month,
+  });
+  
+  // Then fetch updated data
+  const response = await api.get(`/client-profitability/?year=${year}&month=${month}`);
+  console.log("Dados de rentabilidade brutos:", response.data);
+  return response.data;
+};
+
+const fetchTimeEntries = async () => {
+  const response = await api.get("/time-entries/");
+  return response.data;
+};
+
+const fetchClients = async () => {
+  const response = await api.get("/clients/");
+  return response.data;
+};
+
 const ClientProfitability = () => {
-  const [loading, setLoading] = useState(true);
-  const [clients, setClients] = useState([]);
-  const [profitabilityData, setProfitabilityData] = useState([]);
-  const [timeEntries, setTimeEntries] = useState([]);
+  const queryClient = useQueryClient();
+  
+  // Local state
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [filteredData, setFilteredData] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [sortConfig, setSortConfig] = useState({
     key: "profit_margin",
     direction: "desc",
@@ -54,215 +133,79 @@ const ClientProfitability = () => {
     profitableOnly: false,
     unprofitableOnly: false,
   });
-  const [summaryStats, setSummaryStats] = useState({
-    totalClients: 0,
-    profitableClients: 0,
-    unprofitableClients: 0,
-    averageMargin: 0,
-    totalRevenue: 0,
-    totalCost: 0,
-    totalProfit: 0,
-  });
   const [expandedClients, setExpandedClients] = useState({});
 
-  // Array of months for dropdown
-  const months = [
-    { value: 1, label: "Janeiro" },
-    { value: 2, label: "Fevereiro" },
-    { value: 3, label: "Março" },
-    { value: 4, label: "Abril" },
-    { value: 5, label: "Maio" },
-    { value: 6, label: "Junho" },
-    { value: 7, label: "Julho" },
-    { value: 8, label: "Agosto" },
-    { value: 9, label: "Setembro" },
-    { value: 10, label: "Outubro" },
-    { value: 11, label: "Novembro" },
-    { value: 12, label: "Dezembro" },
-  ];
+  // React Query hooks
+  const {
+    data: profitabilityData = [],
+    isLoading: isProfitabilityLoading,
+    isError: isProfitabilityError,
+    error: profitabilityError,
+    refetch: refetchProfitability
+  } = useQuery({
+    queryKey: ['profitability', selectedYear, selectedMonth],
+    queryFn: () => fetchProfitabilityData(selectedYear, selectedMonth),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
-  // Generate years for dropdown (current year and 5 years back)
-  const generateYears = () => {
-    const currentYear = new Date().getFullYear();
-    const years = [];
-    for (let i = 0; i < 6; i++) {
-      years.push(currentYear - i);
-    }
-    return years;
-  };
+  const {
+    data: timeEntries = [],
+    isLoading: isTimeEntriesLoading
+  } = useQuery({
+    queryKey: ['timeEntries'],
+    queryFn: fetchTimeEntries,
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const years = generateYears();
+  const {
+    data: clients = [],
+    isLoading: isClientsLoading
+  } = useQuery({
+    queryKey: ['clients'],
+    queryFn: fetchClients,
+    staleTime: 5 * 60 * 1000,
+  });
 
-  // Animation variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-        when: "beforeChildren",
-      },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: { type: "spring", stiffness: 300, damping: 24 },
-    },
-  };
-
-  const cardVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 24,
-      },
-    },
-    hover: {
-      y: -5,
-      boxShadow:
-        "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 20,
-      },
-    },
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // Modifique o useEffect
-  useEffect(() => {
-    if (profitabilityData.length > 0) {
-      // Aplicar filtros, mas não modificar profitabilityData diretamente
-      const filtered = applyFiltersAndSort();
-      setFilteredData(filtered);
-      calculateSummaryStats(filtered);
-    }
-  }, [filters, sortConfig, profitabilityData]);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setRefreshing(true);
-
-      // Primeiro, chamar o endpoint para recalcular os dados de rentabilidade
-      await api.post("/client-profitability/refresh_data/", {
-        year: selectedYear,
-        month: selectedMonth,
-      });
-
-      // Depois, buscar os dados atualizados
-      const profitabilityResponse = await api.get(
-        `/client-profitability/?year=${selectedYear}&month=${selectedMonth}`
-      );
-      console.log("Dados de rentabilidade brutos:", profitabilityResponse.data);
-      setProfitabilityData(profitabilityResponse.data);
-
-      // Fetch recent time entries for detailed view
-      const timeResponse = await api.get("/time-entries/");
-      setTimeEntries(timeResponse.data);
-
-      // Fetch clients
-      const clientsResponse = await api.get("/clients/");
-      setClients(clientsResponse.data);
-
-      // Calculate summary statistics
-      calculateSummaryStats(profitabilityResponse.data);
-
+  // Mutation for isRefreshing data
+  const refreshDataMutation = useMutation({
+    mutationFn: () => api.post("/client-profitability/refresh_data/", {
+      year: selectedYear,
+      month: selectedMonth,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profitability'] });
       toast.success("Dados de rentabilidade atualizados com sucesso!");
-    } catch (error) {
-      console.error("Error fetching profitability data:", error);
-      toast.error("Falha ao carregar dados de rentabilidade");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    },
+    onError: (error) => {
+      console.error("Error isRefreshing profitability data:", error);
+      toast.error("Falha ao atualizar dados de rentabilidade");
     }
-  };
+  });
 
-  const calculateSummaryStats = (data) => {
-    if (!data || data.length === 0) {
-      setSummaryStats({
-        totalClients: 0,
-        profitableClients: 0,
-        unprofitableClients: 0,
-        averageMargin: 0,
-        totalRevenue: 0,
-        totalCost: 0,
-        totalProfit: 0,
-      });
-      return;
-    }
-
-    const profitableClients = data.filter((item) => item.is_profitable).length;
-    const unprofitableClients = data.filter(
-      (item) => !item.is_profitable
-    ).length;
-    const totalRevenue = data.reduce(
-      (sum, item) => sum + (parseFloat(item.monthly_fee) || 0),
-      0
-    );
-    const totalCost = data.reduce(
-      (sum, item) =>
-        sum +
-        (parseFloat(item.time_cost) || 0) +
-        (parseFloat(item.total_expenses) || 0),
-      0
-    );
-    const totalProfit = data.reduce(
-      (sum, item) => sum + (parseFloat(item.profit) || 0),
-      0
-    );
-    const margins = data
-      .filter((item) => item.profit_margin !== null)
-      .map((item) => parseFloat(item.profit_margin) || 0);
-    const averageMargin =
-      margins.length > 0
-        ? margins.reduce((sum, margin) => sum + margin, 0) / margins.length
-        : 0;
-
-    setSummaryStats({
-      totalClients: data.length,
-      profitableClients,
-      unprofitableClients,
-      averageMargin,
-      totalRevenue,
-      totalCost,
-      totalProfit,
-    });
-  };
-
-  const applyFiltersAndSort = () => {
+  // Derived state using useMemo
+  const filteredData = useMemo(() => {
+    if (!profitabilityData || profitabilityData.length === 0) return [];
+    
     // Start with all data
-    let filteredData = [...profitabilityData];
+    let filtered = [...profitabilityData];
 
     // Apply client filter
     if (filters.client) {
-      filteredData = filteredData.filter(
+      filtered = filtered.filter(
         (item) => item.client === filters.client
       );
     }
 
     // Apply profitability filters
     if (filters.profitableOnly && !filters.unprofitableOnly) {
-      filteredData = filteredData.filter((item) => item.is_profitable);
+      filtered = filtered.filter((item) => item.is_profitable);
     } else if (!filters.profitableOnly && filters.unprofitableOnly) {
-      filteredData = filteredData.filter((item) => !item.is_profitable);
+      filtered = filtered.filter((item) => !item.is_profitable);
     }
 
     // Apply sorting
     if (sortConfig.key) {
-      filteredData.sort((a, b) => {
+      filtered.sort((a, b) => {
         // Handle null values
         if (a[sortConfig.key] === null) return 1;
         if (b[sortConfig.key] === null) return -1;
@@ -288,10 +231,63 @@ const ClientProfitability = () => {
         return 0;
       });
     }
-    calculateSummaryStats(filteredData);
-    return filteredData;
-  };
+    
+    return filtered;
+  }, [profitabilityData, filters, sortConfig]);
 
+  // Calculate summary stats with useMemo
+  const summaryStats = useMemo(() => {
+    if (!filteredData || filteredData.length === 0) {
+      return {
+        totalClients: 0,
+        profitableClients: 0,
+        unprofitableClients: 0,
+        averageMargin: 0,
+        totalRevenue: 0,
+        totalCost: 0,
+        totalProfit: 0,
+      };
+    }
+
+    const profitableClients = filteredData.filter((item) => item.is_profitable).length;
+    const unprofitableClients = filteredData.filter(
+      (item) => !item.is_profitable
+    ).length;
+    const totalRevenue = filteredData.reduce(
+      (sum, item) => sum + (parseFloat(item.monthly_fee) || 0),
+      0
+    );
+    const totalCost = filteredData.reduce(
+      (sum, item) =>
+        sum +
+        (parseFloat(item.time_cost) || 0) +
+        (parseFloat(item.total_expenses) || 0),
+      0
+    );
+    const totalProfit = filteredData.reduce(
+      (sum, item) => sum + (parseFloat(item.profit) || 0),
+      0
+    );
+    const margins = filteredData
+      .filter((item) => item.profit_margin !== null)
+      .map((item) => parseFloat(item.profit_margin) || 0);
+    const averageMargin =
+      margins.length > 0
+        ? margins.reduce((sum, margin) => sum + margin, 0) / margins.length
+        : 0;
+
+    return {
+      totalClients: filteredData.length,
+      profitableClients,
+      unprofitableClients,
+      averageMargin,
+      totalRevenue,
+      totalCost,
+      totalProfit,
+    };
+  }, [filteredData]);
+
+  // Event handlers
   const handleFilterChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFilters({
@@ -308,20 +304,9 @@ const ClientProfitability = () => {
     setSortConfig({ key, direction });
   };
 
-  const handlePeriodChange = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get(
-        `/client-profitability/?year=${selectedYear}&month=${selectedMonth}`
-      );
-      setProfitabilityData(response.data);
-      calculateSummaryStats(response.data);
-    } catch (error) {
-      console.error("Error fetching profitability data:", error);
-      toast.error("Falha ao carregar dados para o período selecionado");
-    } finally {
-      setLoading(false);
-    }
+  const handlePeriodChange = () => {
+    // Will automatically trigger a refetch due to query key dependencies
+    refetchProfitability();
   };
 
   const resetFilters = () => {
@@ -330,7 +315,10 @@ const ClientProfitability = () => {
       profitableOnly: false,
       unprofitableOnly: false,
     });
-    fetchData();
+  };
+
+  const refreshData = () => {
+    refreshDataMutation.mutate();
   };
 
   const toggleClientDetails = (clientId) => {
@@ -340,7 +328,7 @@ const ClientProfitability = () => {
     });
   };
 
-  // Format currency
+  // Helper functions
   const formatCurrency = (value) => {
     return new Intl.NumberFormat("pt-PT", {
       style: "currency",
@@ -348,14 +336,11 @@ const ClientProfitability = () => {
     }).format(value || 0);
   };
 
-  // Format percentage
   const formatPercentage = (value) => {
-    // Converte para número primeiro, garantindo que seja um número válido
     const numValue = parseFloat(value) || 0;
     return `${numValue.toFixed(2)}%`;
   };
 
-  // Format time in hours and minutes
   const formatTime = (minutes) => {
     if (!minutes) return "0h 0m";
     const hours = Math.floor(minutes / 60);
@@ -363,10 +348,14 @@ const ClientProfitability = () => {
     return `${hours}h ${mins}m`;
   };
 
-  // Get client time entries for details view
   const getClientTimeEntries = (clientId) => {
     return timeEntries.filter((entry) => entry.client === clientId);
   };
+
+  // Combined isLoading state
+  const isLoading = isProfitabilityLoading || isTimeEntriesLoading || isClientsLoading;
+  const isRefreshing = refreshDataMutation.isPending;
+
 
   return (
     <div className="main">
@@ -393,11 +382,11 @@ const ClientProfitability = () => {
                 <motion.button
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={fetchData}
-                  disabled={loading || refreshing}
+                  onClick={refreshData}
+                  disabled={isLoading || isRefreshing}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
                 >
-                  {loading ? (
+                  {isLoading ? (
                     <>
                       <Loader2 className="animate-spin h-5 w-5 mr-2" />
                       Atualizando...
@@ -412,8 +401,8 @@ const ClientProfitability = () => {
                 <motion.button
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={fetchData}
-                  disabled={loading || refreshing}
+                  onClick={fetchProfitabilityData}
+                  disabled={isLoading || isRefreshing}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
                 >
                   <Download size={18} className="mr-2" />
@@ -454,17 +443,6 @@ const ClientProfitability = () => {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-end">
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={handlePeriodChange}
-                    disabled={loading || refreshing}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
-                  >
-                    Aplicar Período
-                  </motion.button>
-                </div>
               </div>
             </div>
 
@@ -484,7 +462,7 @@ const ClientProfitability = () => {
                     <p className="text-gray-600 text-sm font-medium">
                       Receita Total
                     </p>
-                    {loading ? (
+                    {isLoading ? (
                       <div className="flex items-center space-x-2 mt-4">
                         <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
                         <span className="text-sm text-gray-500"></span>
@@ -512,7 +490,7 @@ const ClientProfitability = () => {
                     <p className="text-gray-600 text-sm font-medium">
                       Lucro Total
                     </p>
-                    {loading ? (
+                    {isLoading ? (
                       <div className="flex items-center space-x-2 mt-4">
                         <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
                         <span className="text-sm text-gray-500"></span>
@@ -540,7 +518,7 @@ const ClientProfitability = () => {
                     <p className="text-gray-600 text-sm font-medium">
                       Margem Média
                     </p>
-                    {loading ? (
+                    {isLoading ? (
                       <div className="flex items-center space-x-2 mt-4">
                         <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
                         <span className="text-sm text-gray-500"></span>
@@ -569,7 +547,7 @@ const ClientProfitability = () => {
                     <p className="text-gray-600 text-sm font-medium">
                       Status de Clientes
                     </p>
-                    {loading ? (
+                    {isLoading ? (
                       <div className="flex items-center space-x-2 mt-4">
                         <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
                         <span className="text-sm text-gray-500"></span>
@@ -652,7 +630,7 @@ const ClientProfitability = () => {
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={resetFilters}
-                  disabled={loading || refreshing}
+                  disabled={isLoading || isRefreshing}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
                 >
                   Limpar Filtros
@@ -666,7 +644,7 @@ const ClientProfitability = () => {
                 Análise de Rentabilidade por Cliente
               </h2>
 
-              {loading ? (
+              {isLoading ? (
                 <div className="p-6 flex justify-center">
                   <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
                 </div>
@@ -686,7 +664,7 @@ const ClientProfitability = () => {
                               whileHover={{ scale: 1.03 }}
                               whileTap={{ scale: 0.97 }}
                               onClick={() => handleSort("client_name")}
-                              disabled={loading || refreshing}
+                              disabled={isLoading || isRefreshing}
                               className="bg-blue-200 hover:bg-blue-700 text-white px-4 
                               py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
                             >
@@ -718,7 +696,7 @@ const ClientProfitability = () => {
                               whileHover={{ scale: 1.03 }}
                               whileTap={{ scale: 0.97 }}
                               onClick={() => handleSort("monthly_fee")}
-                              disabled={loading || refreshing}
+                              disabled={isLoading || isRefreshing}
                               className="bg-blue-200 hover:bg-blue-700 text-white px-4 
                               py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
                             >
@@ -750,7 +728,7 @@ const ClientProfitability = () => {
                               whileHover={{ scale: 1.03 }}
                               whileTap={{ scale: 0.97 }}
                               onClick={() => handleSort("time_cost")}
-                              disabled={loading || refreshing}
+                              disabled={isLoading || isRefreshing}
                               className="bg-blue-200 hover:bg-blue-700 text-white px-4 
                               py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
                             >
@@ -782,7 +760,7 @@ const ClientProfitability = () => {
                               whileHover={{ scale: 1.03 }}
                               whileTap={{ scale: 0.97 }}
                               onClick={() => handleSort("total_expenses")}
-                              disabled={loading || refreshing}
+                              disabled={isLoading || isRefreshing}
                               className="bg-blue-200 hover:bg-blue-700 text-white px-4 
                               py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
                             >
@@ -814,7 +792,7 @@ const ClientProfitability = () => {
                               whileHover={{ scale: 1.03 }}
                               whileTap={{ scale: 0.97 }}
                               onClick={() => handleSort("profit")}
-                              disabled={loading || refreshing}
+                              disabled={isLoading || isRefreshing}
                               className="bg-blue-200 hover:bg-blue-700 text-white px-4 
                               py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
                             >
@@ -846,7 +824,7 @@ const ClientProfitability = () => {
                               whileHover={{ scale: 1.03 }}
                               whileTap={{ scale: 0.97 }}
                               onClick={() => handleSort("profit_margin")}
-                              disabled={loading || refreshing}
+                              disabled={isLoading || isRefreshing}
                               className="bg-blue-200 hover:bg-blue-700 text-white px-4 
                               py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
                             >
@@ -958,7 +936,7 @@ const ClientProfitability = () => {
                                   onClick={() =>
                                     toggleClientDetails(item.client)
                                   }
-                                  disabled={loading || refreshing}
+                                  disabled={isLoading || isRefreshing}
                                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
                                 >
                                   {expandedClients[item.client] ? (
@@ -1188,7 +1166,7 @@ const ClientProfitability = () => {
                   Clientes Mais Rentáveis
                 </h3>
                 <div className="space-y-4">
-                  {loading ? (
+                  {isLoading ? (
                     <div className="flex justify-center p-4">
                       <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
                     </div>
@@ -1227,7 +1205,7 @@ const ClientProfitability = () => {
                       ))
                   )}
 
-                  {!loading &&
+                  {!isLoading &&
                     profitabilityData.filter((item) => item.is_profitable)
                       .length === 0 && (
                       <div className="text-center py-4 text-gray-500">
@@ -1244,7 +1222,7 @@ const ClientProfitability = () => {
                   Clientes Com Problemas de Rentabilidade
                 </h3>
                 <div className="space-y-4">
-                  {loading ? (
+                  {isLoading ? (
                     <div className="flex justify-center p-4">
                       <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
                     </div>
@@ -1283,7 +1261,7 @@ const ClientProfitability = () => {
                       ))
                   )}
 
-                  {!loading &&
+                  {!isLoading &&
                     profitabilityData.filter((item) => !item.is_profitable)
                       .length === 0 && (
                       <div className="text-center py-4 text-gray-500">

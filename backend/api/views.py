@@ -4,10 +4,11 @@ from datetime import datetime
 from django.utils import timezone
 import json
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowStep
+from rest_framework.exceptions import PermissionDenied
+from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowStep
 from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializer,
                          TimeEntrySerializer, ExpenseSerializer, ClientProfitabilitySerializer,
-                         ProfileSerializer, AutoTimeTrackingSerializer)
+                         ProfileSerializer, AutoTimeTrackingSerializer, OrganizationSerializer)
 from .models import NLPProcessor, WorkflowDefinition, TaskApproval
 from django.contrib.auth.models import User
 from .serializers import UserSerializer, NLPProcessorSerializer, WorkflowDefinitionSerializer, WorkflowStepSerializer, TaskApprovalSerializer
@@ -15,7 +16,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from .utils import update_profitability_for_period, update_current_month_profitability
-
+from django.db.models import Q
 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
@@ -38,13 +39,43 @@ class AutoTimeTrackingViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
         
 class ClientViewSet(viewsets.ModelViewSet):
-    queryset = Client.objects.all()
     serializer_class = ClientSerializer
     permission_classes = [IsAuthenticated]
     
+    def get_queryset(self):
+        user = self.request.user
+        
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            # Apply filters if provided
+            queryset = Client.objects.all()
+            is_active = self.request.query_params.get('is_active')
+            if is_active is not None:
+                queryset = queryset.filter(is_active=is_active == 'true')
+            
+            # Return all clients in the organization if admin or has full view permission
+            if profile.is_org_admin or profile.can_view_all_clients:
+                if profile.organization:
+                    return queryset.filter(organization=profile.organization)
+                return Client.objects.none()
+            else:
+                # Return only explicitly granted clients
+                return profile.visible_clients.all().filter(id__in=queryset)
+                
+        except Profile.DoesNotExist:
+            return Client.objects.none()
+    
     def perform_create(self, serializer):
-        serializer.save()  # Remove the created_by parameter
-
+        # Set the organization based on the user's profile
+        try:
+            profile = Profile.objects.get(user=self.request.user)
+            if profile.organization:
+                serializer.save(organization=profile.organization)
+            else:
+                raise PermissionDenied("User is not part of any organization")
+        except Profile.DoesNotExist:
+            raise PermissionDenied("User profile not found")
 
 class TaskCategoryViewSet(viewsets.ModelViewSet):
     queryset = TaskCategory.objects.all()
@@ -56,75 +87,42 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        queryset = Task.objects.all()
-        status = self.request.GET.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
-        # Filter by client if provided
-        client_id = self.request.GET.get('client')
-        if client_id:
-            queryset = queryset.filter(client_id=client_id)
-        return queryset
+        user = self.request.user
+        
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            base_queryset = Task.objects.all()
+            
+            # Filter by status if provided
+            status_param = self.request.GET.get('status')
+            if status_param:
+                base_queryset = base_queryset.filter(status=status_param)
+                
+            # Filter by client if provided
+            client_id = self.request.GET.get('client')
+            if client_id:
+                base_queryset = base_queryset.filter(client_id=client_id)
+            
+            # Apply permission-based filtering
+            if profile.is_org_admin or profile.can_view_all_clients:
+                # Admins see all tasks in their organization
+                if profile.organization:
+                    return base_queryset.filter(client__organization=profile.organization)
+                return Task.objects.none()
+            else:
+                # Regular users only see tasks for their visible clients or assigned to them
+                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
+                return base_queryset.filter(
+                    Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
+                ).distinct()
+                
+        except Profile.DoesNotExist:
+            return Task.objects.none()
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
-    
-    @action(detail=True, methods=['post'])
-    def advance_workflow(self, request, pk=None):
-        task = self.get_object()
         
-        step_id = request.data.get('step_id')
-        comment = request.data.get('comment', '')
-        
-        if not step_id:
-            return Response(
-                {'error': 'Workflow step ID is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        try:
-            next_step = WorkflowStep.objects.get(id=step_id)
-        except WorkflowStep.DoesNotExist:
-            return Response(
-                {'error': 'Invalid workflow step ID'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        # Check if this is a valid next step
-        current_step = task.current_workflow_step
-        if current_step:
-            try:
-                next_steps = json.loads(current_step.next_steps)
-                if str(next_step.id) not in next_steps:
-                    return Response(
-                        {'error': 'Invalid workflow transition'}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            except:
-                pass
-                
-        # Update the task
-        task.current_workflow_step = next_step
-        task.workflow_comment = comment
-        
-        # If the step has an assignee, update the task assignment
-        if next_step.assign_to:
-            task.assigned_to = next_step.assign_to
-            
-        task.save()
-        
-        # Create a notification
-        if next_step.requires_approval and next_step.approver_role:
-            # In a real implementation, you'd find users with the appropriate role
-            # and create notifications for them
-            pass
-            
-        return Response(
-            {'success': True, 'message': 'Workflow advanced successfully'},
-            status=status.HTTP_200_OK
-        )
-
-# Create your views here.
 class CreateUserView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -135,22 +133,57 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        queryset = TimeEntry.objects.all()
-        # Filter by date range if provided
-        start_date = self.request.GET.get('start_date')
-        end_date = self.request.GET.get('end_date')
-        if start_date and end_date:
-            queryset = queryset.filter(date__range=[start_date, end_date])
-        # Filter by client if provided
-        client_id = self.request.GET.get('client')
-        if client_id:
-            queryset = queryset.filter(client_id=client_id)
-        return queryset
+        user = self.request.user
+        
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            base_queryset = TimeEntry.objects.all()
+            
+            # Filter by date range if provided
+            start_date = self.request.query_params.get('start_date')
+            end_date = self.request.query_params.get('end_date')
+            if start_date and end_date:
+                base_queryset = base_queryset.filter(date__range=[start_date, end_date])
+                
+            # Filter by client if provided
+            client_id = self.request.query_params.get('client')
+            if client_id:
+                base_queryset = base_queryset.filter(client_id=client_id)
+            
+            # Apply permission-based filtering
+            if profile.is_org_admin or profile.can_view_all_clients:
+                # Admins see all time entries in their organization
+                if profile.organization:
+                    return base_queryset.filter(client__organization=profile.organization)
+                return TimeEntry.objects.none()
+            else:
+                # Regular users only see time entries for their visible clients or their own entries
+                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
+                return base_queryset.filter(
+                    Q(client_id__in=visible_client_ids) | Q(user=user)
+                ).distinct()
+                
+        except Profile.DoesNotExist:
+            # If no profile, only show the user's own entries
+            return TimeEntry.objects.filter(user=user)
     
     def perform_create(self, serializer):
-        print(f"Creating time entry with user: {self.request.user}")
+        # Check if the user has access to the client
+        client_id = self.request.data.get('client')
+        if client_id:
+            try:
+                profile = Profile.objects.get(user=self.request.user)
+                client = Client.objects.get(id=client_id)
+                
+                if not profile.can_access_client(client):
+                    raise PermissionDenied("You don't have access to this client")
+                    
+            except (Profile.DoesNotExist, Client.DoesNotExist):
+                pass  # Let validation handle this
+                
         serializer.save(user=self.request.user)
-
+        
 class ExpenseViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
@@ -176,60 +209,49 @@ class ClientProfitabilityViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        queryset = ClientProfitability.objects.all()
+        user = self.request.user
         
-        # Filtrar por ano/mês se fornecido
-        year = self.request.query_params.get('year')
-        month = self.request.query_params.get('month')
-        if year and month:
-            queryset = queryset.filter(year=year, month=month)
-        
-        # Filtrar por cliente se fornecido
-        client_id = self.request.query_params.get('client')
-        if client_id:
-            queryset = queryset.filter(client_id=client_id)
+        try:
+            profile = Profile.objects.get(user=user)
             
-        # Filtrar por rentabilidade se especificado
-        is_profitable = self.request.query_params.get('is_profitable')
-        if is_profitable is not None:
-            is_profitable_bool = is_profitable.lower() == 'true'
-            queryset = queryset.filter(is_profitable=is_profitable_bool)
+            # Check permission to view profitability data
+            if not (profile.is_org_admin or profile.can_view_profitability):
+                return ClientProfitability.objects.none()
             
-        return queryset
-    
-    @action(detail=False, methods=['post'])
-    def refresh_data(self, request):
-        """
-        Endpoint para recalcular dados de rentabilidade.
-        Pode ser chamado com year e month para atualizar um período específico,
-        ou sem parâmetros para atualizar o mês atual.
-        """
-        year = request.data.get('year')
-        month = request.data.get('month')
-        
-        if year and month:
-            try:
-                year = int(year)
-                month = int(month)
-                count = update_profitability_for_period(year, month)
-                return Response({
-                    'status': 'success',
-                    'message': f'Dados de rentabilidade atualizados para {month}/{year}',
-                    'updated_count': count
-                }, status=status.HTTP_200_OK)
-            except ValueError:
-                return Response({
-                    'status': 'error',
-                    'message': 'Ano e mês devem ser valores numéricos'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            # Sem parâmetros, atualiza o mês atual
-            count = update_current_month_profitability()
-            return Response({
-                'status': 'success',
-                'message': 'Dados de rentabilidade atualizados para o mês atual',
-                'updated_count': count
-            }, status=status.HTTP_200_OK)
+            base_queryset = ClientProfitability.objects.all()
+            
+            # Filter by year/month if provided
+            year = self.request.query_params.get('year')
+            month = self.request.query_params.get('month')
+            if year and month:
+                base_queryset = base_queryset.filter(year=year, month=month)
+            
+            # Filter by client if provided
+            client_id = self.request.query_params.get('client')
+            if client_id:
+                base_queryset = base_queryset.filter(client_id=client_id)
+                
+            # Filter by profitability if specified
+            is_profitable = self.request.query_params.get('is_profitable')
+            if is_profitable is not None:
+                is_profitable_bool = is_profitable.lower() == 'true'
+                base_queryset = base_queryset.filter(is_profitable=is_profitable_bool)
+            
+            # Apply client visibility filtering
+            if profile.organization:
+                if profile.is_org_admin or profile.can_view_all_clients:
+                    # Admins see all profitability data in the organization
+                    return base_queryset.filter(client__organization=profile.organization)
+                else:
+                    # Regular users only see profitability data for visible clients
+                    visible_client_ids = profile.visible_clients.values_list('id', flat=True)
+                    return base_queryset.filter(client_id__in=visible_client_ids)
+            
+            return ClientProfitability.objects.none()
+                
+        except Profile.DoesNotExist:
+            return ClientProfitability.objects.none()
+            
 class NLPProcessorViewSet(viewsets.ModelViewSet):
     queryset = NLPProcessor.objects.all()
     serializer_class = NLPProcessorSerializer
@@ -352,3 +374,494 @@ class TaskApprovalViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(approved_by=self.request.user)
+        
+# Adicionar ao views.py existente
+class OrganizationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para visualizar e editar organizações.
+    Apenas admins podem criar/atualizar organizações.
+    Usuários normais só podem ver sua própria organização.
+    """
+    serializer_class = OrganizationSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Se for um superusuário/admin, pode ver todas as organizações
+        if user.is_superuser:
+            return Organization.objects.all()
+            
+        # Tentar obter o perfil do usuário
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            # Se tiver uma organização associada, retorna essa organização
+            if profile.organization:
+                return Organization.objects.filter(id=profile.organization.id)
+            
+            # Caso não tenha organização
+            return Organization.objects.none()
+                
+        except Profile.DoesNotExist:
+            return Organization.objects.none()
+    
+    @action(detail=True, methods=['get'])
+    def members(self, request, pk=None):
+        """Obter todos os membros de uma organização."""
+        organization = self.get_object()
+        members = Profile.objects.filter(organization=organization)
+        serializer = ProfileSerializer(members, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def clients(self, request, pk=None):
+        """Obter todos os clientes de uma organização."""
+        organization = self.get_object()
+        
+        # Get user profile
+        profile = Profile.objects.get(user=request.user)
+        
+        # If admin or can see all clients, return all organization clients
+        if profile.is_org_admin or profile.can_view_all_clients:
+            clients = Client.objects.filter(organization=organization)
+        else:
+            # Otherwise only return visible clients
+            clients = profile.visible_clients.filter(organization=organization)
+            
+        serializer = ClientSerializer(clients, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def add_member(self, request, pk=None):
+        """Adicionar um usuário existente como membro da organização."""
+        organization = self.get_object()
+        
+        # Verificar se o usuário atual é administrador desta organização
+        try:
+            requester_profile = Profile.objects.get(user=request.user)
+            if not requester_profile.is_org_admin or requester_profile.organization != organization:
+                return Response(
+                    {"error": "Sem permissão para adicionar membros a esta organização"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil do solicitante não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Obter os dados do formulário
+        user_id = request.data.get('user_id')
+        role = request.data.get('role', 'Membro')
+        is_admin = request.data.get('is_admin', False)
+        can_assign_tasks = request.data.get('can_assign_tasks', False)
+        can_manage_clients = request.data.get('can_manage_clients', False)
+        can_view_all_clients = request.data.get('can_view_all_clients', False)
+        can_view_analytics = request.data.get('can_view_analytics', False)
+        can_view_profitability = request.data.get('can_view_profitability', False)
+        
+        if not user_id:
+            return Response(
+                {"error": "ID do usuário é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar se o usuário existe
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Usuário não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Verificar se o perfil existe e atualizá-lo ou criar novo
+        profile, created = Profile.objects.get_or_create(
+            user=user,
+            defaults={
+                'organization': organization,
+                'role': role,
+                'is_org_admin': is_admin,
+                'can_assign_tasks': can_assign_tasks,
+                'can_manage_clients': can_manage_clients,
+                'can_view_all_clients': can_view_all_clients,
+                'can_view_analytics': can_view_analytics,
+                'can_view_profitability': can_view_profitability,
+                'access_level': 'Standard'
+            }
+        )
+        
+        if not created:
+            # Atualizar um perfil existente
+            profile.organization = organization
+            profile.role = role
+            profile.is_org_admin = is_admin
+            profile.can_assign_tasks = can_assign_tasks
+            profile.can_manage_clients = can_manage_clients
+            profile.can_view_all_clients = can_view_all_clients
+            profile.can_view_analytics = can_view_analytics
+            profile.can_view_profitability = can_view_profitability
+            profile.save()
+        
+        return Response(
+            ProfileSerializer(profile).data, 
+            status=status.HTTP_200_OK
+        )
+        
+    @action(detail=True, methods=['post'])
+    def remove_member(self, request, pk=None):
+        """Remover um membro da organização."""
+        organization = self.get_object()
+        
+        # Verificar se o usuário atual é administrador desta organização
+        try:
+            requester_profile = Profile.objects.get(user=request.user)
+            if not requester_profile.is_org_admin or requester_profile.organization != organization:
+                return Response(
+                    {"error": "Sem permissão para remover membros desta organização"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil do solicitante não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Obter os dados do formulário
+        profile_id = request.data.get('profile_id')
+        
+        if not profile_id:
+            return Response(
+                {"error": "ID do perfil é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar se o perfil existe
+        try:
+            profile = Profile.objects.get(id=profile_id, organization=organization)
+            
+            # Não permitir remover-se a si mesmo se for o único admin
+            if profile.user == request.user and profile.is_org_admin:
+                admin_count = Profile.objects.filter(
+                    organization=organization, 
+                    is_org_admin=True
+                ).count()
+                
+                if admin_count <= 1:
+                    return Response(
+                        {"error": "Não é possível remover o único administrador da organização"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                    
+            # Desvincula o perfil da organização, mas não o exclui
+            profile.organization = None
+            profile.is_org_admin = False
+            profile.can_assign_tasks = False
+            profile.can_manage_clients = False
+            profile.can_view_all_clients = False
+            profile.can_view_analytics = False
+            profile.can_view_profitability = False
+            profile.visible_clients.clear()  # Remove all visible clients
+            profile.save()
+            
+            return Response(
+                {"success": "Membro removido da organização com sucesso"}, 
+                status=status.HTTP_200_OK
+            )
+            
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil não encontrado nesta organização"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    """
+    ViewSet para visualizar e editar organizações.
+    Apenas admins podem criar/atualizar organizações.
+    Usuários normais só podem ver sua própria organização.
+    """
+    serializer_class = OrganizationSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Se for um superusuário/admin, pode ver todas as organizações
+        if user.is_superuser:
+            return Organization.objects.all()
+            
+        # Tentar obter o perfil do usuário
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            # Se tiver uma organização associada, retorna essa organização
+            if profile.organization:
+                return Organization.objects.filter(id=profile.organization.id)
+            
+            # Caso não tenha organização
+            return Organization.objects.none()
+                
+        except Profile.DoesNotExist:
+            return Organization.objects.none()
+    
+    @action(detail=True, methods=['get'])
+    def members(self, request, pk=None):
+        """Obter todos os membros de uma organização."""
+        organization = self.get_object()
+        members = Profile.objects.filter(organization=organization)
+        serializer = ProfileSerializer(members, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def clients(self, request, pk=None):
+        """Obter todos os clientes de uma organização."""
+        organization = self.get_object()
+        clients = Client.objects.filter(organization=organization)
+        serializer = ClientSerializer(clients, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def add_member(self, request, pk=None):
+        """Adicionar um usuário existente como membro da organização."""
+        organization = self.get_object()
+        
+        # Verificar se o usuário atual é administrador desta organização
+        try:
+            requester_profile = Profile.objects.get(user=request.user)
+            if not requester_profile.is_org_admin or requester_profile.organization != organization:
+                return Response(
+                    {"error": "Sem permissão para adicionar membros a esta organização"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil do solicitante não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Obter os dados do formulário
+        user_id = request.data.get('user_id')
+        role = request.data.get('role', 'Membro')
+        is_admin = request.data.get('is_admin', False)
+        
+        if not user_id:
+            return Response(
+                {"error": "ID do usuário é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar se o usuário existe
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Usuário não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Verificar se o perfil existe e atualizá-lo ou criar novo
+        profile, created = Profile.objects.get_or_create(
+            user=user,
+            defaults={
+                'organization': organization,
+                'role': role,
+                'is_org_admin': is_admin,
+                'access_level': 'Standard'
+            }
+        )
+        
+        if not created:
+            # Atualizar um perfil existente
+            profile.organization = organization
+            profile.role = role
+            profile.is_org_admin = is_admin
+            profile.save()
+        
+        return Response(
+            ProfileSerializer(profile).data, 
+            status=status.HTTP_200_OK
+        )
+        
+    @action(detail=True, methods=['post'])
+    def remove_member(self, request, pk=None):
+        """Remover um membro da organização."""
+        organization = self.get_object()
+        
+        # Verificar se o usuário atual é administrador desta organização
+        try:
+            requester_profile = Profile.objects.get(user=request.user)
+            if not requester_profile.is_org_admin or requester_profile.organization != organization:
+                return Response(
+                    {"error": "Sem permissão para remover membros desta organização"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil do solicitante não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Obter os dados do formulário
+        profile_id = request.data.get('profile_id')
+        
+        if not profile_id:
+            return Response(
+                {"error": "ID do perfil é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar se o perfil existe
+        try:
+            profile = Profile.objects.get(id=profile_id, organization=organization)
+            
+            # Não permitir remover-se a si mesmo se for o único admin
+            if profile.user == request.user and profile.is_org_admin:
+                admin_count = Profile.objects.filter(
+                    organization=organization, 
+                    is_org_admin=True
+                ).count()
+                
+                if admin_count <= 1:
+                    return Response(
+                        {"error": "Não é possível remover o único administrador da organização"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                    
+            # Desvincula o perfil da organização, mas não o exclui
+            profile.organization = None
+            profile.is_org_admin = False
+            profile.can_assign_tasks = False
+            profile.can_manage_clients = False
+            profile.save()
+            
+            return Response(
+                {"success": "Membro removido da organização com sucesso"}, 
+                status=status.HTTP_200_OK
+            )
+            
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil não encontrado nesta organização"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+    @action(detail=True, methods=['post'])
+    def update_member(self, request, pk=None):
+        """Update an existing organization member's permissions."""
+        organization = self.get_object()
+        
+        # Check if requester is admin
+        try:
+            requester_profile = Profile.objects.get(user=request.user)
+            if not requester_profile.is_org_admin or requester_profile.organization != organization:
+                return Response(
+                    {"error": "Sem permissão para atualizar membros desta organização"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil do solicitante não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get form data
+        profile_id = request.data.get('profile_id')
+        
+        if not profile_id:
+            return Response(
+                {"error": "ID do perfil é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the member profile
+        try:
+            profile = Profile.objects.get(id=profile_id, organization=organization)
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil não encontrado nesta organização"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # Update permissions
+        profile.role = request.data.get('role', profile.role)
+        profile.is_org_admin = request.data.get('is_admin', profile.is_org_admin)
+        profile.can_assign_tasks = request.data.get('can_assign_tasks', profile.can_assign_tasks)
+        profile.can_manage_clients = request.data.get('can_manage_clients', profile.can_manage_clients)
+        profile.can_view_all_clients = request.data.get('can_view_all_clients', profile.can_view_all_clients)
+        profile.can_view_analytics = request.data.get('can_view_analytics', profile.can_view_analytics)
+        profile.can_view_profitability = request.data.get('can_view_profitability', profile.can_view_profitability)
+        profile.save()
+        
+        return Response(
+            ProfileSerializer(profile).data, 
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=True, methods=['post'])
+    def manage_visible_clients(self, request, pk=None):
+        """Add or remove visible clients for a user."""
+        organization = self.get_object()
+        
+        # Check if requester is admin
+        try:
+            requester_profile = Profile.objects.get(user=request.user)
+            if not requester_profile.is_org_admin or requester_profile.organization != organization:
+                return Response(
+                    {"error": "Sem permissão para gerenciar clientes visíveis"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil do solicitante não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get form data
+        profile_id = request.data.get('profile_id')
+        client_ids = request.data.get('client_ids', [])
+        action = request.data.get('action', 'add')  # Options: 'add', 'remove', 'set'
+        
+        if not profile_id:
+            return Response(
+                {"error": "ID do perfil é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the member profile
+        try:
+            profile = Profile.objects.get(id=profile_id, organization=organization)
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil não encontrado nesta organização"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # Get the clients
+        clients = Client.objects.filter(
+            organization=organization, 
+            id__in=client_ids
+        )
+        
+        if len(clients) != len(client_ids) and client_ids:
+            return Response(
+                {"error": "Um ou mais clientes não encontrados nesta organização"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Update visible clients
+        if action == 'add':
+            profile.visible_clients.add(*clients)
+        elif action == 'remove':
+            profile.visible_clients.remove(*clients)
+        elif action == 'set':
+            profile.visible_clients.set(clients)
+        else:
+            return Response(
+                {"error": "Ação inválida. Use 'add', 'remove' ou 'set'"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        return Response(
+            ProfileSerializer(profile).data, 
+            status=status.HTTP_200_OK
+        )

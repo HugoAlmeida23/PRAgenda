@@ -1,8 +1,26 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval 
+from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval 
 
 
+class OrganizationSerializer(serializers.ModelSerializer):
+    member_count = serializers.SerializerMethodField()
+    client_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Organization
+        fields = ['id', 'name', 'description', 'address', 'phone', 'email', 
+                  'logo', 'created_at', 'updated_at', 'is_active', 
+                  'subscription_plan', 'max_users', 'settings',
+                  'member_count', 'client_count']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'member_count', 'client_count']
+        
+    def get_member_count(self, obj):
+        return obj.members.count()
+        
+    def get_client_count(self, obj):
+        return obj.clients.count()
+    
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -16,23 +34,36 @@ class UserSerializer(serializers.ModelSerializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     username = serializers.ReadOnlyField(source='user.username')
+    email = serializers.ReadOnlyField(source='user.email')
+    organization_name = serializers.ReadOnlyField(source='organization.name')
+    visible_clients_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Profile
-        fields = ['id', 'user', 'username', 'hourly_rate', 'role', 'access_level', 
-                  'phone', 'productivity_metrics']
-        read_only_fields = ['id', 'user']  # Added 'user' as read-only
+        fields = ['id', 'user', 'username', 'email', 'organization', 'organization_name',
+                  'hourly_rate', 'role', 'access_level', 'phone', 'productivity_metrics',
+                  'is_org_admin', 'can_assign_tasks', 'can_manage_clients',
+                  'visible_clients', 'visible_clients_info', 'can_view_all_clients', 
+                  'can_view_analytics', 'can_view_profitability']
+        read_only_fields = ['id', 'user', 'username', 'email', 'organization_name']
+    
+    def get_visible_clients_info(self, obj):
+        """Returns basic info about visible clients for display purposes"""
+        visible_clients = obj.visible_clients.all()
+        return [{'id': client.id, 'name': client.name} for client in visible_clients]
 
 
 class ClientSerializer(serializers.ModelSerializer):
     account_manager_name = serializers.ReadOnlyField(source='account_manager.username')
+    organization_name = serializers.ReadOnlyField(source='organization.name')
     
     class Meta:
         model = Client
         fields = ['id', 'name', 'nif', 'email', 'phone', 'address', 
+                  'organization', 'organization_name',
                   'account_manager', 'account_manager_name', 'monthly_fee', 
                   'created_at', 'updated_at', 'is_active', 'notes']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'organization_name']
 
 
 class TaskCategorySerializer(serializers.ModelSerializer):
