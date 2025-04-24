@@ -14,6 +14,9 @@ import ClientProfitability from "./pages/ClientProfitability"
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import OrganizationManagement from "./pages/OrganizationManagement"
 import LimitedDashboard from "./pages/LimitedDashboard"
+import TaskWorkflow from "./pages/TaskOverflow"
+import WorkflowDesigner from "./pages/WorkflowDesigner"
+import WorkflowManagement from "./pages/WorkflowManagement"
 
 const queryClient = new QueryClient();
 
@@ -90,6 +93,39 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/limited-dashboard"
+          element={
+            <ProtectedRoute>
+              <LimitedDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/task-workflow/:taskId"
+          element={
+            <ProtectedRoute>
+              <TaskWorkflow />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflow-designer"
+          element={
+            <ProtectedRoute>
+              <WorkflowDesigner />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflow-management"
+          element={
+            <ProtectedRoute>
+              <WorkflowManagement />
+            </ProtectedRoute>
+          }
+        />
+        
         <Route path="/login" element={<Login />} />
         <Route path="/logout" element={<Logout />} />
         <Route path="/register" element={<RegisterAndLogout />} />

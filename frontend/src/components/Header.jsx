@@ -192,6 +192,18 @@ function Header({ children }) {
                     <span>Organização</span>
                   </a>
                 </li>
+                <li className="nav-item">
+                  <a href="./workflow-designer" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-user"></i>
+                    <span>Worflow Designer</span>
+                  </a>
+                </li>
+                <li className="nav-item">
+                  <a href="./workflow-management" onClick={isMobile ? toggleSidebar : undefined}>
+                    <i className="fas fa-user"></i>
+                    <span>Gerir Worflows</span>
+                  </a>
+                </li>
               </ul>
               
               <div className="sidebar-footer">
