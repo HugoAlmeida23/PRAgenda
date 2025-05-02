@@ -431,12 +431,16 @@ class NLPProcessor(models.Model):
             dict: Extracted information including:
                 - clients: List of identified client objects
                 - categories: List of identified task category objects
+                - tasks: List of identified task objects
                 - times: List of durations in minutes
                 - activities: List of activity descriptions
         """
+        import re
+
         results = {
             'clients': [],
             'categories': [],
+            'tasks': [],
             'times': [],
             'activities': [],
             'confidence': 0.0
@@ -453,7 +457,10 @@ class NLPProcessor(models.Model):
         clients = Client.objects.filter(is_active=True)
         
         for client in clients:
-            if client.name.lower() in text.lower():
+            # Verifica se o nome do cliente está no texto 
+            # (com verificação de palavras completas para evitar falsos positivos)
+            client_name_pattern = r'\b' + re.escape(client.name.lower()) + r'\b'
+            if re.search(client_name_pattern, text.lower()):
                 results['clients'].append(client)
                 
         # 2. Find categories
@@ -461,22 +468,50 @@ class NLPProcessor(models.Model):
         categories = TaskCategory.objects.all()
         
         for category in categories:
-            if category.name.lower() in text.lower():
+            # Busca categorias no texto
+            category_name_pattern = r'\b' + re.escape(category.name.lower()) + r'\b'
+            if re.search(category_name_pattern, text.lower()):
                 results['categories'].append(category)
+        
+        # 3. Find tasks related to the identified clients
+        from .models import Task
+        
+        # Se encontramos clientes, buscamos tarefas desses clientes
+        if results['clients']:
+            tasks = Task.objects.filter(
+                client__in=results['clients'], 
+                status__in=['pending', 'in_progress']
+            )
+            
+            for task in tasks:
+                # Verifica se o título da tarefa está mencionado no texto
+                task_title_lower = task.title.lower()
+                # Busca tanto o título completo quanto palavras-chave do título
+                if task_title_lower in text.lower():
+                    results['tasks'].append(task)
+                    continue
                 
-        # 3. Extract time information using regex
+                # Verifica palavras-chave do título da tarefa
+                for keyword in task_title_lower.split():
+                    if len(keyword) > 3 and keyword in text.lower():  # Ignora palavras muito curtas
+                        results['tasks'].append(task)
+                        break
+        
+        # 4. Extract time information using regex
         import re
         
         # Match patterns like "2 hours", "30 minutes", "2h", "30m", "2.5 hours", etc.
         hour_patterns = [
             r'(\d+\.?\d*)\s*hours?',
             r'(\d+\.?\d*)\s*h(?:rs?)?',
+            r'(\d+\.?\d*)\s*horas?',  # Padrão em português
         ]
         
         minute_patterns = [
             r'(\d+)\s*minutes?',
             r'(\d+)\s*mins?',
             r'(\d+)\s*m(?:in)?',
+            r'(\d+)\s*minutos?',  # Padrão em português
         ]
         
         for pattern in hour_patterns:
@@ -498,14 +533,17 @@ class NLPProcessor(models.Model):
                 except ValueError:
                     continue
         
-        # 4. Extract activities
+        # 5. Extract activities
         # This is highly simplified - in a real implementation, this would use
         # more advanced NLP techniques to identify activities
         
         activity_keywords = [
             "preparation", "review", "meeting", "call", "email", "report",
             "tax", "accounting", "declaration", "invoice", "expense",
-            "reconciliation", "payroll", "financial", "statement", "audit"
+            "reconciliation", "payroll", "financial", "statement", "audit",
+            "preparação", "revisão", "reunião", "chamada", "email", "relatório",
+            "imposto", "contabilidade", "declaração", "fatura", "despesa", 
+            "conciliação", "folha de pagamento", "financeiro", "demonstração", "auditoria"
         ]
         
         for keyword in activity_keywords:
@@ -517,8 +555,15 @@ class NLPProcessor(models.Model):
                         results['activities'].append(sentence.strip())
                         break
         
+        # If tasks were found, use their titles as activities if no activities were found
+        if results['tasks'] and not results['activities']:
+            for task in results['tasks']:
+                results['activities'].append(f"Trabalho na tarefa: {task.title}")
+        
         # Calculate confidence - this is a very simple heuristic
-        if results['clients'] and results['times']:
+        if (results['clients'] and results['times'] and (results['tasks'] or results['categories'])):
+            results['confidence'] = 0.9  # Maior confiança quando temos cliente, tempo e tarefa/categoria
+        elif results['clients'] and results['times']:
             results['confidence'] = 0.8
         elif results['clients'] or results['times']:
             results['confidence'] = 0.5
@@ -534,7 +579,7 @@ class NLPProcessor(models.Model):
         return results
         
     @staticmethod
-    def create_time_entries_from_text(text, user, client_id=None, date=None):
+    def create_time_entries_from_text(text, user, client_id=None, date=None, task_id=None):
         """
         Create TimeEntry objects based on natural language text.
         
@@ -543,11 +588,12 @@ class NLPProcessor(models.Model):
             user (User): The user creating the entry
             client_id (UUID, optional): Default client if not detected in text
             date (date, optional): The date for the entry, defaults to today
+            task_id (UUID, optional): Default task if provided
             
         Returns:
             list: Created TimeEntry objects
         """
-        from .models import TimeEntry, Client
+        from .models import TimeEntry, Client, Task
         
         if not date:
             date = timezone.now().date()
@@ -555,6 +601,21 @@ class NLPProcessor(models.Model):
         # Process the text
         results = NLPProcessor.process_text(text, user)
         created_entries = []
+        
+        # If task_id is provided, use that task
+        selected_task = None
+        if task_id:
+            try:
+                selected_task = Task.objects.get(id=task_id)
+                # Adiciona a tarefa aos resultados se ainda não estiver lá
+                if selected_task not in results['tasks']:
+                    results['tasks'].append(selected_task)
+                    
+                # Se a tarefa tem um cliente, usamos esse cliente
+                if selected_task.client and selected_task.client not in results['clients']:
+                    results['clients'].append(selected_task.client)
+            except Task.DoesNotExist:
+                pass
         
         # If no clients found in text but a default is provided
         if not results['clients'] and client_id:
@@ -571,27 +632,58 @@ class NLPProcessor(models.Model):
         # If no activities found, use the original text
         if not results['activities']:
             results['activities'] = [text]
-            
+        
         # Create time entries
-        # If multiple clients and times, try to match them logically
-        if len(results['clients']) > 1 and len(results['times']) > 1:
-            # This is a simplified approach - in a real implementation,
-            # you'd want more sophisticated matching
+        # Behavior changes based on whether we have tasks identified
+        if results['tasks']:
+            # Se encontramos tarefas, criamos entradas de tempo para cada tarefa
+            for i, task in enumerate(results['tasks']):
+                # Para cada tarefa, usamos o tempo correspondente ou o primeiro tempo
+                if i < len(results['times']):
+                    minutes = results['times'][i]
+                else:
+                    minutes = results['times'][0]
+                    
+                # Usamos a descrição correspondente ou o texto original
+                if i < len(results['activities']):
+                    description = results['activities'][i]
+                else:
+                    description = f"Trabalho na tarefa: {task.title}"
+                    
+                # Criamos a entrada de tempo com o cliente e categoria da tarefa
+                entry = TimeEntry.objects.create(
+                    user=user,
+                    client=task.client,
+                    task=task,
+                    category=task.category,
+                    minutes_spent=minutes,
+                    description=description,
+                    date=date,
+                    original_text=text
+                )
+                created_entries.append(entry)
+                
+        elif len(results['clients']) > 1 and len(results['times']) > 1:
+            # Se não temos tarefas mas temos múltiplos clientes e tempos
             for i, client in enumerate(results['clients']):
                 if i < len(results['times']):
                     minutes = results['times'][i]
                 else:
-                    minutes = results['times'][0]  # Use first time as default
+                    minutes = results['times'][0]
                     
                 if i < len(results['activities']):
                     description = results['activities'][i]
                 else:
-                    description = text  # Use original text if no matching activity
+                    description = text
                     
-                # Create the entry
+                # Usar a categoria se encontrada
+                category = results['categories'][i] if i < len(results['categories']) else None
+                    
+                # Criar a entrada
                 entry = TimeEntry.objects.create(
                     user=user,
                     client=client,
+                    category=category,
                     minutes_spent=minutes,
                     description=description,
                     date=date,
@@ -599,15 +691,17 @@ class NLPProcessor(models.Model):
                 )
                 created_entries.append(entry)
         else:
-            # Simpler case: one client or one time
+            # Caso mais simples: um cliente ou um tempo
             client = results['clients'][0] if results['clients'] else None
             minutes = results['times'][0] if results['times'] else 60
             description = results['activities'][0] if results['activities'] else text
+            category = results['categories'][0] if results['categories'] else None
             
             if client:
                 entry = TimeEntry.objects.create(
                     user=user,
                     client=client,
+                    category=category,
                     minutes_spent=minutes,
                     description=description,
                     date=date,
@@ -616,7 +710,7 @@ class NLPProcessor(models.Model):
                 created_entries.append(entry)
                 
         return created_entries
-    
+      
 class WorkflowStep(models.Model):
     """
     Defines a step within a workflow.

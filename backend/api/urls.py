@@ -16,6 +16,7 @@ router.register(r'workflow-definitions', views.WorkflowDefinitionViewSet)
 router.register(r'workflow-steps', views.WorkflowStepViewSet)
 router.register(r'task-approvals', views.TaskApprovalViewSet, basename='task-approval')
 router.register(r'organizations', views.OrganizationViewSet, basename='organization')
+router.register(r'gemini-nlp', views.GeminiNLPViewSet, basename='gemini-nlp')
 
 urlpatterns = [
     path("register/", views.CreateUserView.as_view(), name="register"),
