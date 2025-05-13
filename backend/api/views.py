@@ -1056,68 +1056,6 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
-    def add_member(self, request, pk=None):
-        """Adicionar um usuário existente como membro da organização."""
-        organization = self.get_object()
-        
-        # Verificar se o usuário atual é administrador desta organização
-        try:
-            requester_profile = Profile.objects.get(user=request.user)
-            if not requester_profile.is_org_admin or requester_profile.organization != organization:
-                return Response(
-                    {"error": "Sem permissão para adicionar membros a esta organização"}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except Profile.DoesNotExist:
-            return Response(
-                {"error": "Perfil do solicitante não encontrado"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Obter os dados do formulário
-        user_id = request.data.get('user_id')
-        role = request.data.get('role', 'Membro')
-        is_admin = request.data.get('is_admin', False)
-        
-        if not user_id:
-            return Response(
-                {"error": "ID do usuário é obrigatório"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Verificar se o usuário existe
-        try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            return Response(
-                {"error": "Usuário não encontrado"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Verificar se o perfil existe e atualizá-lo ou criar novo
-        profile, created = Profile.objects.get_or_create(
-            user=user,
-            defaults={
-                'organization': organization,
-                'role': role,
-                'is_org_admin': is_admin,
-                'access_level': 'Standard'
-            }
-        )
-        
-        if not created:
-            # Atualizar um perfil existente
-            profile.organization = organization
-            profile.role = role
-            profile.is_org_admin = is_admin
-            profile.save()
-        
-        return Response(
-            ProfileSerializer(profile).data, 
-            status=status.HTTP_200_OK
-        )
-        
-    @action(detail=True, methods=['post'])
     def remove_member(self, request, pk=None):
         """Remover um membro da organização."""
         organization = self.get_object()
@@ -1225,6 +1163,10 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         profile.can_view_all_clients = request.data.get('can_view_all_clients', profile.can_view_all_clients)
         profile.can_view_analytics = request.data.get('can_view_analytics', profile.can_view_analytics)
         profile.can_view_profitability = request.data.get('can_view_profitability', profile.can_view_profitability)
+        profile.access_level = request.data.get('access_level', profile.access_level)
+        profile.visible_clients.clear()  # Clear existing visible clients
+        profile.visible_clients.add(*request.data.get('visible_clients', []))
+        
         profile.save()
         
         return Response(

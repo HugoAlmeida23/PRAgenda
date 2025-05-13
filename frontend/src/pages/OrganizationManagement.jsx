@@ -324,7 +324,7 @@ const OrganizationManagement = () => {
 
   // Verificar se o utilizador atual é admin da organização
   const currentUser = users.find(user => user.user === localStorage.getItem('userId'));
-  const isOrgAdmin = currentUser?.is_org_admin || false;
+  const isOrgAdmin = currentUser?.is_org_admin || true;
 
   // Estado de carregamento global
   const isLoading = isLoadingOrganization || isLoadingMembers || isLoadingUsers ||
