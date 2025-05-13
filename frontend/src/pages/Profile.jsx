@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import Header from "../components/Header";
 import api from "../api";
-import "../styles/Home.css"
+import "../styles/Home.css";
 
 const Profile = () => {
   const [loading, setLoading] = useState(true);

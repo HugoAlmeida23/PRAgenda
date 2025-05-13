@@ -4,6 +4,8 @@ import uuid
 from django.utils import timezone
 from decimal import Decimal
 from django.db.models import JSONField
+import random
+
 
 
 class Organization(models.Model):
@@ -35,15 +37,28 @@ class Organization(models.Model):
     def __str__(self):
         return self.name
     
-# Modified profile model with enhanced permissions
+def generate_four_digit_id():
+    """Generate a random 4-digit number (between 1000 and 9999)"""
+    return random.randint(1000, 9999)
+
 class Profile(models.Model):
     """
     Armaneza os dados do user que está logged
     como o seu preço à hora, a sua responsabilidade, etc
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE)
+    
+    # Now with the unique constraint
+    invitation_code = models.CharField(
+        max_length=4, 
+        unique=False,  # Now with unique constraint
+        verbose_name="Código de Convite",
+        help_text="Código de 4 dígitos para adicionar este utilizador a uma organização"
+    )
+    
+    # Rest of the model...
     organization = models.ForeignKey(
-        Organization, 
+        'Organization', 
         on_delete=models.CASCADE, 
         related_name='members',
         null=True, 
@@ -82,6 +97,23 @@ class Profile(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.role}"
     
+    def save(self, *args, **kwargs):
+        # Generate a unique invitation code if not set
+        if not self.invitation_code:
+            self._generate_unique_invitation_code()
+        super().save(*args, **kwargs)
+    
+    def _generate_unique_invitation_code(self):
+        """Generate a unique 4-digit invitation code"""
+        max_attempts = 100
+        for _ in range(max_attempts):
+            code = str(random.randint(1000, 9999))
+            if not Profile.objects.filter(invitation_code=code).exists():
+                self.invitation_code = code
+                return
+        raise ValueError("Unable to generate a unique invitation code after multiple attempts")
+    
+    # Other methods...
     def get_organization_colleagues(self):
         """Retorna todos os perfis da mesma organização, exceto o próprio."""
         if not self.organization:
@@ -89,7 +121,7 @@ class Profile(models.Model):
             
         return Profile.objects.filter(
             organization=self.organization
-        ).exclude(id=self.id)
+        ).exclude(profile_id=self.profile_id)
     
     def can_manage_profile(self, profile):
         """Verifica se este perfil pode gerir outro perfil."""
@@ -113,6 +145,18 @@ class Profile(models.Model):
             return client.organization == self.organization
         else:
             return self.visible_clients.filter(id=client.id).exists()
+
+    @classmethod
+    def find_by_invitation_code(cls, code):
+        """
+        Encontrar um perfil pelo código de convite.
+        Retorna None se não encontrar.
+        """
+        try:
+            return cls.objects.get(invitation_code=code)
+        except cls.DoesNotExist:
+            return None
+             
 class Client(models.Model):
     """
     Cliente do escritório de contabilidade.

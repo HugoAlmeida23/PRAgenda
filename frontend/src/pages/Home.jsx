@@ -26,8 +26,7 @@ import {
 // import { Container, Spinner, Card, Alert } from 'react-bootstrap';
 import Header from "../components/Header";
 import api from "../api";
-import "../styles/Home.css"; // Ensure this contains necessary styles
-
+import "../styles/Home.css";
 // --- Constants (Keep outside) ---
 const priorityColors = {
   1: "bg-red-100 text-red-800 border border-red-200", // Urgent
@@ -43,14 +42,6 @@ const priorityLabels = {
   3: "Medium",
   4: "Low",
   5: "Can Wait",
-};
-
-// Task Status Color Map
-const statusColors = {
-  pending: "bg-yellow-100 text-yellow-800 border border-yellow-200",
-  in_progress: "bg-blue-100 text-blue-800 border border-blue-200",
-  completed: "bg-green-100 text-green-800 border border-green-200",
-  cancelled: "bg-gray-100 text-gray-800 border border-gray-200",
 };
 
 // --- Data Fetching Function (Defined Outside Component) ---
@@ -151,7 +142,6 @@ const fetchDashboardData = async () => {
     timeTrackedToday,
     timeTrackedThisWeek,
     tasksCompletedThisWeek: completedTasks.length,
-    // Include raw lists if needed by UI
     overdueTasksList: overdueTasks,
     todayTasksList: todayTasks,
   };

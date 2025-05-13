@@ -2,8 +2,7 @@ import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import Header from "../components/Header";
 import api from "../api";
-import "../styles/Home.css";
-import {
+import "../styles/Home.css";import {
   User,
   Search,
   Filter,

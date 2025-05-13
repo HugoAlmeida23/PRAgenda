@@ -40,12 +40,14 @@ class ProfileSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Profile
-        fields = ['id', 'user', 'username', 'email', 'organization', 'organization_name',
-                  'hourly_rate', 'role', 'access_level', 'phone', 'productivity_metrics',
-                  'is_org_admin', 'can_assign_tasks', 'can_manage_clients',
-                  'visible_clients', 'visible_clients_info', 'can_view_all_clients', 
-                  'can_view_analytics', 'can_view_profitability']
-        read_only_fields = ['id', 'user', 'username', 'email', 'organization_name']
+        fields = ['invitation_code', 'user', 'username', 'email', 
+                  'organization', 'organization_name',
+                  'hourly_rate', 'role', 'access_level', 'phone', 
+                  'productivity_metrics', 'is_org_admin', 'can_assign_tasks', 
+                  'can_manage_clients', 'visible_clients', 'visible_clients_info', 
+                  'can_view_all_clients', 'can_view_analytics', 'can_view_profitability']
+        read_only_fields = ['invitation_code', 'user', 'username', 
+                           'email', 'organization_name']
     
     def get_visible_clients_info(self, obj):
         """Returns basic info about visible clients for display purposes"""

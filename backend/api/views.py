@@ -841,6 +841,76 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         except Profile.DoesNotExist:
             return Organization.objects.none()
     
+    @action(detail=True, methods=['post'])
+    def add_member_by_code(self, request, pk=None):
+        """
+        Adiciona um membro à organização usando o código de convite
+        """
+        organization = self.get_object()
+        
+        # Verificar se o utilizador atual é admin desta organização
+        try:
+            requester_profile = Profile.objects.get(user=request.user)
+            if not requester_profile.is_org_admin or requester_profile.organization != organization:
+                return Response(
+                    {"error": "Sem permissão para adicionar membros a esta organização"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Perfil do solicitante não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Obter o código de convite
+        invitation_code = request.data.get('invitation_code')
+        
+        if not invitation_code:
+            return Response(
+                {"error": "Código de convite é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Encontrar o perfil pelo código de convite
+        profile = Profile.find_by_invitation_code(invitation_code)
+        
+        if not profile:
+            return Response(
+                {"error": "Código de convite inválido ou não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # Verificar se já pertence a uma organização
+        if profile.organization:
+            return Response(
+                {"error": "Este utilizador já pertence a uma organização"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Obter dados opcionais das permissões do utilizador
+        role = request.data.get('role', 'Membro')
+        is_admin = request.data.get('is_admin', False)
+        can_assign_tasks = request.data.get('can_assign_tasks', False)
+        can_manage_clients = request.data.get('can_manage_clients', False)
+        can_view_all_clients = request.data.get('can_view_all_clients', False)
+        can_view_analytics = request.data.get('can_view_analytics', False)
+        can_view_profitability = request.data.get('can_view_profitability', False)
+        
+        # Atualizar o perfil
+        profile.organization = organization
+        profile.role = role
+        profile.is_org_admin = is_admin
+        profile.can_assign_tasks = can_assign_tasks
+        profile.can_manage_clients = can_manage_clients
+        profile.can_view_all_clients = can_view_all_clients
+        profile.can_view_analytics = can_view_analytics
+        profile.can_view_profitability = can_view_profitability
+        profile.save()
+        
+        # Responder com o perfil atualizado
+        serializer = ProfileSerializer(profile)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
     @action(detail=True, methods=['get'])
     def members(self, request, pk=None):
         """Obter todos os membros de uma organização."""

@@ -20,17 +20,14 @@ import {
   Search,
   Info,
   Save,
-  ExternalLink
+  ExternalLink,
+  Loader
 } from "lucide-react";
 import api from "../api";
 import "../styles/Home.css";
+import InvitationCodeForm from "../components/InvitationForm";
+import InvitationCodeDisplay from "../components/InvitationCodeDisplay";
 
-// Componentes auxiliares de carregamento e erro
-const LoadingView = () => (
-  <div className="flex justify-center items-center min-h-screen">
-    <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-  </div>
-);
 
 const ErrorView = ({ message, onRetry }) => (
   <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
@@ -44,7 +41,7 @@ const ErrorView = ({ message, onRetry }) => (
         onClick={onRetry}
         className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       >
-        <RotateCcw className="h-4 w-4 mr-2"/>
+        <RotateCcw className="h-4 w-4 mr-2" />
         Tentar novamente
       </button>
     )}
@@ -71,8 +68,9 @@ const fetchUsers = async () => {
 
 const OrganizationManagement = () => {
   const queryClient = useQueryClient();
-  
+
   // Estados locais
+
   const [showOrganizationForm, setShowOrganizationForm] = useState(false);
   const [showMemberForm, setShowMemberForm] = useState(false);
   const [organizationFormData, setOrganizationFormData] = useState({
@@ -96,8 +94,9 @@ const OrganizationManagement = () => {
   const [editingOrganization, setEditingOrganization] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
 
+
   // Consultas React Query
-  const { 
+  const {
     data: organization,
     isLoading: isLoadingOrganization,
     isError: isErrorOrganization,
@@ -109,7 +108,7 @@ const OrganizationManagement = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { 
+  const {
     data: members = [],
     isLoading: isLoadingMembers,
     isError: isErrorMembers,
@@ -121,7 +120,7 @@ const OrganizationManagement = () => {
     enabled: !!organization?.id,
   });
 
-  const { 
+  const {
     data: users = [],
     isLoading: isLoadingUsers
   } = useQuery({
@@ -245,7 +244,7 @@ const OrganizationManagement = () => {
 
   const handleOrganizationSubmit = (e) => {
     e.preventDefault();
-    
+
     if (editingOrganization && organization) {
       updateOrganizationMutation.mutate(organizationFormData);
     } else {
@@ -255,12 +254,12 @@ const OrganizationManagement = () => {
 
   const handleMemberSubmit = (e) => {
     e.preventDefault();
-    
+
     if (!memberFormData.user_id) {
       toast.error("Por favor selecione um utilizador");
       return;
     }
-    
+
     if (selectedMember) {
       // Update existing member
       updateMemberMutation.mutate({
@@ -313,7 +312,7 @@ const OrganizationManagement = () => {
 
   const filteredMembers = members.filter(member => {
     if (!searchTerm) return true;
-    
+
     const term = searchTerm.toLowerCase();
     return (
       member.username?.toLowerCase().includes(term) ||
@@ -323,14 +322,13 @@ const OrganizationManagement = () => {
   });
 
   // Verificar se o utilizador atual é admin da organização
-  const currentUser = users.find(user => user.user === localStorage.getItem('userId'));
-  const isOrgAdmin = currentUser?.is_org_admin || true;
-
+  const isOrgAdmin = users.length > 0 && users[0].is_org_admin === true;
+  const invitation_code = users.length > 0 ? users[0].invitation_code : null;
   // Estado de carregamento global
   const isLoading = isLoadingOrganization || isLoadingMembers || isLoadingUsers ||
-                   createOrganizationMutation.isPending || updateOrganizationMutation.isPending ||
-                   addMemberMutation.isPending || removeMemberMutation.isPending ||
-                   updateMemberMutation.isPending;
+    createOrganizationMutation.isPending || updateOrganizationMutation.isPending ||
+    addMemberMutation.isPending || removeMemberMutation.isPending ||
+    updateMemberMutation.isPending;
 
   // Se ocorrer um erro ao carregar dados essenciais
   if (isErrorOrganization) {
@@ -350,7 +348,7 @@ const OrganizationManagement = () => {
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-2xl font-bold">Gestão da Organização</h1>
               <div className="flex space-x-3">
-                {!organization && (
+                {!organization && isOrgAdmin && (
                   <button
                     onClick={() => setShowOrganizationForm(true)}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
@@ -383,6 +381,33 @@ const OrganizationManagement = () => {
                     <UserPlus size={18} className="mr-2" />
                     Adicionar Membro
                   </button>
+                )}
+                {!organization && !isOrgAdmin && (
+                  <div className="ml-auto">
+                    {isLoadingUsers ? (
+                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+                        <h3 className="font-medium text-gray-700 mb-2">Seu Código de Convite</h3>
+                        <div className="flex items-center">
+                          <div className="h-10 animate-pulse bg-gray-200 rounded w-24"></div>
+                          <Loader className="ml-3 h-5 w-5 text-gray-400 animate-spin" />
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">
+                          Carregando seu código de convite...
+                        </p>
+                      </div>
+                    ) : (
+                      users.length > 0 && invitation_code ? (
+                        <InvitationCodeDisplay invitation_code={invitation_code} />
+                      ) : (
+                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+                          <h3 className="font-medium text-gray-700 mb-2">Código de Convite</h3>
+                          <p className="text-sm text-gray-500 mt-2">
+                            Nenhum código de convite disponível.
+                          </p>
+                        </div>
+                      )
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -505,8 +530,6 @@ const OrganizationManagement = () => {
                 </form>
               </div>
             )}
-
-            {/* Detalhes da Organização */}
             {organization && !showOrganizationForm && (
               <div className="bg-white p-6 rounded-lg shadow mb-6">
                 <div className="flex justify-between items-start">
@@ -557,7 +580,7 @@ const OrganizationManagement = () => {
                         Total de Clientes: <span className="font-medium">{organization.client_count || 0}</span>
                       </p>
                       <a href="/clients" className="text-blue-600 hover:text-blue-800 flex items-center text-sm mt-2">
-                        Ver todos os clientes <ExternalLink size={14} className="ml-1" />
+                        {isOrgAdmin ? "Ver todos os Clientes" : "Ver os Meus Clientes"} <ExternalLink size={14} className="ml-1" />
                       </a>
                     </div>
                   </div>
@@ -567,122 +590,14 @@ const OrganizationManagement = () => {
 
             {/* Formulário de Membro */}
             {showMemberForm && (
-              <div className="bg-white p-6 rounded-lg shadow mb-6">
-                <h2 className="text-xl font-semibold mb-4">
-                  {selectedMember ? "Editar Membro" : "Adicionar Novo Membro"}
-                </h2>
-                <form onSubmit={handleMemberSubmit}>
-                  {!selectedMember && (
-                    <div className="mb-4">
-                      <label className="block text-gray-700 mb-2">Utilizador *</label>
-                      <select
-                        name="user_id"
-                        value={memberFormData.user_id}
-                        onChange={handleMemberInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        required
-                      >
-                        <option value="">Selecionar Utilizador</option>
-                        {users
-                          .filter(user => !members.some(member => member.user === user.user)) // Mostrar apenas utilizadores que não são membros
-                          .map(user => (
-                            <option key={user.user} value={user.user}>
-                              {user.username} ({user.email})
-                            </option>
-                          ))
-                        }
-                      </select>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-gray-700 mb-2">Função na Organização</label>
-                      <input
-                        type="text"
-                        name="role"
-                        value={memberFormData.role}
-                        onChange={handleMemberInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      />
-                    </div>
-                  </div>
-                  <div className="mb-6 bg-gray-50 p-4 rounded-lg">
-                    <h3 className="font-medium text-gray-700 mb-3">Permissões</h3>
-                    <div className="space-y-2">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          name="is_admin"
-                          checked={memberFormData.is_admin}
-                          onChange={handleMemberInputChange}
-                          className="h-4 w-4 text-blue-600 rounded"
-                        />
-                        <span className="ml-2">Administrador da Organização</span>
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          name="can_assign_tasks"
-                          checked={memberFormData.can_assign_tasks}
-                          onChange={handleMemberInputChange}
-                          className="h-4 w-4 text-blue-600 rounded"
-                        />
-                        <span className="ml-2">Pode Atribuir Tarefas</span>
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          name="can_manage_clients"
-                          checked={memberFormData.can_manage_clients}
-                          onChange={handleMemberInputChange}
-                          className="h-4 w-4 text-blue-600 rounded"
-                        />
-                        <span className="ml-2">Pode Gerir Clientes</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="flex justify-end space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMemberForm(false);
-                        setSelectedMember(null);
-                        resetMemberForm();
-                      }}
-                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-                      disabled={isLoading}
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
-                      disabled={isLoading}
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                          A processar...
-                        </>
-                      ) : (
-                        <>
-                          {selectedMember ? (
-                            <>
-                              <CheckCircle size={18} className="mr-2" />
-                              Atualizar
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus size={18} className="mr-2" />
-                              Adicionar
-                            </>
-                          )}
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              </div>
+
+              <InvitationCodeForm
+                organizationId={organization.id}
+                onSuccess={() => {
+                  // Refresh member list after adding a new member
+                  refetchMembers();
+                }}
+              />
             )}
 
             {/* Lista de Membros */}
@@ -704,7 +619,7 @@ const OrganizationManagement = () => {
                     <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
                   </div>
                 </div>
-                
+
                 {isLoadingMembers ? (
                   <div className="p-6 flex justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -741,12 +656,14 @@ const OrganizationManagement = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Função
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          {isOrgAdmin ? <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Permissões
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            : null}
+                          {isOrgAdmin ? <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Ações
-                          </th>
+                          </th> : null}
+
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -842,7 +759,7 @@ const OrganizationManagement = () => {
                 <div>
                   <h3 className="font-medium text-blue-800 mb-1">Sobre Organizações</h3>
                   <p className="text-blue-700 text-sm">
-                    Uma organização é um grupo de utilizadores que trabalham em conjunto. Os membros da organização podem colaborar em tarefas e partilhar clientes. 
+                    Uma organização é um grupo de utilizadores que trabalham em conjunto. Os membros da organização podem colaborar em tarefas e partilhar clientes.
                     Os administradores da organização podem gerir membros, definir permissões e configurar as definições da organização.
                   </p>
                 </div>

@@ -96,12 +96,6 @@ const years = generateYears();
 
 // Data fetching functions (outside component)
 const fetchProfitabilityData  = async (year, month) => {
-  // First recalculate data
-  await api.post("/client-profitability/refresh_data/", {
-    year,
-    month,
-  });
-  
   // Then fetch updated data
   const response = await api.get(`/client-profitability/?year=${year}&month=${month}`);
   console.log("Dados de rentabilidade brutos:", response.data);
@@ -168,7 +162,7 @@ const ClientProfitability = () => {
 
   // Mutation for isRefreshing data
   const refreshDataMutation = useMutation({
-    mutationFn: () => api.post("/client-profitability/refresh_data/", {
+    mutationFn: () => api.post("/client-profitability/", {
       year: selectedYear,
       month: selectedMonth,
     }),
