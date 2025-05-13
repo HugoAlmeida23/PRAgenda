@@ -1,57 +1,82 @@
-// Enhanced InvitationCodeDisplay Component
-import React, { useState } from "react";
-import { Copy, CheckCircle, Loader } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Copy, CheckCircle } from "lucide-react";
 
 const InvitationCodeDisplay = ({ invitation_code }) => {
   const [copied, setCopied] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipTimeout = useRef(null);
 
-  const handleCopy = () => {
+  // Auto-hide tooltip after 3 seconds
+  useEffect(() => {
+    if (showTooltip) {
+      tooltipTimeout.current = setTimeout(() => {
+        setShowTooltip(false);
+      }, 3000);
+    }
+    
+    return () => {
+      if (tooltipTimeout.current) {
+        clearTimeout(tooltipTimeout.current);
+      }
+    };
+  }, [showTooltip]);
+
+  const handleCopy = (e) => {
+    e.stopPropagation(); // Prevent triggering parent click events
+    
     if (invitation_code) {
       navigator.clipboard.writeText(invitation_code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 1500);
+      
+      // Show tooltip when copied
+      setShowTooltip(true);
     }
   };
 
-  // Handle loading/empty state
   if (!invitation_code) {
-    console.log("Loading or no invitation code available", invitation_code);
-    return (
-      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
-        <h3 className="font-medium text-gray-700 mb-2">Seu Código de Convite</h3>
-        <div className="flex items-center">
-          <div className="h-10 animate-pulse bg-gray-200 rounded w-24"></div>
-          <Loader className="ml-3 h-5 w-5 text-gray-400 animate-spin" />
-        </div>
-        <p className="text-sm text-gray-500 mt-2">
-          Carregando seu código de convite...
-        </p>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-6">
-      <h3 className="font-medium text-blue-800 mb-2">Seu Código de Convite</h3>
-      <div className="flex items-center">
-        <div className="text-2xl font-bold text-blue-700 bg-blue-100 px-3 py-2 rounded border border-blue-300">
-          {invitation_code}
-        </div>
-        <button
-          onClick={handleCopy}
-          className="ml-3 p-2 rounded-md hover:bg-blue-200 transition-colors"
-          title="Copiar código"
+    <div className="relative inline-block">
+      <div>
+        <h3 className="text-center text-blue-700 font-medium text-sm mb-1">Seu Código</h3>
+        <div 
+          className="group cursor-pointer"
+          onClick={() => setShowTooltip(!showTooltip)}
         >
-          {copied ? (
-            <CheckCircle className="h-5 w-5 text-green-600" />
-          ) : (
-            <Copy className="h-5 w-5 text-blue-600" />
-          )}
-        </button>
+          <div className="w-16 h-16 flex items-center justify-center bg-white border-2 border-blue-400 rounded shadow-sm hover:shadow transition-all">
+            <span className="text-xl font-bold text-blue-800">{invitation_code}</span>
+          </div>
+          
+          {/* Copy button that appears on hover */}
+          <div className="absolute -bottom-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={handleCopy}
+              className="p-1.5 rounded-full bg-white hover:bg-blue-50 shadow-md border border-blue-300"
+              title="Copiar código"
+            >
+              {copied ? (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              ) : (
+                <Copy className="h-4 w-4 text-blue-600" />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
-      <p className="text-sm text-blue-700 mt-2">
-        Compartilhe este código com o administrador da sua organização para ser adicionado como membro.
-      </p>
+      
+      {/* Tooltip with explanation */}
+      {showTooltip && (
+        <div className="absolute mt-2 w-48 p-2 bg-white shadow-lg rounded border border-blue-200 text-xs text-gray-700 z-10 left-1/2 transform -translate-x-1/2">
+          {copied ? (
+            <span className="text-green-600 font-medium">Código copiado!</span>
+          ) : (
+            <span>Compartilhe este código com o administrador da sua organização.</span>
+          )}
+        </div>
+      )}
     </div>
   );
 };

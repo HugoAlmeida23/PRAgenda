@@ -25,8 +25,8 @@ import {
 } from "lucide-react";
 import api from "../api";
 import "../styles/Home.css";
-import InvitationCodeForm from "../components/InvitationForm";
 import InvitationCodeDisplay from "../components/InvitationCodeDisplay";
+import InvitationCodeForm from "../components/InvitationForm";
 
 
 const ErrorView = ({ message, onRetry }) => (
@@ -73,6 +73,7 @@ const OrganizationManagement = () => {
 
   const [showOrganizationForm, setShowOrganizationForm] = useState(false);
   const [showMemberForm, setShowMemberForm] = useState(false);
+  const [showInvitationForm, setShowInvitationForm] = useState(false);
   const [organizationFormData, setOrganizationFormData] = useState({
     name: "",
     description: "",
@@ -373,7 +374,7 @@ const OrganizationManagement = () => {
                     onClick={() => {
                       setSelectedMember(null);
                       resetMemberForm();
-                      setShowMemberForm(true);
+                      setShowInvitationForm(true);
                     }}
                     className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center"
                     disabled={isLoading}
@@ -382,8 +383,10 @@ const OrganizationManagement = () => {
                     Adicionar Membro
                   </button>
                 )}
+                
                 {!organization && !isOrgAdmin && (
                   <div className="ml-auto">
+                    {console.log("Rendering invitation section with users:", users)}
                     {isLoadingUsers ? (
                       <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
                         <h3 className="font-medium text-gray-700 mb-2">Seu Código de Convite</h3>
@@ -396,16 +399,18 @@ const OrganizationManagement = () => {
                         </p>
                       </div>
                     ) : (
-                      users.length > 0 && invitation_code ? (
-                        <InvitationCodeDisplay invitation_code={invitation_code} />
-                      ) : (
-                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
-                          <h3 className="font-medium text-gray-700 mb-2">Código de Convite</h3>
-                          <p className="text-sm text-gray-500 mt-2">
-                            Nenhum código de convite disponível.
-                          </p>
-                        </div>
-                      )
+                     
+                      <InvitationCodeDisplay
+                      
+                        invitation_code={
+                          users &&
+                            users.length > 0 &&
+                            users[0] &&
+                            users[0].invitation_code
+                            ? users[0].invitation_code
+                            : null
+                        }
+                      />
                     )}
                   </div>
                 )}
@@ -589,7 +594,7 @@ const OrganizationManagement = () => {
             )}
 
             {/* Formulário de Membro */}
-            {showMemberForm && (
+            {showInvitationForm && (
 
               <InvitationCodeForm
                 organizationId={organization.id}
@@ -598,6 +603,99 @@ const OrganizationManagement = () => {
                   refetchMembers();
                 }}
               />
+            )}
+
+            {/* Formulário de Adicionar/Editar Membro */}
+            {showMemberForm && (
+              <div className="bg-white p-6 rounded-lg shadow mb-6">
+                <h2 className="text-xl font-semibold mb-4">
+                  {selectedMember ? "Editar Membro" : "Adicionar Novo Membro"}
+                </h2>
+                <form onSubmit={handleMemberSubmit}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+  <label className="block text-gray-700 mb-2">Função</label>
+  <input
+    type="text"
+    name="role"
+    value={memberFormData.role}
+    onChange={handleMemberInputChange}
+    className="w-full p-2 border border-gray-300 rounded-md"
+    placeholder="Digite a função do membro"
+  />
+  <p className="text-sm text-gray-500 mt-1">
+    Exemplos: Colaborador, Gestor, Administrador, Contabilista, etc.
+  </p>
+</div>
+                    <div className="md:col-span-2">
+                      <label className="block text-gray-700 mb-2">Permissões</label>
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            name="is_admin"
+                            checked={memberFormData.is_admin}
+                            onChange={handleMemberInputChange}
+                            className="mr-2"
+                          />
+                          Administrador
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            name="can_assign_tasks"
+                            checked={memberFormData.can_assign_tasks}
+                            onChange={handleMemberInputChange}
+                            className="mr-2"
+                          />
+                          Atribuir Tarefas
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            name="can_manage_clients"
+                            checked={memberFormData.can_manage_clients}
+                            onChange={handleMemberInputChange}
+                            className="mr-2"
+                          />
+                          Gerir Clientes
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMemberForm(false);
+                        setSelectedMember(null);
+                        resetMemberForm();
+                      }}
+                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                      disabled={isLoading}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="animate-spin h-5 w-5 mr-2" />
+                          A processar...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} className="mr-2" />
+                          {selectedMember ? "Atualizar" : "Adicionar"}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
             )}
 
             {/* Lista de Membros */}
@@ -663,7 +761,6 @@ const OrganizationManagement = () => {
                           {isOrgAdmin ? <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Ações
                           </th> : null}
-
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
