@@ -938,83 +938,6 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
-    def add_member(self, request, pk=None):
-        """Adicionar um usuário existente como membro da organização."""
-        organization = self.get_object()
-        
-        # Verificar se o usuário atual é administrador desta organização
-        try:
-            requester_profile = Profile.objects.get(user=request.user)
-            if not requester_profile.is_org_admin or requester_profile.organization != organization:
-                return Response(
-                    {"error": "Sem permissão para adicionar membros a esta organização"}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except Profile.DoesNotExist:
-            return Response(
-                {"error": "Perfil do solicitante não encontrado"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Obter os dados do formulário
-        user_id = request.data.get('user_id')
-        role = request.data.get('role', 'Membro')
-        is_admin = request.data.get('is_admin', False)
-        can_assign_tasks = request.data.get('can_assign_tasks', False)
-        can_manage_clients = request.data.get('can_manage_clients', False)
-        can_view_all_clients = request.data.get('can_view_all_clients', False)
-        can_view_analytics = request.data.get('can_view_analytics', False)
-        can_view_profitability = request.data.get('can_view_profitability', False)
-        
-        if not user_id:
-            return Response(
-                {"error": "ID do usuário é obrigatório"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Verificar se o usuário existe
-        try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            return Response(
-                {"error": "Usuário não encontrado"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Verificar se o perfil existe e atualizá-lo ou criar novo
-        profile, created = Profile.objects.get_or_create(
-            user=user,
-            defaults={
-                'organization': organization,
-                'role': role,
-                'is_org_admin': is_admin,
-                'can_assign_tasks': can_assign_tasks,
-                'can_manage_clients': can_manage_clients,
-                'can_view_all_clients': can_view_all_clients,
-                'can_view_analytics': can_view_analytics,
-                'can_view_profitability': can_view_profitability,
-                'access_level': 'Standard'
-            }
-        )
-        
-        if not created:
-            # Atualizar um perfil existente
-            profile.organization = organization
-            profile.role = role
-            profile.is_org_admin = is_admin
-            profile.can_assign_tasks = can_assign_tasks
-            profile.can_manage_clients = can_manage_clients
-            profile.can_view_all_clients = can_view_all_clients
-            profile.can_view_analytics = can_view_analytics
-            profile.can_view_profitability = can_view_profitability
-            profile.save()
-        
-        return Response(
-            ProfileSerializer(profile).data, 
-            status=status.HTTP_200_OK
-        )
-        
-    @action(detail=True, methods=['post'])
     def remove_member(self, request, pk=None):
         """Remover um membro da organização."""
         organization = self.get_object()
@@ -1033,18 +956,18 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Obter os dados do formulário
-        profile_id = request.data.get('profile_id')
+        # Obter o ID do usuário do membro a ser removido
+        user_id = request.data.get('user_id')
         
-        if not profile_id:
+        if not user_id:
             return Response(
-                {"error": "ID do perfil é obrigatório"}, 
+                {"error": "ID do usuário é obrigatório"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Verificar se o perfil existe
+        # Buscar o perfil pelo ID do usuário
         try:
-            profile = Profile.objects.get(id=profile_id, organization=organization)
+            profile = Profile.objects.get(user_id=user_id, organization=organization)
             
             # Não permitir remover-se a si mesmo se for o único admin
             if profile.user == request.user and profile.is_org_admin:
@@ -1067,7 +990,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             profile.can_view_all_clients = False
             profile.can_view_analytics = False
             profile.can_view_profitability = False
-            profile.visible_clients.clear()  # Remove all visible clients
+            profile.visible_clients.clear()
             profile.save()
             
             return Response(
@@ -1080,34 +1003,6 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 {"error": "Perfil não encontrado nesta organização"}, 
                 status=status.HTTP_404_NOT_FOUND
             )
-    """
-    ViewSet para visualizar e editar organizações.
-    Apenas admins podem criar/atualizar organizações.
-    Usuários normais só podem ver sua própria organização.
-    """
-    serializer_class = OrganizationSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        user = self.request.user
-        
-        # Se for um superusuário/admin, pode ver todas as organizações
-        if user.is_superuser:
-            return Organization.objects.all()
-            
-        # Tentar obter o perfil do usuário
-        try:
-            profile = Profile.objects.get(user=user)
-            
-            # Se tiver uma organização associada, retorna essa organização
-            if profile.organization:
-                return Organization.objects.filter(id=profile.organization.id)
-            
-            # Caso não tenha organização
-            return Organization.objects.none()
-                
-        except Profile.DoesNotExist:
-            return Organization.objects.none()
     
     @action(detail=True, methods=['get'])
     def members(self, request, pk=None):
@@ -1124,70 +1019,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         clients = Client.objects.filter(organization=organization)
         serializer = ClientSerializer(clients, many=True)
         return Response(serializer.data)
-    
-    @action(detail=True, methods=['post'])
-    def remove_member(self, request, pk=None):
-        """Remover um membro da organização."""
-        organization = self.get_object()
         
-        # Verificar se o usuário atual é administrador desta organização
-        try:
-            requester_profile = Profile.objects.get(user=request.user)
-            if not requester_profile.is_org_admin or requester_profile.organization != organization:
-                return Response(
-                    {"error": "Sem permissão para remover membros desta organização"}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except Profile.DoesNotExist:
-            return Response(
-                {"error": "Perfil do solicitante não encontrado"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Obter os dados do formulário
-        profile_id = request.data.get('profile_id')
-        
-        if not profile_id:
-            return Response(
-                {"error": "ID do perfil é obrigatório"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Verificar se o perfil existe
-        try:
-            profile = Profile.objects.get(id=profile_id, organization=organization)
-            
-            # Não permitir remover-se a si mesmo se for o único admin
-            if profile.user == request.user and profile.is_org_admin:
-                admin_count = Profile.objects.filter(
-                    organization=organization, 
-                    is_org_admin=True
-                ).count()
-                
-                if admin_count <= 1:
-                    return Response(
-                        {"error": "Não é possível remover o único administrador da organização"}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                    
-            # Desvincula o perfil da organização, mas não o exclui
-            profile.organization = None
-            profile.is_org_admin = False
-            profile.can_assign_tasks = False
-            profile.can_manage_clients = False
-            profile.save()
-            
-            return Response(
-                {"success": "Membro removido da organização com sucesso"}, 
-                status=status.HTTP_200_OK
-            )
-            
-        except Profile.DoesNotExist:
-            return Response(
-                {"error": "Perfil não encontrado nesta organização"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-            
     @action(detail=True, methods=['post'])
     def update_member(self, request, pk=None):
         """Update an existing organization member's permissions."""
@@ -1207,18 +1039,18 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Get form data
-        profile_id = request.data.get('profile_id')
+        # Get user ID from request
+        user_id = request.data.get('user_id')  # Alterado para user_id
         
-        if not profile_id:
+        if not user_id:
             return Response(
-                {"error": "ID do perfil é obrigatório"}, 
+                {"error": "ID do usuário é obrigatório"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Get the member profile
+        # Get the member profile by user_id
         try:
-            profile = Profile.objects.get(id=profile_id, organization=organization)
+            profile = Profile.objects.get(user_id=user_id, organization=organization)  # Busca pelo user_id
         except Profile.DoesNotExist:
             return Response(
                 {"error": "Perfil não encontrado nesta organização"}, 
@@ -1233,9 +1065,15 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         profile.can_view_all_clients = request.data.get('can_view_all_clients', profile.can_view_all_clients)
         profile.can_view_analytics = request.data.get('can_view_analytics', profile.can_view_analytics)
         profile.can_view_profitability = request.data.get('can_view_profitability', profile.can_view_profitability)
-        profile.access_level = request.data.get('access_level', profile.access_level)
-        profile.visible_clients.clear()  # Clear existing visible clients
-        profile.visible_clients.add(*request.data.get('visible_clients', []))
+        
+        # Verificar se access_level está na requisição antes de atualizar
+        if 'access_level' in request.data:
+            profile.access_level = request.data.get('access_level')
+        
+        # Verificar se visible_clients está na requisição antes de atualizar
+        if 'visible_clients' in request.data:
+            profile.visible_clients.clear()  # Clear existing visible clients
+            profile.visible_clients.add(*request.data.get('visible_clients', []))
         
         profile.save()
         
@@ -1264,11 +1102,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             )
         
         # Get form data
-        profile_id = request.data.get('profile_id')
+        user_id = request.data.get('user_id')
         client_ids = request.data.get('client_ids', [])
         action = request.data.get('action', 'add')  # Options: 'add', 'remove', 'set'
         
-        if not profile_id:
+        if not user_id:
             return Response(
                 {"error": "ID do perfil é obrigatório"}, 
                 status=status.HTTP_400_BAD_REQUEST
@@ -1276,7 +1114,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         
         # Get the member profile
         try:
-            profile = Profile.objects.get(id=profile_id, organization=organization)
+            profile = Profile.objects.get(user_id=user_id, organization=organization)
         except Profile.DoesNotExist:
             return Response(
                 {"error": "Perfil não encontrado nesta organização"}, 

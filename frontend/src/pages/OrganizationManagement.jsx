@@ -21,7 +21,10 @@ import {
   Info,
   Save,
   ExternalLink,
-  Loader
+  Loader,
+  CheckSquare,
+  User,
+  Briefcase
 } from "lucide-react";
 import api from "../api";
 import "../styles/Home.css";
@@ -49,6 +52,13 @@ const ErrorView = ({ message, onRetry }) => (
 );
 
 // Funções para buscar dados
+const fetchOrganizationClients = async (organizationId) => {
+  if (!organizationId) return [];
+  const response = await api.get(`/organizations/${organizationId}/clients/`);
+  return response.data;
+};
+
+
 const fetchOrganization = async () => {
   const response = await api.get("/organizations/");
   // Como um usuário só deve ter uma organização, pegamos a primeira
@@ -73,6 +83,8 @@ const OrganizationManagement = () => {
 
   const [showOrganizationForm, setShowOrganizationForm] = useState(false);
   const [showMemberForm, setShowMemberForm] = useState(false);
+  const [availableClients, setAvailableClients] = useState([]);
+  const [selectedClients, setSelectedClients] = useState([]);
   const [showInvitationForm, setShowInvitationForm] = useState(false);
   const [organizationFormData, setOrganizationFormData] = useState({
     name: "",
@@ -89,12 +101,14 @@ const OrganizationManagement = () => {
     role: "Colaborador",
     is_admin: false,
     can_assign_tasks: false,
-    can_manage_clients: false
+    can_manage_clients: false,
+    can_view_all_clients: false,  // Add this
+    can_view_analytics: false,    // Add this
+    can_view_profitability: false // Add this
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [editingOrganization, setEditingOrganization] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
-
 
   // Consultas React Query
   const {
@@ -107,6 +121,16 @@ const OrganizationManagement = () => {
     queryKey: ['organization'],
     queryFn: fetchOrganization,
     staleTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: clients = [],
+    isLoading: isLoadingClients
+  } = useQuery({
+    queryKey: ['organizationClients', organization?.id],
+    queryFn: () => fetchOrganizationClients(organization?.id),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!organization?.id,
   });
 
   const {
@@ -131,6 +155,19 @@ const OrganizationManagement = () => {
   });
 
   // Mutações React Query
+
+  const manageVisibleClientsMutation = useMutation({
+    mutationFn: (data) => api.post(`/organizations/${organization.id}/manage_visible_clients/`, data),
+    onSuccess: () => {
+      toast.success("Clientes visíveis atualizados com sucesso");
+      queryClient.invalidateQueries({ queryKey: ['organizationMembers'] });
+    },
+    onError: (error) => {
+      console.error("Erro ao atualizar clientes visíveis:", error);
+      toast.error("Falha ao atualizar clientes visíveis");
+    }
+  });
+
   const createOrganizationMutation = useMutation({
     mutationFn: (data) => api.post("/organizations/", data),
     onSuccess: () => {
@@ -188,7 +225,11 @@ const OrganizationManagement = () => {
   });
 
   const removeMemberMutation = useMutation({
-    mutationFn: (profileId) => api.post(`/organizations/${organization.id}/remove_member/`, { profile_id: profileId }),
+    mutationFn: (userId) => {
+      const requestBody = { user_id: userId };
+      console.log("Removing member - request body:", requestBody);
+      return api.post(`/organizations/${organization.id}/remove_member/`, requestBody);
+    },
     onSuccess: () => {
       toast.success("Membro removido com sucesso");
       queryClient.invalidateQueries({ queryKey: ['organizationMembers'] });
@@ -214,6 +255,11 @@ const OrganizationManagement = () => {
       ...memberFormData,
       [name]: type === "checkbox" ? checked : value,
     });
+
+    // When can_view_all_clients is checked, clear selected clients
+    if (name === "can_view_all_clients" && checked === true) {
+      setSelectedClients([]);
+    }
   };
 
   const handleSearchChange = (e) => {
@@ -239,9 +285,28 @@ const OrganizationManagement = () => {
       role: "Colaborador",
       is_admin: false,
       can_assign_tasks: false,
-      can_manage_clients: false
+      can_manage_clients: false,
+      can_view_all_clients: false,
+      can_view_analytics: false,
+      can_view_profitability: false
     });
+    setSelectedClients([]);
   };
+
+  const resetForm = () => {
+  setSelectedMember(null);
+  setFormData({
+    user_id: "",
+    role: "Colaborador",
+    is_admin: false,
+    can_assign_tasks: false,
+    can_manage_clients: false,
+    can_view_all_clients: false,
+    can_view_analytics: false,
+    can_view_profitability: false
+  });
+  setSelectedClients([]);
+};
 
   const handleOrganizationSubmit = (e) => {
     e.preventDefault();
@@ -253,9 +318,11 @@ const OrganizationManagement = () => {
     }
   };
 
-  const handleMemberSubmit = (e) => {
+  const handleMemberSubmit = async (e) => {
     e.preventDefault();
-
+    console.log("Updating member with data:", memberFormData.user_id);
+    console.log("Selected member:", memberFormData);
+    console.log("Selected member ID:", selectedMember);
     if (!memberFormData.user_id) {
       toast.error("Por favor selecione um utilizador");
       return;
@@ -264,14 +331,26 @@ const OrganizationManagement = () => {
     if (selectedMember) {
       // Update existing member
       updateMemberMutation.mutate({
-        profile_id: selectedMember.id,
+        user_id: selectedMember.user,
         role: memberFormData.role,
         is_admin: memberFormData.is_admin,
         can_assign_tasks: memberFormData.can_assign_tasks,
-        can_manage_clients: memberFormData.can_manage_clients
+        can_manage_clients: memberFormData.can_manage_clients,
+        can_view_all_clients: memberFormData.can_view_all_clients,
+        can_view_analytics: memberFormData.can_view_analytics,
+        can_view_profitability: memberFormData.can_view_profitability
       });
+
+      // If can_view_all_clients is false, update visible clients
+      if (!memberFormData.can_view_all_clients && selectedClients.length > 0) {
+        manageVisibleClientsMutation.mutate({
+          profile_id: selectedMember.id,
+          client_ids: selectedClients,
+          action: 'set' // Replace all current visible clients
+        });
+      }
     } else {
-      // Add new member
+      // Add new member using invitation code
       addMemberMutation.mutate(memberFormData);
     }
   };
@@ -299,21 +378,32 @@ const OrganizationManagement = () => {
       role: member.role || "Colaborador",
       is_admin: member.is_org_admin || false,
       can_assign_tasks: member.can_assign_tasks || false,
-      can_manage_clients: member.can_manage_clients || false
+      can_manage_clients: member.can_manage_clients || false,
+      can_view_all_clients: member.can_view_all_clients || false,
+      can_view_analytics: member.can_view_analytics || false,
+      can_view_profitability: member.can_view_profitability || false
     });
+
+    // Set the selected clients based on the member's visible clients
+    if (member.visible_clients_info && member.visible_clients_info.length > 0) {
+      const clientIds = member.visible_clients_info.map(client => client.id);
+      setSelectedClients(clientIds);
+    } else {
+      setSelectedClients([]);
+    }
+
     setSelectedMember(member);
     setShowMemberForm(true);
   };
 
-  const handleRemoveMember = (profileId) => {
+  const handleRemoveMember = (userId) => {
     if (window.confirm("Tem certeza que deseja remover este membro da organização?")) {
-      removeMemberMutation.mutate(profileId);
+      removeMemberMutation.mutate(userId);
     }
   };
 
   const filteredMembers = members.filter(member => {
     if (!searchTerm) return true;
-
     const term = searchTerm.toLowerCase();
     return (
       member.username?.toLowerCase().includes(term) ||
@@ -324,7 +414,6 @@ const OrganizationManagement = () => {
 
   // Verificar se o utilizador atual é admin da organização
   const isOrgAdmin = users.length > 0 && users[0].is_org_admin === true;
-  const invitation_code = users.length > 0 ? users[0].invitation_code : null;
   // Estado de carregamento global
   const isLoading = isLoadingOrganization || isLoadingMembers || isLoadingUsers ||
     createOrganizationMutation.isPending || updateOrganizationMutation.isPending ||
@@ -383,7 +472,7 @@ const OrganizationManagement = () => {
                     Adicionar Membro
                   </button>
                 )}
-                
+
                 {!organization && !isOrgAdmin && (
                   <div className="ml-auto">
                     {console.log("Rendering invitation section with users:", users)}
@@ -399,9 +488,9 @@ const OrganizationManagement = () => {
                         </p>
                       </div>
                     ) : (
-                     
+
                       <InvitationCodeDisplay
-                      
+
                         invitation_code={
                           users &&
                             users.length > 0 &&
@@ -614,19 +703,19 @@ const OrganizationManagement = () => {
                 <form onSubmit={handleMemberSubmit}>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-  <label className="block text-gray-700 mb-2">Função</label>
-  <input
-    type="text"
-    name="role"
-    value={memberFormData.role}
-    onChange={handleMemberInputChange}
-    className="w-full p-2 border border-gray-300 rounded-md"
-    placeholder="Digite a função do membro"
-  />
-  <p className="text-sm text-gray-500 mt-1">
-    Exemplos: Colaborador, Gestor, Administrador, Contabilista, etc.
-  </p>
-</div>
+                      <label className="block text-gray-700 mb-2">Função</label>
+                      <input
+                        type="text"
+                        name="role"
+                        value={memberFormData.role}
+                        onChange={handleMemberInputChange}
+                        className="w-full p-2 border border-gray-300 rounded-md"
+                        placeholder="Digite a função do membro"
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        Exemplos: Colaborador, Gestor, Administrador, Contabilista, etc.
+                      </p>
+                    </div>
                     <div className="md:col-span-2">
                       <label className="block text-gray-700 mb-2">Permissões</label>
                       <div className="flex items-center space-x-4">
@@ -812,7 +901,7 @@ const OrganizationManagement = () => {
                                     Editar
                                   </button>
                                   <button
-                                    onClick={() => handleRemoveMember(member.id)}
+                                    onClick={() => handleRemoveMember(member.user)}
                                     className="text-red-600 hover:text-red-900"
                                   >
                                     <UserMinus size={16} className="mr-1 inline" />
