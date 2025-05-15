@@ -45,175 +45,16 @@ const priorityLabels = {
   5: "Can Wait",
 };
 
-// Task Status Color Map
-const statusColors = {
-  pending: "bg-yellow-100 text-yellow-800 border border-yellow-200",
-  in_progress: "bg-blue-100 text-blue-800 border border-blue-200",
-  completed: "bg-green-100 text-green-800 border border-green-200",
-  cancelled: "bg-white-100 text-gray-800 border border-gray-200",
-};
 
-// --- Data Fetching Function (Defined Outside Component) ---
-const fetchDashboardData = async () => {
-  // --- Date calculations ---
-  const today = new Date();
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(today.getDate() - 7);
-  const thisWeekEnd = new Date(today);
-  thisWeekEnd.setDate(today.getDate() + 7);
-
-  const todayStr = today.toISOString().split("T")[0];
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
-  const sevenDaysAgoISO = sevenDaysAgo.toISOString();
-
-  // --- Fetch data in parallel ---
-  const [
-    tasksPendingResponse,
-    tasksInProgressResponse,
-    clientsResponse,
-    timeEntriesResponse,
-    profitabilityResponse,
-    completedTasksResponse,
-  ] = await Promise.all([
-    api.get("/tasks/?status=pending"),
-    api.get("/tasks/?status=in_progress"),
-    api.get("/clients/?is_active=true"),
-    api.get(
-      `/time-entries/?start_date=${sevenDaysAgoStr}&end_date=${todayStr}`
-    ),
-    api.get("/client-profitability/?is_profitable=false"),
-    api.get(`/tasks/?status=completed&completed_after=${sevenDaysAgoISO}`),
-  ]);
-
-  // --- Process fetched data ---
-  const tasks = [...tasksPendingResponse.data, ...tasksInProgressResponse.data];
-  const clients = clientsResponse.data;
-  const timeEntries = timeEntriesResponse.data;
-  const unprofitableClients = profitabilityResponse.data;
-  const completedTasks = completedTasksResponse.data;
-
-  // --- Process tasks ---
-  let overdueTasks = [];
-  let todayTasks = [];
-  let thisWeekTasks = [];
-  let upcomingTasks = [];
-
-  tasks.forEach((task) => {
-    if (task.deadline) {
-      const deadlineDate = new Date(task.deadline);
-      const deadlineStr = task.deadline.split("T")[0];
-
-      if (deadlineStr < todayStr) {
-        overdueTasks.push(task);
-      } else if (deadlineStr === todayStr) {
-        todayTasks.push(task);
-        upcomingTasks.push(task);
-      } else {
-        upcomingTasks.push(task);
-        if (deadlineDate <= thisWeekEnd) {
-          thisWeekTasks.push(task);
-        }
-      }
-    }
-  });
-
-  upcomingTasks.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
-  const nextFiveUpcomingTasks = upcomingTasks.slice(0, 5);
-
-  // --- Process Time Entries ---
-  const recentTimeEntries = [...timeEntries]
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    .slice(0, 5);
-
-  const todayTimeEntries = timeEntries.filter(
-    (entry) => entry.date === todayStr
-  );
-  const timeTrackedToday = todayTimeEntries.reduce(
-    (total, entry) => total + (entry.minutes_spent || 0),
-    0
-  );
-
-  const timeTrackedThisWeek = timeEntries.reduce(
-    (total, entry) => total + (entry.minutes_spent || 0),
-    0
-  );
-
-  // --- Compile Stats ---
-  const stats = {
-    activeTasks: tasks.length,
-    activeClients: clients.length,
-    overdueTasksCount: overdueTasks.length,
-    todayTasksCount: todayTasks.length,
-    thisWeekTasksCount: thisWeekTasks.length,
-    recentTimeEntries,
-    upcomingTasks: nextFiveUpcomingTasks,
-    unprofitableClientsCount: unprofitableClients.length,
-    timeTrackedToday,
-    timeTrackedThisWeek,
-    tasksCompletedThisWeek: completedTasks.length,
-    // Include raw lists if needed by UI
-    overdueTasksList: overdueTasks,
-    todayTasksList: todayTasks,
-  };
-
-  console.log("Dashboard Stats:", stats);
-  return stats; // Return the processed data
-};
-
-const LoadingView = () => (
-  <div className="flex justify-center items-center min-h-screen">
-    <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-  </div>
-);
-
-const ErrorView = ({ message, onRetry }) => (
-  <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
-    <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
-    <div
-      className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg"
-      role="alert"
-    >
-      <strong className="font-bold block sm:inline">
-        Oops! Something went wrong.
-      </strong>
-      <span className="block sm:inline">
-        {" "}
-        {message || "Failed to load data."}
-      </span>
-    </div>
-    {onRetry && (
-      <button
-        onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      >
-        <RotateCcw className="h-4 w-4 mr-2" />
-        Retry
-      </button>
-    )}
-  </div>
-);
-
-const LimitedDashboard = ({ delay }) => {
-  const {
-    data: dashboardStats,
-    isLoading,
-    isError,
-    error,
-  } = useQuery({
-    queryKey: ["dashboardData"], // Descriptive key
-    queryFn: fetchDashboardData, // Use the function defined outside
-    staleTime: 5 * 60 * 1000,
-    cacheTime: 10 * 60 * 1000,
-    retry: 1,
-  });
-
+const LimitedDashboard = ({ dashboardData, delay }) => {
+  console.log("sou limitada");
   // Variants for Framer Motion
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: { staggerChildren: 0.05 }, // Adjusted stagger
-    },
+      transition: { staggerChildren: 0.05 } // Adjusted stagger
+    }
   };
 
   const itemVariants = {
@@ -221,60 +62,28 @@ const LimitedDashboard = ({ delay }) => {
     visible: {
       y: 0,
       opacity: 1,
-      transition: { type: "spring", stiffness: 100 }, // Simplified transition
+      transition: { type: "spring", stiffness: 100 } // Simplified transition
     },
   };
 
   // Combined card variant for motion
-  const cardMotionProps = {
+   const cardMotionProps = {
     variants: itemVariants, // Use item variant for consistency
-    whileHover: {
+    whileHover:{
       y: -5,
-      boxShadow:
-        "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
       transition: { type: "spring", stiffness: 300, damping: 20 },
-    },
+    }
   };
-
-  // --- Loading and Error States ---
-  if (isLoading) {
-    // Use the simple Tailwind/Lucide loader
-    return (
-      <Header>
-        <LoadingView />;
-      </Header>
-    );
-  }
-
-  if (isError) {
-    // Use the simple Tailwind/Lucide error message
-    return (
-      <Header>
-        <ErrorView
-          message={error instanceof Error ? error.message : String(error)}
-        />
-        ;
-      </Header>
-    );
-  }
-
   // --- Data is Ready ---
   // Alias dashboardStats for easier use, default to empty object if somehow null/undefined
-  const stats = dashboardStats || {};
+  const stats = dashboardData || {};
 
   // Helper functions (Keep inside or move outside if reused)
-  const formatMinutes = (minutes = 0) => {
-    /* ... as before ... */
-  };
-  const formatDate = (dateString) => {
-    /* ... as before ... */
-  };
-  const getDaysRemaining = (deadlineStr) => {
-    /* ... as before ... */
-  };
-  const getDaysRemainingLabel = (days) => {
-    /* ... as before ... */
-  };
+  const formatMinutes = (minutes = 0) => { /* ... as before ... */ };
+  const formatDate = (dateString) => { /* ... as before ... */ };
+  const getDaysRemaining = (deadlineStr) => { /* ... as before ... */ };
+  const getDaysRemainingLabel = (days) => { /* ... as before ... */ };
 
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -283,9 +92,9 @@ const LimitedDashboard = ({ delay }) => {
       y: 0,
       transition: {
         duration: 0.4,
-        delay: delay * 0.15, // Stagger effect
-      },
-    },
+        delay: delay * 0.15 // Stagger effect
+      }
+    }
   };
 
   return (

@@ -1168,7 +1168,7 @@ def dashboard_summary(request):
         
         # Base response dictionary
         response_data = {
-            'has_full_access': profile.is_org_admin or profile.can_view_all_clients,
+            'has_full_access': profile.is_org_admin,
             'can_view_analytics': profile.can_view_analytics,
             'can_view_profitability': profile.can_view_profitability,
         }

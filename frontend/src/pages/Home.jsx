@@ -1,7 +1,5 @@
-import React from "react"; // Removed useState, useEffect
 import { Link } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from '@tanstack/react-query';
+import { motion } from "framer-motion";
 import {
   Calendar,
   Clock,
@@ -25,7 +23,6 @@ import {
 // Removed react-bootstrap imports as they seem unused in the main return block
 // import { Container, Spinner, Card, Alert } from 'react-bootstrap';
 import Header from "../components/Header";
-import api from "../api";
 import "../styles/Home.css";
 // --- Constants (Keep outside) ---
 const priorityColors = {
@@ -45,36 +42,9 @@ const priorityLabels = {
 };
 
 // --- Data Fetching Function (Defined Outside Component) ---
-
-
-const LoadingView = () => (
-  <div className="flex justify-center items-center min-h-screen">
-      <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-  </div>
-);
-
-const ErrorView = ({ message, onRetry }) => (
-  <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
-      <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg" role="alert">
-          <strong className="font-bold block sm:inline">Oops! Something went wrong.</strong>
-          <span className="block sm:inline"> {message || 'Failed to load data.'}</span>
-      </div>
-      {onRetry && (
-           <button
-              onClick={onRetry}
-              className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-              <RotateCcw className="h-4 w-4 mr-2"/>
-              Retry
-          </button>
-      )}
-  </div>
-);
-
-
 const Home = ({ dashboardData, delay }) => {
-  
+  console.log("não sou limitada");
+
   // Variants for Framer Motion
   const containerVariants = {
     hidden: { opacity: 0 },

@@ -4,14 +4,14 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  --primary-color: #4e47dc;
+  --primary-color: #574fe2;
   --primary-color-light: rgba(78, 71, 220, 0.1);
   --primary-color-dark: #3d37b9;
   --text-color: #333;
   --text-light: #666;
   --border-color: #e6e8f0;
   --bg-color: #f8fafc;
-  --hover-color: rgba(0, 0, 0, 0.04);
+  --hover-color: rgba(199, 199, 199, 0.774);
   --sidebar-width: 240px;
   --sidebar-collapsed-width: 64px;
   --header-height: 60px;
@@ -379,6 +379,7 @@
 .nav-item.active a {
   background-color: var(--primary-color-light);
   color: var(--primary-color);
+  font-weight: bold;
 }
 
 .nav-item.active .nav-icon {

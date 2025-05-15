@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import "../styles/Header.css";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import simpleLogo from "../assets/simplelogo.png";
 import {
   Home,
@@ -30,16 +30,20 @@ const sidebarVariants = {
     width: "240px",
     transition: { 
       type: "spring", 
-      stiffness: 300, 
-      damping: 24 
+      stiffness: 400,   // Aumentar para movimento mais rápido (era 300)
+      damping: 20,      // Reduzir para menos amortecimento (era 24)
+      mass: 0.5,        // Reduzir massa para movimento mais rápido
+      velocity: 2       // Adicionar velocidade inicial
     }
   },
   closed: { 
     width: "64px",
     transition: { 
       type: "spring", 
-      stiffness: 300, 
-      damping: 24 
+      stiffness: 400,   // Aumentar para movimento mais rápido
+      damping: 20,      // Reduzir para menos amortecimento
+      mass: 0.8,        // Reduzir massa
+      velocity: 2       // Adicionar velocidade inicial
     }
   }
 };
@@ -82,25 +86,33 @@ const dropdownVariants = {
   }
 };
 
-// Menu items data for easy iteration
+// Menu items data for easy iteration - REMOVE active property as we'll determine it dynamically
 const menuItems = [
-  { path: "./", icon: <Home size={20} />, label: "Dashboard", active: true },
-  { path: "./clientprofitability", icon: <DollarSign size={20} />, label: "Rentabilidade" },
-  { path: "./tasks", icon: <CheckSquare size={20} />, label: "Tarefas" },
-  { path: "./timeentry", icon: <Clock size={20} />, label: "Registo de Tempos" },
-  { path: "./clients", icon: <Users size={20} />, label: "Clientes" },
-  { path: "./organization", icon: <Briefcase size={20} />, label: "Organização" },
-  { path: "./workflow-designer", icon: <GitPullRequest size={20} />, label: "Workflow Designer" },
-  { path: "./workflow-management", icon: <Settings size={20} />, label: "Gerir Workflows" }
+  { path: "/", icon: <Home size={20} />, label: "Dashboard" },
+  { path: "/clientprofitability", icon: <DollarSign size={20} />, label: "Rentabilidade" },
+  { path: "/tasks", icon: <CheckSquare size={20} />, label: "Tarefas" },
+  { path: "/timeentry", icon: <Clock size={20} />, label: "Registo de Tempos" },
+  { path: "/clients", icon: <Users size={20} />, label: "Clientes" },
+  { path: "/organization", icon: <Briefcase size={20} />, label: "Organização" },
+  { path: "/workflow-designer", icon: <GitPullRequest size={20} />, label: "Workflow Designer" },
+  { path: "/workflow-management", icon: <Settings size={20} />, label: "Gerir Workflows" }
 ];
 
 function Header({ children }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [activePath, setActivePath] = useState("/");
   const dropdownRef = useRef(null);
   const searchRef = useRef(null);
+
+  // Update active path based on current location
+  useEffect(() => {
+    setActivePath(location.pathname);
+  }, [location]);
 
   // Check if viewing on mobile device
   useEffect(() => {
@@ -147,6 +159,17 @@ function Header({ children }) {
   // Toggle user dropdown
   const toggleUserDropdown = () => {
     setUserDropdownOpen(!userDropdownOpen);
+  };
+
+  // Handle menu item click
+  const handleMenuItemClick = (path, e) => {
+    e.preventDefault();
+    setActivePath(path);
+    navigate(path);
+    
+    if (isMobile) {
+      toggleSidebar();
+    }
   };
 
   return (
@@ -316,14 +339,17 @@ function Header({ children }) {
                 {menuItems.map((item, index) => (
                   <motion.li 
                     key={index} 
-                    className={`nav-item ${item.active ? 'active' : ''}`}
+                    className={`nav-item ${activePath === item.path ? 'active' : ''}`}
                     whileHover={{ 
                       x: 5,
-                      backgroundColor: item.active ? 'var(--primary-color-light)' : 'var(--hover-color)' 
+                      backgroundColor: activePath === item.path ? 'var(--primary-color-light)' : 'var(--hover-color)' 
                     }}
                     transition={{ type: "spring", stiffness: 500, damping: 17 }}
                   >
-                    <a href={item.path} onClick={isMobile ? toggleSidebar : undefined}>
+                    <a 
+                      href={item.path} 
+                      onClick={(e) => handleMenuItemClick(item.path, e)}
+                    >
                       <span className="nav-icon">{item.icon}</span>
                       <motion.span 
                         className="nav-text"

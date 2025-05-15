@@ -6,14 +6,11 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../api';
 import { Loader2 } from 'lucide-react';
 
-// Define fetchDashboardPermissions function
-const fetchDashboardPermissions = async () => {
-  // You might need to call a specific endpoint to check permissions
-  // For now, we'll use the fetchDashboardData function to both get data and permissions
-  return fetchDashboardData();
-};
-
 const fetchDashboardData = async () => {
+  // Fetch data from the single dashboard-summary endpoint
+  const response = await api.get("/dashboard-summary/");
+  const dashboardSummary = response.data;
+  
   // --- Date calculations ---
   const today = new Date();
   const sevenDaysAgo = new Date(today);
@@ -23,33 +20,19 @@ const fetchDashboardData = async () => {
 
   const todayStr = today.toISOString().split("T")[0];
   const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
-  const sevenDaysAgoISO = sevenDaysAgo.toISOString();
-
-  // --- Fetch data in parallel ---
+  
+  // --- Fetch complementary data for detailed lists ---
+  // We still need to fetch these lists since the summary endpoint only returns counts
   const [
-    tasksPendingResponse,
-    tasksInProgressResponse,
-    clientsResponse,
+    tasksResponse,
     timeEntriesResponse,
-    profitabilityResponse,
-    completedTasksResponse,
   ] = await Promise.all([
-    api.get("/tasks/?status=pending"),
-    api.get("/tasks/?status=in_progress"),
-    api.get("/clients/?is_active=true"),
-    api.get(
-      `/time-entries/?start_date=${sevenDaysAgoStr}&end_date=${todayStr}`
-    ),
-    api.get("/client-profitability/?is_profitable=false"),
-    api.get(`/tasks/?status=completed&completed_after=${sevenDaysAgoISO}`),
+    api.get("/tasks/?status=pending,in_progress"),
+    api.get(`/time-entries/?start_date=${sevenDaysAgoStr}&end_date=${todayStr}`),
   ]);
 
-  // --- Process fetched data ---
-  const tasks = [...tasksPendingResponse.data, ...tasksInProgressResponse.data];
-  const clients = clientsResponse.data;
+  const tasks = tasksResponse.data;
   const timeEntries = timeEntriesResponse.data;
-  const unprofitableClients = profitabilityResponse.data;
-  const completedTasks = completedTasksResponse.data;
 
   // --- Process tasks ---
   let overdueTasks = [];
@@ -84,50 +67,38 @@ const fetchDashboardData = async () => {
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 5);
 
-  const todayTimeEntries = timeEntries.filter(
-    (entry) => entry.date === todayStr
-  );
-  const timeTrackedToday = todayTimeEntries.reduce(
-    (total, entry) => total + (entry.minutes_spent || 0),
-    0
-  );
-
-  const timeTrackedThisWeek = timeEntries.reduce(
-    (total, entry) => total + (entry.minutes_spent || 0),
-    0
-  );
-
   // --- Compile Stats ---
+  // This maintains the same format as the original code
   const stats = {
-    activeTasks: tasks.length,
-    activeClients: clients.length,
-    overdueTasksCount: overdueTasks.length,
-    todayTasksCount: todayTasks.length,
+    activeTasks: dashboardSummary.active_tasks,
+    activeClients: dashboardSummary.active_clients,
+    overdueTasksCount: dashboardSummary.overdue_tasks,
+    todayTasksCount: dashboardSummary.today_tasks,
     thisWeekTasksCount: thisWeekTasks.length,
     recentTimeEntries,
     upcomingTasks: nextFiveUpcomingTasks,
-    unprofitableClientsCount: unprofitableClients.length,
-    timeTrackedToday,
-    timeTrackedThisWeek,
-    tasksCompletedThisWeek: completedTasks.length,
+    unprofitableClientsCount: dashboardSummary.can_view_profitability ? dashboardSummary.unprofitable_clients : 0,
+    timeTrackedToday: dashboardSummary.time_tracked_today,
+    timeTrackedThisWeek: dashboardSummary.time_tracked_week,
+    tasksCompletedThisWeek: dashboardSummary.completed_tasks_week,
     overdueTasksList: overdueTasks,
     todayTasksList: todayTasks,
-    // Add a permission flag (modify as needed based on your actual permission logic)
-    has_full_access: true  // Or implement actual permission logic
+    has_full_access: dashboardSummary.has_full_access,
+    can_view_analytics: dashboardSummary.can_view_analytics,
+    can_view_profitability: dashboardSummary.can_view_profitability
   };
 
   console.log("Dashboard Stats:", stats);
-  return stats; // Return the processed data with permissions
+  return stats;
 };
 
 const DashboardRouter = () => {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['dashboardPermissions'],
-    queryFn: fetchDashboardPermissions, // Now this function is defined
+    queryKey: ['dashboardData'],
+    queryFn: fetchDashboardData,
     staleTime: 5 * 60 * 1000,
   });
 
-  // Somente para estados de loading e error, aplicamos o Header aqui
   if (isLoading) {
     return (
       <div className="bg-white main">
@@ -152,7 +123,6 @@ const DashboardRouter = () => {
     );
   }
   
-  // Quando dados são carregados, delegamos para os componentes completos
   return data.has_full_access 
     ? <Home dashboardData={data} /> 
     : <LimitedDashboard dashboardData={data} />;
