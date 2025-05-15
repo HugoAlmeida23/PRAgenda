@@ -122,7 +122,7 @@ const Profile = () => {
     <div className="main">
       <Header>
       <div
-        className="p-6 bg-gray-100 min-h-screen"
+        className="p-6 bg-white-100 min-h-screen"
         style={{ marginLeft: "3%" }}
       >
         <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow">
@@ -253,7 +253,7 @@ const Profile = () => {
                     <button
                       type="button"
                       onClick={() => setEditing(false)}
-                      className="bg-gray-600 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                      className="bg-white-600 hover:bg-white-600 text-white px-4 py-2 rounded-md"
                       disabled={loading}
                     >
                       Cancel

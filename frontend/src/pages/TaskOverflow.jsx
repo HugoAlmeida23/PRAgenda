@@ -135,7 +135,7 @@ const TaskWorkflow = ({ taskId, onWorkflowUpdate }) => {
 
   if (!task || !task.workflow) {
     return (
-      <div className="bg-gray-100 p-4 rounded-md">
+      <div className="bg-white-100 p-4 rounded-md">
         <p className="text-gray-500 text-sm">This task is not part of a workflow.</p>
       </div>
     );
@@ -212,7 +212,7 @@ const TaskWorkflow = ({ taskId, onWorkflowUpdate }) => {
           
           <div className="space-y-3">
             {nextSteps.map((step) => (
-              <div key={step.id} className="p-3 border border-gray-200 rounded-md hover:bg-gray-50">
+              <div key={step.id} className="p-3 border border-gray-200 rounded-md hover:bg-white-50">
                 <div className="flex justify-between">
                   <div>
                     <h5 className="font-medium">{step.name}</h5>
@@ -261,7 +261,7 @@ const TaskWorkflow = ({ taskId, onWorkflowUpdate }) => {
                 className={`rounded-md p-2 text-sm font-medium ${
                   step.id === currentStep?.id
                     ? "bg-blue-100 text-blue-800 border border-blue-300"
-                    : "bg-gray-100 text-gray-800"
+                    : "bg-white-100 text-gray-800"
                 }`}
               >
                 {index + 1}. {step.name}

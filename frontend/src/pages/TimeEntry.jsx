@@ -34,7 +34,7 @@ const ErrorView = ({ message, onRetry }) => (
     {onRetry && (
       <button
         onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       >
         <RotateCcw className="h-4 w-4 mr-2" />
         Tentar novamente
@@ -477,7 +477,7 @@ const TimeEntry = () => {
           <div className="mt-6 flex justify-end space-x-3">
             <button
               onClick={onCancel}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-white-50"
             >
               Cancelar
             </button>
@@ -502,7 +502,7 @@ const TimeEntry = () => {
         hideProgressBar={false}
       />
       <Header>
-        <div className="p-6 bg-gray-100 min-h-screen" style={{ marginLeft: "3%" }}>
+        <div className="p-6 bg-white-100 min-h-screen" style={{ marginLeft: "3%" }}>
           <div className="max-w-6xl mx-auto">
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-2xl font-bold">Registo de Tempos</h1>
@@ -512,7 +512,7 @@ const TimeEntry = () => {
                     setShowForm(!showForm);
                     if (showAutoTracking) setShowAutoTracking(false);
                   }}
-                  className={`${showForm ? "bg-gray-600" : "bg-blue-600 hover:bg-blue-700"} text-white px-4 py-2 rounded-md flex items-center`}
+                  className={`${showForm ? "bg-white-600" : "bg-blue-600 hover:bg-blue-700"} text-white px-4 py-2 rounded-md flex items-center`}
                 >
                   <Plus size={18} className="mr-2" />
                   {showForm ? "Cancelar" : "Registar Entradas de Tempo"}
@@ -807,7 +807,7 @@ const TimeEntry = () => {
               <div className="flex justify-end space-x-3">
                 <button
                   onClick={resetFilters}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 rounded-md transition-colors"
+                  className="px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-white-100 rounded-md transition-colors"
                 >
                   Limpar
                 </button>
@@ -828,7 +828,7 @@ const TimeEntry = () => {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-white-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Data
@@ -852,7 +852,7 @@ const TimeEntry = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {timeEntries.map((entry) => (
-                        <tr key={entry.id} className="hover:bg-gray-50">
+                        <tr key={entry.id} className="hover:bg-white-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <Calendar size={16} className="mr-2 text-gray-400" />

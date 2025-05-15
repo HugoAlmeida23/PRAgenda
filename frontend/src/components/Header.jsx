@@ -1,13 +1,106 @@
 import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import "../styles/Header.css";
 import simpleLogo from "../assets/simplelogo.png";
-import "@fortawesome/fontawesome-free/css/all.min.css";
+import {
+  Home,
+  Users,
+  Clock,
+  CheckSquare,
+  DollarSign,
+  Settings,
+  HelpCircle,
+  Bell,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  LogOut,
+  CreditCard,
+  Menu,
+  X,
+  User,
+  Briefcase,
+  GitPullRequest
+} from "lucide-react";
+import "../styles/modernHeaderStyles.css";
+
+// Variants for animations
+const sidebarVariants = {
+  open: { 
+    width: "240px",
+    transition: { 
+      type: "spring", 
+      stiffness: 300, 
+      damping: 24 
+    }
+  },
+  closed: { 
+    width: "64px",
+    transition: { 
+      type: "spring", 
+      stiffness: 300, 
+      damping: 24 
+    }
+  }
+};
+
+const menuItemVariants = {
+  open: {
+    x: 0,
+    opacity: 1,
+    transition: {
+      y: { stiffness: 1000, velocity: -100 }
+    }
+  },
+  closed: {
+    x: -20,
+    opacity: 0,
+    transition: {
+      y: { stiffness: 1000 }
+    }
+  }
+};
+
+const dropdownVariants = {
+  hidden: { 
+    opacity: 0, 
+    y: -10,
+    scale: 0.95,
+    transition: { 
+      duration: 0.1 
+    } 
+  },
+  visible: { 
+    opacity: 1, 
+    y: 0,
+    scale: 1,
+    transition: { 
+      type: "spring",
+      stiffness: 500,
+      damping: 24 
+    } 
+  }
+};
+
+// Menu items data for easy iteration
+const menuItems = [
+  { path: "./", icon: <Home size={20} />, label: "Dashboard", active: true },
+  { path: "./clientprofitability", icon: <DollarSign size={20} />, label: "Rentabilidade" },
+  { path: "./tasks", icon: <CheckSquare size={20} />, label: "Tarefas" },
+  { path: "./timeentry", icon: <Clock size={20} />, label: "Registo de Tempos" },
+  { path: "./clients", icon: <Users size={20} />, label: "Clientes" },
+  { path: "./organization", icon: <Briefcase size={20} />, label: "Organização" },
+  { path: "./workflow-designer", icon: <GitPullRequest size={20} />, label: "Workflow Designer" },
+  { path: "./workflow-management", icon: <Settings size={20} />, label: "Gerir Workflows" }
+];
 
 function Header({ children }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
   const dropdownRef = useRef(null);
+  const searchRef = useRef(null);
 
   // Check if viewing on mobile device
   useEffect(() => {
@@ -34,13 +127,17 @@ function Header({ children }) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setUserDropdownOpen(false);
       }
+      
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setSearchFocused(false);
+      }
     }
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [dropdownRef]);
+  }, [dropdownRef, searchRef]);
 
   // Toggle sidebar
   const toggleSidebar = () => {
@@ -57,94 +154,149 @@ function Header({ children }) {
       {/* Top Header */}
       <header className="top-header">
         <div className="header-left">
-          <button 
-            className="sidebar-toggle" 
+          <motion.button 
+            className="sidebar-toggle"
             onClick={toggleSidebar}
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={sidebarCollapsed ? "Expandir sidebar" : "Recolher sidebar"}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
           >
-            <i className="fas fa-bars"></i>
-          </button>
+            {sidebarCollapsed ? <Menu size={20} /> : <X size={20} />}
+          </motion.button>
           
           <div className="brand">
-            <img src={simpleLogo} alt="TarefAi Logo" />
-            <span className="brand-name">TarefAi</span>
+            <motion.img 
+              src={simpleLogo} 
+              alt="TarefAi Logo" 
+              whileHover={{ rotate: 10, scale: 1.05 }}
+              transition={{ type: "spring", stiffness: 400, damping: 10 }}
+            />
+            <motion.span 
+              className="brand-name"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              TarefAi
+            </motion.span>
           </div>
         </div>
         
-        <div className="header-search">
-          <div className="search-container">
-            <i className="fas fa-search"></i>
-            <input type="text" placeholder="Search..." />
-          </div>
+        <div className="header-search" ref={searchRef}>
+          <motion.div 
+            className={`search-container ${searchFocused ? 'focused' : ''}`}
+            initial={{ width: "240px" }}
+            animate={{ width: searchFocused ? "320px" : "240px" }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+          >
+            <Search size={18} className="search-icon" />
+            <input 
+              type="text" 
+              placeholder="Pesquisar..." 
+              onFocus={() => setSearchFocused(true)}
+            />
+          </motion.div>
         </div>
         
         <div className="header-actions">
-          <button className="action-button" aria-label="Help">
-            <i className="fas fa-question-circle"></i>
-          </button>
+          <motion.button 
+            className="action-button" 
+            aria-label="Ajuda"
+            whileHover={{ scale: 1.1, y: -2 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <HelpCircle size={20} />
+          </motion.button>
           
-          <button className="action-button" aria-label="Notifications">
-            <i className="fas fa-bell"></i>
+          <motion.button 
+            className="action-button notification-btn" 
+            aria-label="Notificações"
+            whileHover={{ scale: 1.1, y: -2 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Bell size={20} />
             <span className="notification-badge">3</span>
-          </button>
+          </motion.button>
           
           <div className="user-profile-wrapper" ref={dropdownRef}>
-            <div 
+            <motion.div 
               className="user-profile"
               onClick={toggleUserDropdown}
+              whileHover={{ backgroundColor: "var(--hover-color)" }}
             >
-              <div className="avatar-circle">
+              <motion.div 
+                className="avatar-circle"
+                whileHover={{ scale: 1.05 }}
+              >
                 <span>HA</span>
-              </div>
+              </motion.div>
+              
               <div className="user-info">
                 <span className="user-name">Hugo Almeida</span>
                 <span className="user-role">Administrator</span>
               </div>
-              <i className={`fas fa-chevron-${userDropdownOpen ? 'up' : 'down'} dropdown-icon`}></i>
-            </div>
+              
+              <motion.div
+                animate={{ rotate: userDropdownOpen ? 180 : 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <ChevronDown size={18} className="dropdown-icon" />
+              </motion.div>
+            </motion.div>
             
-            {userDropdownOpen && (
-              <div className="user-dropdown">
-                <div className="dropdown-header">
-                  <div className="avatar-circle-large">
-                    <span>HA</span>
+            <AnimatePresence>
+              {userDropdownOpen && (
+                <motion.div 
+                  className="user-dropdown"
+                  variants={dropdownVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="hidden"
+                >
+                  <div className="dropdown-header">
+                    <div className="avatar-circle-large">
+                      <span>HA</span>
+                    </div>
+                    <div>
+                      <p className="dropdown-name">Hugo Almeida</p>
+                      <p className="dropdown-email">hugo@tarefai.com</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="dropdown-name">Hugo Almeida</p>
-                    <p className="dropdown-email">hugo@tarefai.com</p>
-                  </div>
-                </div>
-                
-                <ul className="dropdown-menu">
-                  <li>
-                    <a href="/profile">
-                      <i className="fas fa-user"></i>
-                      <span>Perfil</span>
-                    </a>
-                  </li>
-                  <li>
-                    <a href="/billing">
-                      <i className="fas fa-credit-card"></i>
-                      <span>Subscrição</span>
-                    </a>
-                  </li>
-                  <li className="divider"></li>
-                  <li>
-                    <a href="/help">
-                      <i className="fas fa-question-circle"></i>
-                      <span>Ajuda & Suporte</span>
-                    </a>
-                  </li>
-                  <li className="divider"></li>
-                  <li className="logout-item">
-                    <a href="/logout">
-                      <i className="fas fa-sign-out-alt"></i>
-                      <span>Sair</span>
-                    </a>
-                  </li>
-                </ul>
-              </div>
-            )}
+                  
+                  <ul className="dropdown-menu">
+                    <motion.li whileHover={{ x: 5, backgroundColor: 'var(--hover-color)' }}>
+                      <a href="/profile">
+                        <User size={18} />
+                        <span>Perfil</span>
+                      </a>
+                    </motion.li>
+                    <motion.li whileHover={{ x: 5, backgroundColor: 'var(--hover-color)' }}>
+                      <a href="/billing">
+                        <CreditCard size={18} />
+                        <span>Subscrição</span>
+                      </a>
+                    </motion.li>
+                    <li className="divider"></li>
+                    <motion.li whileHover={{ x: 5, backgroundColor: 'var(--hover-color)' }}>
+                      <a href="/help">
+                        <HelpCircle size={18} />
+                        <span>Ajuda & Suporte</span>
+                      </a>
+                    </motion.li>
+                    <li className="divider"></li>
+                    <motion.li 
+                      className="logout-item"
+                      whileHover={{ x: 5, backgroundColor: 'rgba(255, 76, 81, 0.1)' }}
+                    >
+                      <a href="/logout">
+                        <LogOut size={18} />
+                        <span>Sair</span>
+                      </a>
+                    </motion.li>
+                  </ul>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </header>
@@ -152,79 +304,78 @@ function Header({ children }) {
       {/* Main Layout with Sidebar and Content */}
       <div className="main-layout">
         {/* Sidebar Navigation */}
-        <nav className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <motion.nav 
+          className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+          variants={sidebarVariants}
+          initial={false}
+          animate={sidebarCollapsed ? "closed" : "open"}
+        >
           {isMobile && sidebarCollapsed ? null : (
             <>
               <ul className="nav-menu">
-                <li className="nav-item active">
-                  <a href="./" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-tachometer-alt"></i>
-                    <span>Dashboard</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./clientprofitability" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-users"></i>
-                    <span>Rentabilidade</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./tasks" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-tasks"></i>
-                    <span>Tarefas</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./timeentry" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-clock"></i>
-                    <span>Registo de Tempos</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./clients" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-users"></i>
-                    <span>Clientes</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./organization" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-users"></i>
-                    <span>Organização</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./workflow-designer" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-user"></i>
-                    <span>Worflow Designer</span>
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a href="./workflow-management" onClick={isMobile ? toggleSidebar : undefined}>
-                    <i className="fas fa-user"></i>
-                    <span>Gerir Worflows</span>
-                  </a>
-                </li>
+                {menuItems.map((item, index) => (
+                  <motion.li 
+                    key={index} 
+                    className={`nav-item ${item.active ? 'active' : ''}`}
+                    whileHover={{ 
+                      x: 5,
+                      backgroundColor: item.active ? 'var(--primary-color-light)' : 'var(--hover-color)' 
+                    }}
+                    transition={{ type: "spring", stiffness: 500, damping: 17 }}
+                  >
+                    <a href={item.path} onClick={isMobile ? toggleSidebar : undefined}>
+                      <span className="nav-icon">{item.icon}</span>
+                      <motion.span 
+                        className="nav-text"
+                        variants={menuItemVariants}
+                      >
+                        {item.label}
+                      </motion.span>
+                    </a>
+                  </motion.li>
+                ))}
               </ul>
               
-              <div className="sidebar-footer">
-                <div className="workspace-info">
+              <motion.div 
+                className="sidebar-footer"
+                variants={menuItemVariants}
+              >
+                <motion.div 
+                  className="workspace-info"
+                  whileHover={{ 
+                    backgroundColor: 'var(--hover-color)',
+                    scale: 1.02
+                  }}
+                >
                   <div className="workspace-icon">T</div>
-                  <div className="workspace-details">
+                  <motion.div 
+                    className="workspace-details"
+                    variants={menuItemVariants}
+                  >
                     <span className="workspace-name">TarefAi</span>
-                  </div>
-                </div>
-              </div>
+                  </motion.div>
+                </motion.div>
+              </motion.div>
             </>
           )}
-        </nav>
+        </motion.nav>
 
         {/* Mobile overlay */}
-        {isMobile && !sidebarCollapsed && (
-          <div className="sidebar-overlay" onClick={toggleSidebar}></div>
-        )}
+        <AnimatePresence>
+          {isMobile && !sidebarCollapsed && (
+            <motion.div 
+              className="sidebar-overlay" 
+              onClick={toggleSidebar}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Main Content */}
-        <main className="main-content">
+        <main className="bg-white main-content">
           {children}
         </main>
       </div>

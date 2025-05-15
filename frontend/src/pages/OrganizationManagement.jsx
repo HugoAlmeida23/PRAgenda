@@ -42,7 +42,7 @@ const ErrorView = ({ message, onRetry }) => (
     {onRetry && (
       <button
         onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       >
         <RotateCcw className="h-4 w-4 mr-2" />
         Tentar novamente
@@ -433,7 +433,7 @@ const OrganizationManagement = () => {
         hideProgressBar={false}
       />
       <Header>
-        <div className="p-6 bg-gray-100 min-h-screen" style={{ marginLeft: "3%" }}>
+        <div className="p-6 bg-white-100 min-h-screen" style={{ marginLeft: "3%" }}>
           <div className="max-w-6xl mx-auto">
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-2xl font-bold">Gestão da Organização</h1>
@@ -477,10 +477,10 @@ const OrganizationManagement = () => {
                   <div className="ml-auto">
                     {console.log("Rendering invitation section with users:", users)}
                     {isLoadingUsers ? (
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+                      <div className="bg-white-50 p-4 rounded-lg border border-gray-200 mb-6">
                         <h3 className="font-medium text-gray-700 mb-2">Seu Código de Convite</h3>
                         <div className="flex items-center">
-                          <div className="h-10 animate-pulse bg-gray-200 rounded w-24"></div>
+                          <div className="h-10 animate-pulse bg-white-200 rounded w-24"></div>
                           <Loader className="ml-3 h-5 w-5 text-gray-400 animate-spin" />
                         </div>
                         <p className="text-sm text-gray-500 mt-2">
@@ -598,7 +598,7 @@ const OrganizationManagement = () => {
                         setEditingOrganization(false);
                         resetOrganizationForm();
                       }}
-                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-white-50"
                       disabled={isLoading}
                     >
                       Cancelar
@@ -642,7 +642,7 @@ const OrganizationManagement = () => {
                   )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                  <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="p-4 bg-white-50 rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Contacto</h3>
                     <div className="space-y-2">
                       {organization.email && (
@@ -656,7 +656,7 @@ const OrganizationManagement = () => {
                       )}
                     </div>
                   </div>
-                  <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="p-4 bg-white-50 rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Plano</h3>
                     <div className="space-y-2">
                       <p className="text-gray-700">
@@ -667,7 +667,7 @@ const OrganizationManagement = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="p-4 bg-white-50 rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Clientes</h3>
                     <div className="space-y-2">
                       <p className="text-gray-700">
@@ -760,7 +760,7 @@ const OrganizationManagement = () => {
                         setSelectedMember(null);
                         resetMemberForm();
                       }}
-                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-white-50"
                       disabled={isLoading}
                     >
                       Cancelar
@@ -835,7 +835,7 @@ const OrganizationManagement = () => {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                      <thead className="bg-white-50">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Utilizador
@@ -854,10 +854,10 @@ const OrganizationManagement = () => {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {filteredMembers.map((member) => (
-                          <tr key={member.id} className="hover:bg-gray-50">
+                          <tr key={member.id} className="hover:bg-white-50">
                             <td className="px-6 py-4">
                               <div className="flex items-center">
-                                <div className="h-10 w-10 flex-shrink-0 bg-gray-200 rounded-full flex items-center justify-center">
+                                <div className="h-10 w-10 flex-shrink-0 bg-white-200 rounded-full flex items-center justify-center">
                                   <span className="text-gray-600 font-medium">
                                     {member.username?.charAt(0).toUpperCase() || "U"}
                                   </span>

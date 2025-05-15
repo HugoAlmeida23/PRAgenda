@@ -19,6 +19,8 @@ from .utils import update_profitability_for_period, update_current_month_profita
 from django.db.models import Q
 from django.conf import settings
 import requests
+from rest_framework.decorators import api_view, permission_classes
+from django.db.models import Sum, Count
 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
@@ -1150,3 +1152,95 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             ProfileSerializer(profile).data, 
             status=status.HTTP_200_OK
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_summary(request):
+    """
+    Returns summary data for dashboard, filtered according to user permissions.
+    """
+    user = request.user
+    
+    try:
+        # Get user profile
+        profile = Profile.objects.get(user=user)
+        
+        # Base response dictionary
+        response_data = {
+            'has_full_access': profile.is_org_admin or profile.can_view_all_clients,
+            'can_view_analytics': profile.can_view_analytics,
+            'can_view_profitability': profile.can_view_profitability,
+        }
+        
+        # Calculate today and recent dates
+        today = timezone.now().date()
+        seven_days_ago = today - timezone.timedelta(days=7)
+        
+        # Get organization ID if user belongs to one
+        org_id = profile.organization.id if profile.organization else None
+        
+        # Clients data - filtered by permissions
+        if profile.is_org_admin or profile.can_view_all_clients:
+            # User can see all clients in their organization
+            clients_queryset = Client.objects.filter(organization=org_id)
+        else:
+            # User can only see assigned clients
+            clients_queryset = profile.visible_clients.all()
+            
+        response_data['active_clients'] = clients_queryset.filter(is_active=True).count()
+        
+        # Tasks data - filtered by client visibility
+        visible_client_ids = clients_queryset.values_list('id', flat=True)
+        tasks_queryset = Task.objects.filter(
+            Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
+        ).distinct()
+        
+        response_data['active_tasks'] = tasks_queryset.exclude(status='completed').count()
+        response_data['overdue_tasks'] = tasks_queryset.filter(
+            status='pending',
+            deadline__lt=today
+        ).count()
+        response_data['today_tasks'] = tasks_queryset.filter(
+            deadline__date=today
+        ).count()
+        response_data['completed_tasks_week'] = tasks_queryset.filter(
+            status='completed',
+            completed_at__gte=seven_days_ago
+        ).count()
+        
+        # Time entries data
+        time_entries = TimeEntry.objects.filter(
+            Q(client_id__in=visible_client_ids) | Q(user=user)
+        ).distinct()
+        
+        response_data['time_tracked_today'] = time_entries.filter(
+            date=today
+        ).aggregate(total=Sum('minutes_spent'))['total'] or 0
+        
+        response_data['time_tracked_week'] = time_entries.filter(
+            date__gte=seven_days_ago,
+            date__lte=today
+        ).aggregate(total=Sum('minutes_spent'))['total'] or 0
+        
+        # Only include profitability data if user has permission
+        if profile.can_view_profitability:
+            profitability_data = ClientProfitability.objects.filter(
+                client_id__in=visible_client_ids
+            )
+            
+            response_data['unprofitable_clients'] = profitability_data.filter(
+                is_profitable=False
+            ).count()
+            
+            # Add more profitability metrics as needed
+        
+        return Response(response_data)
+        
+    except Profile.DoesNotExist:
+        return Response({
+            'error': 'User profile not found',
+            'has_full_access': False,
+            'can_view_analytics': False,
+            'can_view_profitability': False,
+        })

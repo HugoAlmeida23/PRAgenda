@@ -291,15 +291,15 @@ html, body, #root, #__next, * {
   background-color: white;
 }
 
-.bg-gray-50 {
+.bg-white-50 {
   background-color: #f9fafb;
 }
 
-.bg-gray-100 {
+.bg-white-100 {
   background-color: #f3f4f6;
 }
 
-.bg-gray-200 {
+.bg-white-200 {
   background-color: #e5e7eb;
 }
 
@@ -315,7 +315,7 @@ html, body, #root, #__next, * {
   background-color: #059669;
 }
 
-.bg-gray-600 {
+.bg-white-600 {
   background-color: #4b5563;
 }
 
@@ -365,11 +365,11 @@ button:disabled {
   background-color: #047857;
 }
 
-.hover\:bg-gray-700:hover {
+.hover\:bg-white-700:hover {
   background-color: #374151;
 }
 
-.hover\:bg-gray-300:hover {
+.hover\:bg-white-300:hover {
   background-color: #d1d5db;
 }
 
@@ -631,7 +631,7 @@ th {
 }
 
 /* Enhance button text visibility */
-.bg-white a, .bg-gray-50 a, .bg-gray-100 a {
+.bg-white a, .bg-white-50 a, .bg-white-100 a {
   color: #2563eb; /* text-blue-600 equivalent */
 }
 
@@ -1124,7 +1124,7 @@ a.bg-white.bg-opacity-30 {
   background-color: #fef3c7;
 }
 
-.hover\:bg-gray-100:hover {
+.hover\:bg-white-100:hover {
   background-color: #f3f4f6;
 }
 
@@ -1271,7 +1271,7 @@ a.bg-white.bg-opacity-30 {
 }
 
 /* Row hover effect */
-.hover\:bg-gray-50:hover {
+.hover\:bg-white-50:hover {
   background-color: #f9fafb;
 }
 

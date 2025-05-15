@@ -190,7 +190,7 @@ const InvitationCodeForm = ({ organizationId, onSuccess }) => {
         <div className="mb-4">
           <h3 className="font-medium text-gray-700 mb-2">Permissões</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-gray-50">
+            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-white-50">
               <input
                 type="checkbox"
                 name="is_admin"
@@ -204,7 +204,7 @@ const InvitationCodeForm = ({ organizationId, onSuccess }) => {
               </div>
             </label>
             
-            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-gray-50">
+            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-white-50">
               <input
                 type="checkbox"
                 name="can_assign_tasks"
@@ -218,7 +218,7 @@ const InvitationCodeForm = ({ organizationId, onSuccess }) => {
               </div>
             </label>
             
-            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-gray-50">
+            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-white-50">
               <input
                 type="checkbox"
                 name="can_manage_clients"
@@ -232,7 +232,7 @@ const InvitationCodeForm = ({ organizationId, onSuccess }) => {
               </div>
             </label>
             
-            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-gray-50">
+            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-white-50">
               <input
                 type="checkbox"
                 name="can_view_analytics"
@@ -246,7 +246,7 @@ const InvitationCodeForm = ({ organizationId, onSuccess }) => {
               </div>
             </label>
             
-            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-gray-50">
+            <label className="flex items-center p-2 border border-gray-200 rounded-md hover:bg-white-50">
               <input
                 type="checkbox"
                 name="can_view_profitability"
@@ -294,11 +294,11 @@ const InvitationCodeForm = ({ organizationId, onSuccess }) => {
               </label>
               
               {loadingClients ? (
-                <div className="p-4 bg-gray-50 rounded flex justify-center">
+                <div className="p-4 bg-white-50 rounded flex justify-center">
                   <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
                 </div>
               ) : clients.length === 0 ? (
-                <div className="p-4 bg-gray-50 rounded text-center">
+                <div className="p-4 bg-white-50 rounded text-center">
                   <p className="text-gray-500">Nenhum cliente disponível na organização.</p>
                 </div>
               ) : (
@@ -306,7 +306,7 @@ const InvitationCodeForm = ({ organizationId, onSuccess }) => {
                   <div className="border border-gray-300 rounded-md p-2 max-h-60 overflow-y-auto">
                     <div className="space-y-1">
                       {clients.map((client) => (
-                        <label key={client.id} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <label key={client.id} className="flex items-center p-2 hover:bg-white-50 rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={selectedClients.includes(client.id)}

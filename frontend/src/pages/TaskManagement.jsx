@@ -60,7 +60,7 @@ const ErrorView = ({ message, onRetry }) => (
     {onRetry && (
       <button
         onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       >
         <RotateCcw className="h-4 w-4 mr-2" />
         Retry
@@ -479,7 +479,7 @@ const TaskManagement = () => {
     <div className="main">
       <Header>
         <div
-          className="p-6 bg-gray-100 min-h-screen"
+          className="p-6 bg-white-100 min-h-screen"
           style={{ marginLeft: "3%" }}
         >
           <div className="max-w-6xl mx-auto">
@@ -493,7 +493,7 @@ const TaskManagement = () => {
                     if (showNaturalLanguageForm) setNaturalLanguageInput("");
                   }}
                   className={`${showNaturalLanguageForm
-                    ? "bg-gray-600"
+                    ? "bg-white-600"
                     : "bg-purple-600 hover:bg-purple-700"
                     } text-white px-4 py-2 rounded-md flex items-center`}
                 >
@@ -507,7 +507,7 @@ const TaskManagement = () => {
                     if (showNaturalLanguageForm)
                       setShowNaturalLanguageForm(false);
                   }}
-                  className={`${showForm ? "bg-gray-600" : "bg-blue-600 hover:bg-blue-700"
+                  className={`${showForm ? "bg-white-600" : "bg-blue-600 hover:bg-blue-700"
                     } text-white px-4 py-2 rounded-md flex items-center`}
                 >
                   <Plus size={18} className="mr-2" />
@@ -760,7 +760,7 @@ const TaskManagement = () => {
                     <button
                       type="button"
                       onClick={resetForm}
-                      className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md mr-2"
+                      className="bg-white-500 hover:bg-white-600 text-white px-4 py-2 rounded-md mr-2"
                     >
                       Cancel
                     </button>
@@ -797,7 +797,7 @@ const TaskManagement = () => {
                 </div>
                 <button
                   onClick={resetFilters}
-                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                  className="bg-white-500 hover:bg-white-600 text-white px-4 py-2 rounded-md"
                 >
                   Reset Filters
                 </button>
@@ -916,7 +916,7 @@ const TaskManagement = () => {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-white-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           <button
@@ -1013,7 +1013,7 @@ const TaskManagement = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredAndSortedTasks.map((task) => (
-                        <tr key={task.id} className="hover:bg-gray-50">
+                        <tr key={task.id} className="hover:bg-white-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="font-medium text-gray-900">
                               {task.title}
@@ -1065,7 +1065,7 @@ const TaskManagement = () => {
                                   ? "bg-blue-100 text-blue-800"
                                   : task.status === "pending"
                                     ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-gray-100 text-gray-800"
+                                    : "bg-white-100 text-gray-800"
                                 }`}
                             >
                               {

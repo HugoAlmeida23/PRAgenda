@@ -34,7 +34,7 @@ const priorityColors = {
   2: "bg-orange-100 text-orange-800 border border-orange-200", // High
   3: "bg-yellow-100 text-yellow-800 border border-yellow-200", // Medium
   4: "bg-blue-100 text-blue-800 border border-blue-200", // Low
-  5: "bg-gray-100 text-gray-800 border border-gray-200", // Can Wait
+  5: "bg-white-100 text-gray-800 border border-gray-200", // Can Wait
 };
 
 const priorityLabels = {
@@ -50,7 +50,7 @@ const statusColors = {
   pending: "bg-yellow-100 text-yellow-800 border border-yellow-200",
   in_progress: "bg-blue-100 text-blue-800 border border-blue-200",
   completed: "bg-green-100 text-green-800 border border-green-200",
-  cancelled: "bg-gray-100 text-gray-800 border border-gray-200",
+  cancelled: "bg-white-100 text-gray-800 border border-gray-200",
 };
 
 // --- Data Fetching Function (Defined Outside Component) ---
@@ -184,7 +184,7 @@ const ErrorView = ({ message, onRetry }) => (
     {onRetry && (
       <button
         onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       >
         <RotateCcw className="h-4 w-4 mr-2" />
         Retry
@@ -289,18 +289,18 @@ const LimitedDashboard = ({ delay }) => {
   };
 
   return (
-    <div className="main">
-      <Header>
+    <div className="bg-white main">
+      <Header className="bg-white">
         <motion.div
-          className="p-6 bg-gray-100 min-h-screen"
+          className="bg-white p-6 min-h-screen"
           style={{ marginLeft: "3%" }}
           variants={containerVariants}
           initial="hidden"
           animate="visible"
         >
-          <div className="max-w-7xl mx-auto">
+          <div className="bg-white max-w-7xl mx-auto">
             <motion.div
-              className="flex justify-between items-center mb-6"
+              className="bg-white flex justify-between items-center mb-6"
               variants={itemVariants}
             >
               <div className="bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-300 text-gray-700 font-medium">
@@ -316,14 +316,13 @@ const LimitedDashboard = ({ delay }) => {
             <>
               {/* Stats Overview - Enhanced Design with Better Contrast */}
               <motion.div
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+                className="bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
                 variants={containerVariants}
               >
                 {/* Active Tasks Card */}
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   <div className="flex items-center">
                     <div className="p-3 rounded-lg bg-blue-100 text-blue-700 mr-2">
@@ -371,8 +370,7 @@ const LimitedDashboard = ({ delay }) => {
                 {/* Active Clients Card */}
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   <div className="flex items-center">
                     <div className="p-3 rounded-lg bg-green-100 text-green-700 mr-2">
@@ -408,8 +406,7 @@ const LimitedDashboard = ({ delay }) => {
                 {/* Overdue Tasks Card */}
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   {/* Card content remains the same */}
                   <div className="flex items-center">
@@ -445,8 +442,7 @@ const LimitedDashboard = ({ delay }) => {
                 </motion.div>
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-red-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   {/* Content remains the same */}
                   <div className="relative z-10">
@@ -471,7 +467,7 @@ const LimitedDashboard = ({ delay }) => {
                     <div className="mt-4">
                       <Link
                         to="/tasks?status=completed"
-                        className="bg-white text-green-700 hover:bg-gray-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
+                        className="bg-white text-green-700 hover:bg-white-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
                       >
                         <CheckCircle size={16} className="mr-2" />
                         <span>Ver tarefas concluídas</span>
@@ -490,8 +486,7 @@ const LimitedDashboard = ({ delay }) => {
                 {/* Time cards with motion */}
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   {/* Content remains the same */}
                   <div className="relative z-10">
@@ -516,7 +511,7 @@ const LimitedDashboard = ({ delay }) => {
                     <div className="mt-4 ">
                       <Link
                         to="/timeentry"
-                        className="bg-white text-blue-700 hover:bg-gray-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
+                        className="bg-white text-blue-700 hover:bg-white-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
                       >
                         <Clock size={16} className="mr-2" />
                         <span>Tempo de registro</span>
@@ -526,8 +521,7 @@ const LimitedDashboard = ({ delay }) => {
                 </motion.div>
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   {/* Content remains the same */}
                   <div className="flex items-center mb-4">
@@ -557,8 +551,7 @@ const LimitedDashboard = ({ delay }) => {
                 {/* Weekly Activity Card */}
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   {/* Content remains the same */}
                   <div className="relative z-10">
@@ -583,7 +576,7 @@ const LimitedDashboard = ({ delay }) => {
                     <div className="mt-4">
                       <Link
                         to="/reports/time"
-                        className="bg-white text-purple-700 hover:bg-gray-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
+                        className="bg-white text-purple-700 hover:bg-white-100 transition-colors px-4 py-2 rounded-lg text-sm inline-flex items-center font-medium"
                       >
                         <BarChart2 size={16} className="mr-2" />
                         <span>Ver relatório de tempo</span>
@@ -593,8 +586,7 @@ const LimitedDashboard = ({ delay }) => {
                 </motion.div>
                 <motion.div
                   className="bg-white p-6 rounded-xl shadow-md border border-blue-200 hover:shadow-lg transition-shadow duration-300"
-                  variants={cardVariants}
-                  whileHover="hover"
+                  {...cardMotionProps}
                 >
                   {/* Content remains the same */}
                   <div className="flex items-center mb-4">
@@ -649,7 +641,7 @@ const LimitedDashboard = ({ delay }) => {
                   </div>
                   <div className="p-6">
                     {stats.upcomingTasks.length === 0 ? (
-                      <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                      <div className="text-center py-8 bg-white-50 rounded-lg border border-dashed border-gray-300">
                         <CheckCircle
                           size={40}
                           className="mx-auto mb-4 text-gray-400"
@@ -728,8 +720,8 @@ const LimitedDashboard = ({ delay }) => {
                                       "bg-blue-100 border-blue-200"
                                     )
                                     .replace(
-                                      "bg-gray-100",
-                                      "bg-gray-100 border-gray-200"
+                                      "bg-white-100",
+                                      "bg-white-100 border-gray-200"
                                     )}`}
                                 >
                                   {priorityLabels[task.priority]}
@@ -784,7 +776,7 @@ const LimitedDashboard = ({ delay }) => {
                   </div>
                   <div className="p-6">
                     {stats.recentTimeEntries.length === 0 ? (
-                      <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                      <div className="text-center py-8 bg-white-50 rounded-lg border border-dashed border-gray-300">
                         <Clock
                           size={40}
                           className="mx-auto mb-4 text-gray-400"

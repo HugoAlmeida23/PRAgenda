@@ -18,7 +18,9 @@ router.register(r'task-approvals', views.TaskApprovalViewSet, basename='task-app
 router.register(r'organizations', views.OrganizationViewSet, basename='organization')
 router.register(r'gemini-nlp', views.GeminiNLPViewSet, basename='gemini-nlp')
 
+
 urlpatterns = [
     path("register/", views.CreateUserView.as_view(), name="register"),
     path('', include(router.urls)),
+    path('dashboard-summary/', views.dashboard_summary, name='dashboard-summary'),
 ]

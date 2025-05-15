@@ -68,7 +68,7 @@ const WorkflowViewer = ({ workflow, onClose }) => {
         </div>
       ) : (
         <>
-          <div className="mb-6 bg-gray-50 p-4 rounded-md">
+          <div className="mb-6 bg-white-50 p-4 rounded-md">
             <h3 className="font-medium text-gray-700 mb-2">Detalhes do Workflow</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -77,7 +77,7 @@ const WorkflowViewer = ({ workflow, onClose }) => {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Status:</p>
-                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${workflow.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${workflow.is_active ? 'bg-green-100 text-green-800' : 'bg-white-100 text-gray-800'}`}>
                   {workflow.is_active ? 'Ativo' : 'Inativo'}
                 </span>
               </div>
@@ -101,7 +101,7 @@ const WorkflowViewer = ({ workflow, onClose }) => {
           <h3 className="text-lg font-medium mb-4">Passos do Workflow</h3>
           
           {/* Visualização do fluxo */}
-          <div className="p-4 bg-gray-50 rounded-lg overflow-x-auto mb-6">
+          <div className="p-4 bg-white-50 rounded-lg overflow-x-auto mb-6">
             <div className="flex items-center min-w-max">
               {workflowSteps.map((step, index) => (
                 <React.Fragment key={step.id}>
@@ -428,7 +428,7 @@ const WorkflowManagement = () => {
   return (
     <div className="main">
       <Header>
-        <div className="p-6 bg-gray-100 min-h-screen" style={{ marginLeft: "3%" }}>
+        <div className="p-6 bg-white-100 min-h-screen" style={{ marginLeft: "3%" }}>
           <div className="max-w-6xl mx-auto">
             {/* Cabeçalho da página */}
             <div className="flex justify-between items-center mb-6">
@@ -537,7 +537,7 @@ const WorkflowManagement = () => {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                      <thead className="bg-white-50">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Nome
@@ -561,7 +561,7 @@ const WorkflowManagement = () => {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {filteredWorkflows.map((workflow) => (
-                          <tr key={workflow.id} className="hover:bg-gray-50">
+                          <tr key={workflow.id} className="hover:bg-white-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="font-medium text-gray-900">
                                 {workflow.name}
@@ -573,7 +573,7 @@ const WorkflowManagement = () => {
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${workflow.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                              <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${workflow.is_active ? 'bg-green-100 text-green-800' : 'bg-white-100 text-gray-800'}`}>
                                 {workflow.is_active ? 'Ativo' : 'Inativo'}
                               </span>
                             </td>

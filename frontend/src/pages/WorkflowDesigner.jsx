@@ -309,7 +309,7 @@ const WorkflowDesigner = ({
   return (
     <div className="main">
       <Header>
-        <div className="p-6 bg-gray-100 min-h-screen" style={{ marginLeft: "3%" }}>
+        <div className="p-6 bg-white-100 min-h-screen" style={{ marginLeft: "3%" }}>
           <div className="bg-white p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-semibold mb-6 flex items-center">
               <Settings className="mr-2 text-blue-600" size={22} />
@@ -317,7 +317,7 @@ const WorkflowDesigner = ({
             </h2>
             
             {/* Detalhes básicos do workflow */}
-            <div className="mb-6 bg-gray-50 p-4 rounded-md">
+            <div className="mb-6 bg-white-50 p-4 rounded-md">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-gray-700 mb-2">Nome do Workflow *</label>
@@ -366,7 +366,7 @@ const WorkflowDesigner = ({
               </h3>
               
               {workflowData.steps.length === 0 ? (
-                <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                <div className="text-center py-8 bg-white-50 rounded-lg border border-dashed border-gray-300">
                   <p className="text-gray-500 mb-2">Nenhum passo definido</p>
                   <p className="text-sm text-gray-400">
                     Adicione passos para construir seu workflow
@@ -377,7 +377,7 @@ const WorkflowDesigner = ({
                   {workflowData.steps.map((step, index) => (
                     <div key={step.id || index} className="border border-gray-200 rounded-lg overflow-hidden">
                       {/* Cabeçalho do passo */}
-                      <div className="bg-gray-50 p-4 flex justify-between items-center border-b border-gray-200">
+                      <div className="bg-white-50 p-4 flex justify-between items-center border-b border-gray-200">
                         <div className="flex items-center">
                           <div className="bg-blue-100 text-blue-800 h-7 w-7 rounded-full flex items-center justify-center mr-3 font-semibold">
                             {index + 1}
@@ -393,7 +393,7 @@ const WorkflowDesigner = ({
                           <button
                             onClick={() => moveStepUp(index)}
                             disabled={index === 0}
-                            className={`p-1 rounded ${index === 0 ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-100'}`}
+                            className={`p-1 rounded ${index === 0 ? 'text-gray-300' : 'text-gray-600 hover:bg-white-100'}`}
                             title="Mover para cima"
                           >
                             <ChevronUp size={18} />
@@ -401,7 +401,7 @@ const WorkflowDesigner = ({
                           <button
                             onClick={() => moveStepDown(index)}
                             disabled={index === workflowData.steps.length - 1}
-                            className={`p-1 rounded ${index === workflowData.steps.length - 1 ? 'text-gray-300' : 'text-gray-600 hover:bg-gray-100'}`}
+                            className={`p-1 rounded ${index === workflowData.steps.length - 1 ? 'text-gray-300' : 'text-gray-600 hover:bg-white-100'}`}
                             title="Mover para baixo"
                           >
                             <ChevronDown size={18} />
@@ -500,7 +500,7 @@ const WorkflowDesigner = ({
                               {/* Próximos passos possíveis */}
                               <div className="mt-4">
                                 <h5 className="font-medium text-gray-700 mb-2">Próximos Passos Possíveis</h5>
-                                <div className="bg-gray-50 p-3 rounded-md">
+                                <div className="bg-white-50 p-3 rounded-md">
                                   {getPossibleNextSteps(index).length === 0 ? (
                                     <p className="text-sm text-gray-500">
                                       Não há passos subsequentes disponíveis.
@@ -640,7 +640,7 @@ const WorkflowDesigner = ({
             {workflowData.steps.length > 0 && (
               <div className="mb-6">
                 <h3 className="text-lg font-medium mb-4">Visualização do Fluxo</h3>
-                <div className="p-4 bg-gray-50 rounded-lg overflow-x-auto">
+                <div className="p-4 bg-white-50 rounded-lg overflow-x-auto">
                   <div className="flex items-center min-w-max">
                     {workflowData.steps.map((step, index) => (
                       <React.Fragment key={step.id || index}>
@@ -689,7 +689,7 @@ const WorkflowDesigner = ({
               <button
                 type="button"
                 onClick={handleCancel}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-white-50"
               >
                 Cancelar
               </button>

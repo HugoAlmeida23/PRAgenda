@@ -169,7 +169,7 @@ const TaskWorkflowView = ({ taskId, onWorkflowUpdate }) => {
 
   if (!task || !task.workflow) {
     return (
-      <div className="bg-gray-100 p-4 rounded-md">
+      <div className="bg-white-100 p-4 rounded-md">
         <p className="text-gray-500 text-sm">Esta tarefa não possui um workflow associado.</p>
       </div>
     );
@@ -257,7 +257,7 @@ const TaskWorkflowView = ({ taskId, onWorkflowUpdate }) => {
           
           <div className="space-y-3">
             {nextSteps.map((step) => (
-              <div key={step.id} className="p-3 border border-gray-200 rounded-md hover:bg-gray-50">
+              <div key={step.id} className="p-3 border border-gray-200 rounded-md hover:bg-white-50">
                 <div className="flex justify-between">
                   <div>
                     <h5 className="font-medium">{step.name}</h5>
@@ -311,7 +311,7 @@ const TaskWorkflowView = ({ taskId, onWorkflowUpdate }) => {
                       ? "bg-blue-100 text-blue-800 border border-blue-300"
                       : approvalHistory.some(a => a.workflow_step === step.id && a.approved)
                         ? "bg-green-100 text-green-800 border border-green-300"
-                        : "bg-gray-100 text-gray-800"
+                        : "bg-white-100 text-gray-800"
                   }`}
                 >
                   {index + 1}. {step.name}
@@ -359,7 +359,7 @@ const TaskWorkflowView = ({ taskId, onWorkflowUpdate }) => {
               {approvalHistory.map((approval) => {
                 const step = workflowSteps.find(s => s.id === approval.workflow_step);
                 return (
-                  <div key={approval.id} className="p-2 bg-gray-50 rounded-md border border-gray-200 text-sm">
+                  <div key={approval.id} className="p-2 bg-white-50 rounded-md border border-gray-200 text-sm">
                     <div className="flex items-center">
                       <CheckCircle size={14} className="text-green-500 mr-2" />
                       <span className="font-medium">{step?.name || 'Passo'}</span>

@@ -208,7 +208,7 @@ const ClientManagement = () => {
     <div className="main">
       <Header>
       <div
-        className="p-6 bg-gray-100 min-h-screen"
+        className="p-6 bg-white-100 min-h-screen"
         style={{ marginLeft: "3%" }}
       >
         <div className="max-w-6xl mx-auto">
@@ -361,7 +361,7 @@ const ClientManagement = () => {
                   <button
                     type="button"
                     onClick={resetForm}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md mr-2"
+                    className="bg-white-500 hover:bg-white-600 text-white px-4 py-2 rounded-md mr-2"
                   >
                     Cancel
                   </button>
@@ -431,7 +431,7 @@ const ClientManagement = () => {
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-white-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Name
@@ -455,7 +455,7 @@ const ClientManagement = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredClients.map((client) => (
-                      <tr key={client.id} className="hover:bg-gray-50">
+                      <tr key={client.id} className="hover:bg-white-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <User size={20} className="mr-6 text-gray-400" />

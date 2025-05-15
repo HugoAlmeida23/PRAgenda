@@ -341,7 +341,7 @@ const AutoTimeTracking = ({ onTimeEntryCreated }) => {
                 setElapsedTime(0);
                 activityDataRef.current = [];
               }}
-              className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm"
+              className="bg-white-500 hover:bg-white-600 text-white px-4 py-2 rounded-md text-sm"
               disabled={loading}
             >
               Cancel

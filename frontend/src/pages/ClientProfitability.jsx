@@ -352,24 +352,24 @@ const ClientProfitability = () => {
 
 
   return (
-    <div className="main">
+    <div className="bg-white main">
       <ToastContainer
         position="top-right"
         autoClose={3000}
         hideProgressBar={false}
       />
-      <Header>
+      <Header className="bg-white">
         <motion.div
           initial="hidden"
           animate="visible"
           variants={containerVariants}
-          className="p-6 min-h-screen"
+          className="bg-white p-6 min-h-screen"
           style={{ marginLeft: "3%" }}
         >
-          <div className="max-w-7xl mx-auto">
+          <div className="bg-white max-w-7xl mx-auto">
             <motion.div
               variants={itemVariants}
-              className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4"
+              className="bg-white flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4"
             >
               <h1 className="text-2xl font-bold">Análise de Rentabilidade</h1>
               <div className="flex space-x-3">
@@ -651,7 +651,7 @@ const ClientProfitability = () => {
                 <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-gray-50">
+                      <thead className="bg-white-50">
                         <tr>
                           <th className="px-6 py-4 border-b border-gray-200">
                             <motion.button
@@ -861,7 +861,7 @@ const ClientProfitability = () => {
                         {filteredData.map((item) => (
                           <React.Fragment key={item.id}>
                             <tr
-                              className={`transition-colors hover:bg-gray-50 ${
+                              className={`transition-colors hover:bg-white-50 ${
                                 item.is_profitable ? "" : "bg-red-50"
                               }`}
                             >
@@ -951,7 +951,7 @@ const ClientProfitability = () => {
                               <tr>
                                 <td
                                   colSpan="8"
-                                  className="px-6 py-4 border-b border-gray-100 bg-gray-50"
+                                  className="px-6 py-4 border-b border-gray-100 bg-white-50"
                                 >
                                   <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
                                     <h4 className="text-base font-medium text-gray-900 mb-4 flex items-center">
@@ -961,7 +961,7 @@ const ClientProfitability = () => {
                                     </h4>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                                      <div className="bg-gray-50 rounded-lg p-4">
+                                      <div className="bg-white-50 rounded-lg p-4">
                                         <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
                                           <Clock
                                             size={16}
@@ -1007,7 +1007,7 @@ const ClientProfitability = () => {
                                         </div>
                                       </div>
 
-                                      <div className="bg-gray-50 rounded-lg p-4">
+                                      <div className="bg-white-50 rounded-lg p-4">
                                         <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
                                           <CreditCard
                                             size={16}
@@ -1055,7 +1055,7 @@ const ClientProfitability = () => {
                                       </div>
                                     </div>
 
-                                    <div className="bg-gray-50 rounded-lg p-4">
+                                    <div className="bg-white-50 rounded-lg p-4">
                                       <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
                                         <Calendar
                                           size={16}
@@ -1066,7 +1066,7 @@ const ClientProfitability = () => {
                                       <div className="overflow-hidden rounded-lg border border-gray-200">
                                         <table className="min-w-full divide-y divide-gray-200 text-sm">
                                           <thead>
-                                            <tr className="bg-gray-100">
+                                            <tr className="bg-white-100">
                                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
                                                 Data
                                               </th>
@@ -1087,7 +1087,7 @@ const ClientProfitability = () => {
                                               .map((entry) => (
                                                 <tr
                                                   key={entry.id}
-                                                  className="hover:bg-gray-50 transition-colors"
+                                                  className="hover:bg-white-50 transition-colors"
                                                 >
                                                   <td className="px-4 py-3 whitespace-nowrap">
                                                     {entry.date}
@@ -1176,7 +1176,7 @@ const ClientProfitability = () => {
                       .map((item) => (
                         <div
                           key={item.id}
-                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                          className="flex items-center justify-between p-3 bg-white-50 rounded-lg"
                         >
                           <div className="flex items-center">
                             <div className="p-2 rounded-full bg-green-100 mr-3">
