@@ -78,7 +78,7 @@ const LimitedDashboard = ({ dashboardData, delay }) => {
   // --- Data is Ready ---
   // Alias dashboardStats for easier use, default to empty object if somehow null/undefined
   const stats = dashboardData || {};
-
+console.log("stats", stats);
   // Helper functions (Keep inside or move outside if reused)
   const formatMinutes = (minutes = 0) => { /* ... as before ... */ };
   const formatDate = (dateString) => { /* ... as before ... */ };

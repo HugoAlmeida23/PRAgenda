@@ -43,20 +43,18 @@ def generate_four_digit_id():
 
 class Profile(models.Model):
     """
-    Armaneza os dados do user que está logged
+    Armazena os dados do user que está logged
     como o seu preço à hora, a sua responsabilidade, etc
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     
-    # Now with the unique constraint
     invitation_code = models.CharField(
         max_length=4, 
-        unique=False,  # Now with unique constraint
+        unique=False,
         verbose_name="Código de Convite",
         help_text="Código de 4 dígitos para adicionar este utilizador a uma organização"
     )
     
-    # Rest of the model...
     organization = models.ForeignKey(
         'Organization', 
         on_delete=models.CASCADE, 
@@ -74,21 +72,59 @@ class Profile(models.Model):
         verbose_name="Métricas de Produtividade"
     )
     
-    # Campos para permissões na organização
+    # Permissões de administração
     is_org_admin = models.BooleanField(default=False, verbose_name="Administrador da Organização")
-    can_assign_tasks = models.BooleanField(default=False, verbose_name="Pode Atribuir Tarefas")
-    can_manage_clients = models.BooleanField(default=False, verbose_name="Pode Gerir Clientes")
     
-    # Novos campos para permissões granulares
+    # ======== PERMISSÕES PARA GESTÃO DE CLIENTES ========
+    can_manage_clients = models.BooleanField(default=False, verbose_name="Pode Gerir Clientes")
+    can_view_all_clients = models.BooleanField(default=False, verbose_name="Pode Ver Todos os Clientes")
+    can_create_clients = models.BooleanField(default=False, verbose_name="Pode Criar Clientes")
+    can_edit_clients = models.BooleanField(default=False, verbose_name="Pode Editar Clientes")
+    can_delete_clients = models.BooleanField(default=False, verbose_name="Pode Excluir Clientes")
+    can_change_client_status = models.BooleanField(default=False, verbose_name="Pode Ativar/Desativar Clientes")
+    
+    # Clientes específicos visíveis para este usuário
     visible_clients = models.ManyToManyField(
         'Client', 
         blank=True, 
         related_name='visible_to_profiles',
         verbose_name="Clientes Visíveis"
     )
-    can_view_all_clients = models.BooleanField(default=False, verbose_name="Pode Ver Todos os Clientes")
-    can_view_analytics = models.BooleanField(default=False, verbose_name="Pode Ver Análises")
+    
+    # ======== PERMISSÕES PARA GESTÃO DE TAREFAS ========
+    can_assign_tasks = models.BooleanField(default=False, verbose_name="Pode Atribuir Tarefas")
+    can_create_tasks = models.BooleanField(default=False, verbose_name="Pode Criar Tarefas")
+    can_edit_all_tasks = models.BooleanField(default=False, verbose_name="Pode Editar Qualquer Tarefa")
+    can_edit_assigned_tasks = models.BooleanField(default=False, verbose_name="Pode Editar Tarefas Atribuídas")
+    can_delete_tasks = models.BooleanField(default=False, verbose_name="Pode Excluir Tarefas")
+    can_view_all_tasks = models.BooleanField(default=False, verbose_name="Pode Ver Todas as Tarefas")
+    can_approve_tasks = models.BooleanField(default=False, verbose_name="Pode Aprovar Etapas de Tarefas")
+    
+    # ======== PERMISSÕES PARA GESTÃO DE TEMPO ========
+    can_log_time = models.BooleanField(default=True, verbose_name="Pode Registrar Tempo")
+    can_edit_own_time = models.BooleanField(default=True, verbose_name="Pode Editar Próprio Tempo")
+    can_edit_all_time = models.BooleanField(default=False, verbose_name="Pode Editar Tempo de Qualquer Pessoa")
+    can_view_team_time = models.BooleanField(default=False, verbose_name="Pode Ver Registros de Tempo da Equipe")
+    
+    # ======== PERMISSÕES FINANCEIRAS ========
+    can_view_client_fees = models.BooleanField(default=False, verbose_name="Pode Ver Taxas de Clientes")
+    can_edit_client_fees = models.BooleanField(default=False, verbose_name="Pode Alterar Taxas de Clientes")
+    can_manage_expenses = models.BooleanField(default=False, verbose_name="Pode Gerenciar Despesas")
     can_view_profitability = models.BooleanField(default=False, verbose_name="Pode Ver Rentabilidade")
+    can_view_team_profitability = models.BooleanField(default=False, verbose_name="Pode Ver Rentabilidade da Equipe")
+    can_view_organization_profitability = models.BooleanField(default=False, verbose_name="Pode Ver Rentabilidade da Organização")
+    
+    # ======== PERMISSÕES DE RELATÓRIOS E ANÁLISES ========
+    can_view_analytics = models.BooleanField(default=False, verbose_name="Pode Ver Análises")
+    can_export_reports = models.BooleanField(default=False, verbose_name="Pode Exportar Relatórios")
+    can_create_custom_reports = models.BooleanField(default=False, verbose_name="Pode Criar Relatórios Personalizados")
+    can_schedule_reports = models.BooleanField(default=False, verbose_name="Pode Agendar Relatórios")
+    
+    # ======== PERMISSÕES DE WORKFLOW ========
+    can_create_workflows = models.BooleanField(default=False, verbose_name="Pode Criar Workflows")
+    can_edit_workflows = models.BooleanField(default=False, verbose_name="Pode Editar Workflows")
+    can_assign_workflows = models.BooleanField(default=False, verbose_name="Pode Atribuir Workflows")
+    can_manage_workflows = models.BooleanField(default=False, verbose_name="Pode Gerenciar Workflows")
     
     class Meta:
         verbose_name = "Perfil"
@@ -113,7 +149,6 @@ class Profile(models.Model):
                 return
         raise ValueError("Unable to generate a unique invitation code after multiple attempts")
     
-    # Other methods...
     def get_organization_colleagues(self):
         """Retorna todos os perfis da mesma organização, exceto o próprio."""
         if not self.organization:
@@ -121,7 +156,7 @@ class Profile(models.Model):
             
         return Profile.objects.filter(
             organization=self.organization
-        ).exclude(profile_id=self.profile_id)
+        ).exclude(id=self.id)
     
     def can_manage_profile(self, profile):
         """Verifica se este perfil pode gerir outro perfil."""
@@ -145,7 +180,45 @@ class Profile(models.Model):
             return client.organization == self.organization
         else:
             return self.visible_clients.filter(id=client.id).exists()
-
+    
+    # Novos métodos auxiliares para verificar permissões específicas
+    
+    def can_manage_task(self, task):
+        """Verifica se este usuário pode gerenciar uma tarefa específica."""
+        # Administradores podem gerenciar qualquer tarefa
+        if self.is_org_admin:
+            return True
+        
+        # Usuários com permissão para editar todas as tarefas
+        if self.can_edit_all_tasks:
+            return True
+            
+        # Usuários podem editar suas próprias tarefas atribuídas
+        if self.can_edit_assigned_tasks and task.assigned_to == self.user:
+            return True
+            
+        # Usuários podem gerenciar tarefas de clientes que têm permissão para gerenciar
+        if self.can_manage_clients and self.can_access_client(task.client):
+            return True
+            
+        return False
+    
+    def can_manage_time_entry(self, time_entry):
+        """Verifica se este usuário pode gerenciar um registro de tempo específico."""
+        # Administradores podem gerenciar qualquer registro
+        if self.is_org_admin:
+            return True
+            
+        # Usuários com permissão para editar qualquer registro de tempo
+        if self.can_edit_all_time:
+            return True
+            
+        # Usuários podem editar seus próprios registros de tempo
+        if self.can_edit_own_time and time_entry.user == self.user:
+            return True
+            
+        return False
+            
     @classmethod
     def find_by_invitation_code(cls, code):
         """
@@ -156,7 +229,7 @@ class Profile(models.Model):
             return cls.objects.get(invitation_code=code)
         except cls.DoesNotExist:
             return None
-             
+                
 class Client(models.Model):
     """
     Cliente do escritório de contabilidade.

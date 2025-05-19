@@ -20,7 +20,7 @@ from django.db.models import Q
 from django.conf import settings
 import requests
 from rest_framework.decorators import api_view, permission_classes
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Avg
 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
@@ -58,29 +58,99 @@ class ClientViewSet(viewsets.ModelViewSet):
             if is_active is not None:
                 queryset = queryset.filter(is_active=is_active == 'true')
             
-            # Return all clients in the organization if admin or has full view permission
-            if profile.is_org_admin or profile.can_view_all_clients:
-                if profile.organization:
-                    return queryset.filter(organization=profile.organization)
+            # Organization check
+            if not profile.organization:
                 return Client.objects.none()
+                
+            # Aplicando permissões granulares
+            if profile.is_org_admin:
+                # Administradores veem todos os clientes da organização
+                return queryset.filter(organization=profile.organization)
+            elif profile.can_view_all_clients:
+                # Usuários com permissão para ver todos os clientes
+                return queryset.filter(organization=profile.organization)
             else:
-                # Return only explicitly granted clients
+                # Outros usuários só veem clientes explicitamente concedidos
                 return profile.visible_clients.all().filter(id__in=queryset)
                 
         except Profile.DoesNotExist:
             return Client.objects.none()
     
     def perform_create(self, serializer):
-        # Set the organization based on the user's profile
+        # Verificar se o usuário tem permissão para criar clientes
         try:
             profile = Profile.objects.get(user=self.request.user)
+            
+            if not (profile.is_org_admin or profile.can_create_clients):
+                raise PermissionDenied("Você não tem permissão para criar clientes")
+                
+            # Set the organization based on the user's profile
             if profile.organization:
                 serializer.save(organization=profile.organization)
             else:
-                raise PermissionDenied("User is not part of any organization")
+                raise PermissionDenied("Usuário não pertence a nenhuma organização")
         except Profile.DoesNotExist:
-            raise PermissionDenied("User profile not found")
+            raise PermissionDenied("Perfil de usuário não encontrado")
 
+    def update(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para editar clientes
+        try:
+            profile = Profile.objects.get(user=request.user)
+            client = self.get_object()
+            
+            if not (profile.is_org_admin or profile.can_edit_clients):
+                raise PermissionDenied("Você não tem permissão para editar clientes")
+                
+            # Verificar se o cliente pertence à mesma organização
+            if client.organization != profile.organization:
+                raise PermissionDenied("Este cliente não pertence à sua organização")
+                
+            # Para usuários que não podem ver todos os clientes, verificar se têm acesso a este cliente
+            if not (profile.is_org_admin or profile.can_view_all_clients):
+                if not profile.visible_clients.filter(id=client.id).exists():
+                    raise PermissionDenied("Você não tem acesso a este cliente")
+            
+            return super().update(request, *args, **kwargs)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+
+    def destroy(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para excluir clientes
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not (profile.is_org_admin or profile.can_delete_clients):
+                raise PermissionDenied("Você não tem permissão para excluir clientes")
+                
+            return super().destroy(request, *args, **kwargs)
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+    
+    @action(detail=True, methods=['patch'])
+    def toggle_status(self, request, pk=None):
+        """
+        Alterna o status de ativo/inativo de um cliente
+        """
+        client = self.get_object()
+        
+        # Verificar se o usuário tem permissão para alterar o status do cliente
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not (profile.is_org_admin or profile.can_change_client_status):
+                raise PermissionDenied("Você não tem permissão para alterar o status do cliente")
+                
+            # Alternar o status
+            client.is_active = not client.is_active
+            client.save()
+            
+            serializer = self.get_serializer(client)
+            return Response(serializer.data)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+        
 class TaskCategoryViewSet(viewsets.ModelViewSet):
     queryset = TaskCategory.objects.all()
     serializer_class = TaskCategorySerializer
@@ -96,21 +166,50 @@ class TaskViewSet(viewsets.ModelViewSet):
         try:
             profile = Profile.objects.get(user=user)
             
+            # Base queryset
             base_queryset = Task.objects.all()
             
-            # Filter by status if provided
-            status_param = self.request.GET.get('status')
+            # Apply filters if provided
+            status_param = self.request.query_params.get('status')
             if status_param:
-                base_queryset = base_queryset.filter(status=status_param)
+                status_values = status_param.split(',')
+                base_queryset = base_queryset.filter(status__in=status_values)
                 
             # Filter by client if provided
-            client_id = self.request.GET.get('client')
+            client_id = self.request.query_params.get('client')
             if client_id:
                 base_queryset = base_queryset.filter(client_id=client_id)
             
+            # Filter overdue tasks if requested
+            overdue_param = self.request.query_params.get('overdue')
+            if overdue_param and overdue_param.lower() == 'true':
+                today = timezone.now()
+                base_queryset = base_queryset.filter(deadline__lt=today.date())
+                
+            # Filter by deadline
+            due_param = self.request.query_params.get('due')
+            if due_param:
+                today = timezone.now().date()
+                if due_param == 'today':
+                    base_queryset = base_queryset.filter(deadline__date=today)
+                elif due_param == 'this-week':
+                    # Calculate first and last day of current week
+                    week_start = today - timezone.timedelta(days=today.weekday())
+                    week_end = week_start + timezone.timedelta(days=6)
+                    base_queryset = base_queryset.filter(deadline__date__range=[week_start, week_end])
+            
+            # Verificar organização
+            if not profile.organization:
+                return Task.objects.none()
+                
             # Apply permission-based filtering
-            if profile.is_org_admin or profile.can_view_all_clients:
+            if profile.is_org_admin:
                 # Admins see all tasks in their organization
+                if profile.organization:
+                    return base_queryset.filter(client__organization=profile.organization)
+                return Task.objects.none()
+            elif profile.can_view_all_tasks:
+                # Users with permission to view all tasks
                 if profile.organization:
                     return base_queryset.filter(client__organization=profile.organization)
                 return Task.objects.none()
@@ -125,8 +224,112 @@ class TaskViewSet(viewsets.ModelViewSet):
             return Task.objects.none()
     
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        # Verificar se o usuário tem permissão para criar tarefas
+        try:
+            profile = Profile.objects.get(user=self.request.user)
+            
+            if not (profile.is_org_admin or profile.can_create_tasks):
+                raise PermissionDenied("Você não tem permissão para criar tarefas")
+                
+            # Verificar se o cliente selecionado está acessível para o usuário
+            client_id = self.request.data.get('client')
+            if client_id:
+                client = Client.objects.get(id=client_id)
+                if not profile.can_access_client(client):
+                    raise PermissionDenied("Você não tem acesso a este cliente")
+            
+            # Criar a tarefa
+            serializer.save(created_by=self.request.user)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+        except Client.DoesNotExist:
+            raise PermissionDenied("Cliente não encontrado")
+            
+    def update(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para editar esta tarefa
+        try:
+            profile = Profile.objects.get(user=request.user)
+            task = self.get_object()
+            
+            can_edit = (
+                profile.is_org_admin or 
+                profile.can_edit_all_tasks or 
+                (profile.can_edit_assigned_tasks and task.assigned_to == request.user)
+            )
+            
+            if not can_edit:
+                raise PermissionDenied("Você não tem permissão para editar esta tarefa")
+                
+            # Verificar se o novo cliente (se fornecido) está acessível para o usuário
+            client_id = request.data.get('client')
+            if client_id and str(task.client.id) != client_id:
+                client = Client.objects.get(id=client_id)
+                if not profile.can_access_client(client):
+                    raise PermissionDenied("Você não tem acesso ao cliente selecionado")
+            
+            return super().update(request, *args, **kwargs)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+            
+    def destroy(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para excluir tarefas
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not (profile.is_org_admin or profile.can_delete_tasks):
+                raise PermissionDenied("Você não tem permissão para excluir tarefas")
+                
+            return super().destroy(request, *args, **kwargs)
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+            
+    @action(detail=True, methods=['patch'])
+    def update_status(self, request, pk=None):
+        """
+        Atualiza o status de uma tarefa
+        """
+        task = self.get_object()
+        new_status = request.data.get('status')
         
+        if not new_status:
+            return Response(
+                {"error": "Status é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar permissões
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            # Verificar se o usuário pode editar esta tarefa
+            can_edit = (
+                profile.is_org_admin or 
+                profile.can_edit_all_tasks or 
+                (profile.can_edit_assigned_tasks and task.assigned_to == request.user)
+            )
+            
+            if not can_edit:
+                raise PermissionDenied("Você não tem permissão para atualizar o status desta tarefa")
+            
+            # Atualizar o status
+            task.status = new_status
+            
+            # Se o status é "completed", registrar a data de conclusão
+            if new_status == 'completed':
+                task.completed_at = timezone.now()
+            elif task.status == 'completed':
+                task.completed_at = None
+                
+            task.save()
+            
+            serializer = self.get_serializer(task)
+            return Response(serializer.data)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+             
 class CreateUserView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -142,6 +345,7 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         try:
             profile = Profile.objects.get(user=user)
             
+            # Base queryset
             base_queryset = TimeEntry.objects.all()
             
             # Filter by date range if provided
@@ -154,16 +358,26 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             client_id = self.request.query_params.get('client')
             if client_id:
                 base_queryset = base_queryset.filter(client_id=client_id)
+                
+            # Filter by user if provided
+            user_id = self.request.query_params.get('user')
+            if user_id:
+                base_queryset = base_queryset.filter(user_id=user_id)
             
             # Apply permission-based filtering
-            if profile.is_org_admin or profile.can_view_all_clients:
-                # Admins see all time entries in their organization
+            if profile.is_org_admin:
+                # Admins can see all time entries in the organization
+                if profile.organization:
+                    return base_queryset.filter(client__organization=profile.organization)
+                return TimeEntry.objects.none()
+            elif profile.can_view_team_time:
+                # Users with permission to view team time
                 if profile.organization:
                     return base_queryset.filter(client__organization=profile.organization)
                 return TimeEntry.objects.none()
             else:
                 # Regular users only see time entries for their visible clients or their own entries
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
+                visible_client_ids = list(profile.visible_clients.values_list('id', flat=True))
                 return base_queryset.filter(
                     Q(client_id__in=visible_client_ids) | Q(user=user)
                 ).distinct()
@@ -173,21 +387,157 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             return TimeEntry.objects.filter(user=user)
     
     def perform_create(self, serializer):
-        # Check if the user has access to the client
-        client_id = self.request.data.get('client')
-        if client_id:
-            try:
-                profile = Profile.objects.get(user=self.request.user)
+        # Verificar se o usuário tem permissão para registrar tempo
+        try:
+            profile = Profile.objects.get(user=self.request.user)
+            
+            if not profile.can_log_time:
+                raise PermissionDenied("Você não tem permissão para registrar tempo")
+                
+            # Verificar se o cliente está acessível para o usuário
+            client_id = self.request.data.get('client')
+            if client_id:
                 client = Client.objects.get(id=client_id)
-                
                 if not profile.can_access_client(client):
-                    raise PermissionDenied("You don't have access to this client")
+                    raise PermissionDenied("Você não tem acesso a este cliente")
                     
-            except (Profile.DoesNotExist, Client.DoesNotExist):
-                pass  # Let validation handle this
+            # Criar o registro de tempo
+            serializer.save(user=self.request.user)
+            
+        except Profile.DoesNotExist:
+            # Se não houver perfil, permitir apenas para o próprio usuário
+            serializer.save(user=self.request.user)
+        except Client.DoesNotExist:
+            raise PermissionDenied("Cliente não encontrado")
+    
+    def update(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para editar este registro de tempo
+        try:
+            profile = Profile.objects.get(user=request.user)
+            time_entry = self.get_object()
+            
+            # Verificar permissões específicas
+            can_edit = (
+                profile.is_org_admin or 
+                profile.can_edit_all_time or 
+                (profile.can_edit_own_time and time_entry.user == request.user)
+            )
+            
+            if not can_edit:
+                raise PermissionDenied("Você não tem permissão para editar este registro de tempo")
                 
-        serializer.save(user=self.request.user)
+            # Verificar se o novo cliente (se fornecido) está acessível para o usuário
+            client_id = request.data.get('client')
+            if client_id and str(time_entry.client.id) != client_id:
+                client = Client.objects.get(id=client_id)
+                if not profile.can_access_client(client):
+                    raise PermissionDenied("Você não tem acesso ao cliente selecionado")
+                    
+            return super().update(request, *args, **kwargs)
+            
+        except Profile.DoesNotExist:
+            # Se não houver perfil, permitir editar apenas registros próprios
+            time_entry = self.get_object()
+            if time_entry.user != request.user:
+                raise PermissionDenied("Você só pode editar seus próprios registros de tempo")
+                
+            return super().update(request, *args, **kwargs)
+            
+    def destroy(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para excluir este registro de tempo
+        try:
+            profile = Profile.objects.get(user=request.user)
+            time_entry = self.get_object()
+            
+            # Verificar permissões específicas
+            can_delete = (
+                profile.is_org_admin or 
+                profile.can_edit_all_time or 
+                (profile.can_edit_own_time and time_entry.user == request.user)
+            )
+            
+            if not can_delete:
+                raise PermissionDenied("Você não tem permissão para excluir este registro de tempo")
+                
+            return super().destroy(request, *args, **kwargs)
+            
+        except Profile.DoesNotExist:
+            # Se não houver perfil, permitir excluir apenas registros próprios
+            time_entry = self.get_object()
+            if time_entry.user != request.user:
+                raise PermissionDenied("Você só pode excluir seus próprios registros de tempo")
+                
+            return super().destroy(request, *args, **kwargs)
+            
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+        """
+        Cria múltiplos registros de tempo de uma vez
+        """
+        entries_data = request.data.get('entries', [])
         
+        if not entries_data:
+            return Response(
+                {"error": "Nenhum registro de tempo fornecido"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Verificar se o usuário tem permissão para registrar tempo
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not profile.can_log_time:
+                raise PermissionDenied("Você não tem permissão para registrar tempo")
+                
+            # Processar os registros
+            created_entries = []
+            
+            for entry_data in entries_data:
+                # Definir o usuário atual para o registro
+                entry_data['user'] = request.user.id
+                
+                # Verificar acesso ao cliente
+                client_id = entry_data.get('client')
+                if client_id:
+                    client = Client.objects.get(id=client_id)
+                    if not profile.can_access_client(client):
+                        return Response(
+                            {"error": f"Sem acesso ao cliente com ID {client_id}"}, 
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                
+                # Criar o registro
+                serializer = self.get_serializer(data=entry_data)
+                serializer.is_valid(raise_exception=True)
+                serializer.save(user=request.user)
+                created_entries.append(serializer.data)
+                
+            return Response(
+                created_entries, 
+                status=status.HTTP_201_CREATED
+            )
+            
+        except Profile.DoesNotExist:
+            # Se não houver perfil, criar da mesma forma
+            created_entries = []
+            
+            for entry_data in entries_data:
+                entry_data['user'] = request.user.id
+                serializer = self.get_serializer(data=entry_data)
+                serializer.is_valid(raise_exception=True)
+                serializer.save(user=request.user)
+                created_entries.append(serializer.data)
+                
+            return Response(
+                created_entries, 
+                status=status.HTTP_201_CREATED
+            )
+        except Client.DoesNotExist:
+            return Response(
+                {"error": "Cliente não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+               
 class ExpenseViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
@@ -781,8 +1131,109 @@ class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
     serializer_class = WorkflowDefinitionSerializer
     permission_classes = [IsAuthenticated]
     
+    def get_queryset(self):
+        # Aplicar filtragem com base no status, se fornecido
+        queryset = WorkflowDefinition.objects.all()
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active == 'true')
+        return queryset
+    
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        # Verificar se o usuário tem permissão para criar workflows
+        try:
+            profile = Profile.objects.get(user=self.request.user)
+            
+            if not (profile.is_org_admin or profile.can_create_workflows):
+                raise PermissionDenied("Você não tem permissão para criar workflows")
+                
+            serializer.save(created_by=self.request.user)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+    
+    def update(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para editar workflows
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not (profile.is_org_admin or profile.can_edit_workflows):
+                raise PermissionDenied("Você não tem permissão para editar workflows")
+                
+            return super().update(request, *args, **kwargs)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+    
+    def destroy(self, request, *args, **kwargs):
+        # Verificar se o usuário tem permissão para excluir workflows
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not (profile.is_org_admin or profile.can_edit_workflows):
+                raise PermissionDenied("Você não tem permissão para excluir workflows")
+                
+            return super().destroy(request, *args, **kwargs)
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+    
+    @action(detail=True, methods=['post'])
+    def assign_to_task(self, request, pk=None):
+        """
+        Atribui este workflow a uma tarefa específica
+        """
+        workflow = self.get_object()
+        task_id = request.data.get('task_id')
+        
+        if not task_id:
+            return Response(
+                {"error": "ID da tarefa é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Verificar permissões
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not (profile.is_org_admin or profile.can_assign_workflows):
+                raise PermissionDenied("Você não tem permissão para atribuir workflows")
+                
+            # Buscar a tarefa e o primeiro passo do workflow
+            try:
+                task = Task.objects.get(id=task_id)
+                
+                # Verificar se o usuário tem acesso a esta tarefa
+                if not profile.can_access_client(task.client):
+                    raise PermissionDenied("Você não tem acesso ao cliente desta tarefa")
+                    
+                # Buscar o primeiro passo do workflow (menor ordem)
+                first_step = WorkflowStep.objects.filter(workflow=workflow).order_by('order').first()
+                
+                if not first_step:
+                    return Response(
+                        {"error": "Este workflow não possui passos definidos"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                    
+                # Atribuir workflow e passo inicial à tarefa
+                task.workflow = workflow
+                task.current_workflow_step = first_step
+                task.save()
+                
+                return Response(
+                    {"success": True, "message": "Workflow atribuído com sucesso"}, 
+                    status=status.HTTP_200_OK
+                )
+                
+            except Task.DoesNotExist:
+                return Response(
+                    {"error": "Tarefa não encontrada"}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
 
 
 class WorkflowStepViewSet(viewsets.ModelViewSet):
@@ -842,7 +1293,184 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 
         except Profile.DoesNotExist:
             return Organization.objects.none()
+        
+    def apply_role_preset(profile, role_preset):
+        """
+        Aplica um conjunto predefinido de permissões com base no papel (role) selecionado.
+        
+        Args:
+            profile: Objeto Profile a ser atualizado
+            role_preset: String identificando o papel predefinido
+        """
+        # Resetar todas as permissões especiais para o estado padrão
+        # Mantém apenas permissões básicas
+        profile.is_org_admin = False
+        profile.can_log_time = True
+        profile.can_edit_own_time = True
+        profile.can_edit_assigned_tasks = True
+        
+        # Aplicar permissões específicas com base no papel
+        if role_preset == "administrador":
+            # Administrador: acesso total ao sistema
+            profile.is_org_admin = True
+            profile.can_manage_clients = True
+            profile.can_view_all_clients = True
+            profile.can_create_clients = True
+            profile.can_edit_clients = True
+            profile.can_delete_clients = True
+            profile.can_change_client_status = True
+            
+            profile.can_assign_tasks = True
+            profile.can_create_tasks = True
+            profile.can_edit_all_tasks = True
+            profile.can_delete_tasks = True
+            profile.can_view_all_tasks = True
+            profile.can_approve_tasks = True
+            
+            profile.can_edit_all_time = True
+            profile.can_view_team_time = True
+            
+            profile.can_view_client_fees = True
+            profile.can_edit_client_fees = True
+            profile.can_manage_expenses = True
+            profile.can_view_profitability = True
+            profile.can_view_team_profitability = True
+            profile.can_view_organization_profitability = True
+            
+            profile.can_view_analytics = True
+            profile.can_export_reports = True
+            profile.can_create_custom_reports = True
+            profile.can_schedule_reports = True
+            
+            profile.can_create_workflows = True
+            profile.can_edit_workflows = True
+            profile.can_assign_workflows = True
+            profile.can_manage_workflows = True
+            
+        elif role_preset == "gerente_contabilidade":
+            # Gerente de Contabilidade: supervisão de equipe e acesso a métricas
+            profile.can_manage_clients = True
+            profile.can_view_all_clients = True
+            profile.can_create_clients = True
+            profile.can_edit_clients = True
+            profile.can_change_client_status = True
+            
+            profile.can_assign_tasks = True
+            profile.can_create_tasks = True
+            profile.can_edit_all_tasks = True
+            profile.can_view_all_tasks = True
+            profile.can_approve_tasks = True
+            
+            profile.can_edit_all_time = True
+            profile.can_view_team_time = True
+            
+            profile.can_view_client_fees = True
+            profile.can_edit_client_fees = True
+            profile.can_manage_expenses = True
+            profile.can_view_profitability = True
+            profile.can_view_team_profitability = True
+            
+            profile.can_view_analytics = True
+            profile.can_export_reports = True
+            profile.can_schedule_reports = True
+            profile.can_manage_workflows = True
+
+            profile.can_assign_workflows = True
+            
+        elif role_preset == "contador_senior":
+            # Contador Senior: gerencia clientes importantes e pode aprovar trabalhos
+            profile.can_manage_clients = True
+            profile.can_view_all_clients = True
+            profile.can_create_clients = True
+            profile.can_edit_clients = True
+            
+            profile.can_assign_tasks = True
+            profile.can_create_tasks = True
+            profile.can_edit_all_tasks = True
+            profile.can_view_all_tasks = True
+            profile.can_approve_tasks = True
+            
+            profile.can_edit_own_time = True
+            profile.can_view_team_time = True
+            
+            profile.can_view_client_fees = True
+            profile.can_view_profitability = True
+            
+            profile.can_view_analytics = True
+            profile.can_export_reports = True
+            
+            profile.can_assign_workflows = True
+            profile.can_manage_workflows = True
+
+            
+        elif role_preset == "contador":
+            # Contador: trabalho contábil regular
+            profile.can_view_all_clients = False  # Vê apenas clientes atribuídos
+            profile.can_edit_clients = True  # Pode editar informações dos clientes atribuídos
+            
+            profile.can_create_tasks = True
+            profile.can_edit_assigned_tasks = True
+            profile.can_view_all_tasks = False  # Vê apenas tarefas relacionadas a seus clientes
+            
+            profile.can_view_client_fees = True  # Pode ver taxas dos clientes atribuídos
+            
+            profile.can_view_analytics = False
+            profile.can_export_reports = True  # Pode exportar relatórios básicos
+            
+        elif role_preset == "assistente_contabil":
+            # Assistente Contábil: tarefas básicas e entrada de dados
+            profile.can_view_all_clients = False  # Vê apenas clientes atribuídos
+            
+            profile.can_create_tasks = False
+            profile.can_edit_assigned_tasks = True
+            profile.can_view_all_tasks = False
+            
+            profile.can_view_client_fees = False
+            
+            profile.can_view_analytics = False
+            profile.can_export_reports = False
+            
+        elif role_preset == "recursos_humanos":
+            # RH: acesso a dados de funcionários e produtividade
+            profile.can_view_all_clients = False
+            
+            profile.can_create_tasks = True
+            profile.can_assign_tasks = True
+            profile.can_edit_all_tasks = False
+            
+            profile.can_view_team_time = True
+            
+            profile.can_view_analytics = True
+            profile.can_export_reports = True
+            
+        elif role_preset == "financeiro":
+            # Financeiro: acesso a faturamento e rentabilidade
+            profile.can_view_all_clients = True
+            
+            profile.can_view_client_fees = True
+            profile.can_edit_client_fees = True
+            profile.can_manage_expenses = True
+            profile.can_view_profitability = True
+            profile.can_view_team_profitability = True
+            profile.can_view_organization_profitability = True
+            
+            profile.can_view_analytics = True
+            profile.can_export_reports = True
+            profile.can_create_custom_reports = True
+            
+        elif role_preset == "administrativo":
+            # Recepcionista/Administrativo: acesso básico a clientes e agendamentos
+            profile.can_view_all_clients = True  # Pode ver todos os clientes
+            profile.can_create_clients = True  # Pode criar novos clientes
+            
+            profile.can_create_tasks = True  # Pode criar tarefas
+            profile.can_assign_tasks = False  # Não pode atribuir tarefas
+            
+            profile.can_view_analytics = False
+        
+        # Se nenhum papel predefinido corresponder, não faz alterações além dos padrões
     
+
     @action(detail=True, methods=['post'])
     def add_member_by_code(self, request, pk=None):
         """
@@ -889,29 +1517,82 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # Obter dados opcionais das permissões do utilizador
+        # Obter dados básicos do perfil
         role = request.data.get('role', 'Membro')
-        is_admin = request.data.get('is_admin', False)
-        can_assign_tasks = request.data.get('can_assign_tasks', False)
-        can_manage_clients = request.data.get('can_manage_clients', False)
-        can_view_all_clients = request.data.get('can_view_all_clients', False)
-        can_view_analytics = request.data.get('can_view_analytics', False)
-        can_view_profitability = request.data.get('can_view_profitability', False)
+        hourly_rate = request.data.get('hourly_rate', profile.hourly_rate)
         
-        # Atualizar o perfil
+        # Definir a organização e valores básicos
         profile.organization = organization
         profile.role = role
-        profile.is_org_admin = is_admin
-        profile.can_assign_tasks = can_assign_tasks
-        profile.can_manage_clients = can_manage_clients
-        profile.can_view_all_clients = can_view_all_clients
-        profile.can_view_analytics = can_view_analytics
-        profile.can_view_profitability = can_view_profitability
+        profile.hourly_rate = hourly_rate
+        
+        # Permissões de administração
+        profile.is_org_admin = request.data.get('is_admin', False)
+        
+        # Permissões para gestão de clientes
+        profile.can_manage_clients = request.data.get('can_manage_clients', False)
+        profile.can_view_all_clients = request.data.get('can_view_all_clients', False)
+        profile.can_create_clients = request.data.get('can_create_clients', False)
+        profile.can_edit_clients = request.data.get('can_edit_clients', False)
+        profile.can_delete_clients = request.data.get('can_delete_clients', False)
+        profile.can_change_client_status = request.data.get('can_change_client_status', False)
+        
+        # Permissões para gestão de tarefas
+        profile.can_assign_tasks = request.data.get('can_assign_tasks', False)
+        profile.can_create_tasks = request.data.get('can_create_tasks', False)
+        profile.can_edit_all_tasks = request.data.get('can_edit_all_tasks', False)
+        profile.can_edit_assigned_tasks = request.data.get('can_edit_assigned_tasks', True)  # Por padrão, pode editar suas próprias tarefas
+        profile.can_delete_tasks = request.data.get('can_delete_tasks', False)
+        profile.can_view_all_tasks = request.data.get('can_view_all_tasks', False)
+        profile.can_approve_tasks = request.data.get('can_approve_tasks', False)
+        
+        # Permissões para gestão de tempo
+        profile.can_log_time = request.data.get('can_log_time', True)  # Por padrão, pode registrar seu tempo
+        profile.can_edit_own_time = request.data.get('can_edit_own_time', True)  # Por padrão, pode editar seu próprio tempo
+        profile.can_edit_all_time = request.data.get('can_edit_all_time', False)
+        profile.can_view_team_time = request.data.get('can_view_team_time', False)
+        
+        # Permissões financeiras
+        profile.can_view_client_fees = request.data.get('can_view_client_fees', False)
+        profile.can_edit_client_fees = request.data.get('can_edit_client_fees', False)
+        profile.can_manage_expenses = request.data.get('can_manage_expenses', False)
+        profile.can_view_profitability = request.data.get('can_view_profitability', False)
+        profile.can_view_team_profitability = request.data.get('can_view_team_profitability', False)
+        profile.can_view_organization_profitability = request.data.get('can_view_organization_profitability', False)
+        
+        # Permissões de relatórios e análises
+        profile.can_view_analytics = request.data.get('can_view_analytics', False)
+        profile.can_export_reports = request.data.get('can_export_reports', False)
+        profile.can_create_custom_reports = request.data.get('can_create_custom_reports', False)
+        profile.can_schedule_reports = request.data.get('can_schedule_reports', False)
+        
+        # Permissões de workflow
+        profile.can_create_workflows = request.data.get('can_create_workflows', False)
+        profile.can_edit_workflows = request.data.get('can_edit_workflows', False)
+        profile.can_assign_workflows = request.data.get('can_assign_workflows', False)
+        profile.can_manage_workflows = request.data.get('can_manage_workflows', False)
+        
+        # Aplicar papel predefinido (role-based permissions) se fornecido
+        role_preset = request.data.get('role_preset')
+        if role_preset:
+            apply_role_preset(profile, role_preset)
+        
         profile.save()
+        
+        # Adicionar clientes visíveis se especificados
+        visible_clients = request.data.get('visible_clients', [])
+        if visible_clients and not profile.can_view_all_clients:
+            for client_id in visible_clients:
+                try:
+                    client = Client.objects.get(id=client_id, organization=organization)
+                    profile.visible_clients.add(client)
+                except Client.DoesNotExist:
+                    pass  # Ignorar IDs de cliente inválidos
         
         # Responder com o perfil atualizado
         serializer = ProfileSerializer(profile)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
     
     @action(detail=True, methods=['get'])
     def members(self, request, pk=None):
@@ -1042,7 +1723,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             )
         
         # Get user ID from request
-        user_id = request.data.get('user_id')  # Alterado para user_id
+        user_id = request.data.get('user_id')
         
         if not user_id:
             return Response(
@@ -1052,28 +1733,70 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         
         # Get the member profile by user_id
         try:
-            profile = Profile.objects.get(user_id=user_id, organization=organization)  # Busca pelo user_id
+            profile = Profile.objects.get(user_id=user_id, organization=organization)
         except Profile.DoesNotExist:
             return Response(
                 {"error": "Perfil não encontrado nesta organização"}, 
                 status=status.HTTP_404_NOT_FOUND
             )
             
-        # Update permissions
+        # Campos básicos do perfil
         profile.role = request.data.get('role', profile.role)
-        profile.is_org_admin = request.data.get('is_admin', profile.is_org_admin)
-        profile.can_assign_tasks = request.data.get('can_assign_tasks', profile.can_assign_tasks)
-        profile.can_manage_clients = request.data.get('can_manage_clients', profile.can_manage_clients)
-        profile.can_view_all_clients = request.data.get('can_view_all_clients', profile.can_view_all_clients)
-        profile.can_view_analytics = request.data.get('can_view_analytics', profile.can_view_analytics)
-        profile.can_view_profitability = request.data.get('can_view_profitability', profile.can_view_profitability)
-        
-        # Verificar se access_level está na requisição antes de atualizar
         if 'access_level' in request.data:
             profile.access_level = request.data.get('access_level')
+        if 'hourly_rate' in request.data:
+            profile.hourly_rate = request.data.get('hourly_rate')
+        if 'phone' in request.data:
+            profile.phone = request.data.get('phone')
         
-        # Verificar se visible_clients está na requisição antes de atualizar
-        if 'visible_clients' in request.data:
+        # Permissões de administração
+        profile.is_org_admin = request.data.get('is_admin', profile.is_org_admin)
+        
+        # Permissões para gestão de clientes
+        profile.can_manage_clients = request.data.get('can_manage_clients', profile.can_manage_clients)
+        profile.can_view_all_clients = request.data.get('can_view_all_clients', profile.can_view_all_clients)
+        profile.can_create_clients = request.data.get('can_create_clients', profile.can_create_clients)
+        profile.can_edit_clients = request.data.get('can_edit_clients', profile.can_edit_clients)
+        profile.can_delete_clients = request.data.get('can_delete_clients', profile.can_delete_clients)
+        profile.can_change_client_status = request.data.get('can_change_client_status', profile.can_change_client_status)
+        
+        # Permissões para gestão de tarefas
+        profile.can_assign_tasks = request.data.get('can_assign_tasks', profile.can_assign_tasks)
+        profile.can_create_tasks = request.data.get('can_create_tasks', profile.can_create_tasks)
+        profile.can_edit_all_tasks = request.data.get('can_edit_all_tasks', profile.can_edit_all_tasks)
+        profile.can_edit_assigned_tasks = request.data.get('can_edit_assigned_tasks', profile.can_edit_assigned_tasks)
+        profile.can_delete_tasks = request.data.get('can_delete_tasks', profile.can_delete_tasks)
+        profile.can_view_all_tasks = request.data.get('can_view_all_tasks', profile.can_view_all_tasks)
+        profile.can_approve_tasks = request.data.get('can_approve_tasks', profile.can_approve_tasks)
+        
+        # Permissões para gestão de tempo
+        profile.can_log_time = request.data.get('can_log_time', profile.can_log_time)
+        profile.can_edit_own_time = request.data.get('can_edit_own_time', profile.can_edit_own_time)
+        profile.can_edit_all_time = request.data.get('can_edit_all_time', profile.can_edit_all_time)
+        profile.can_view_team_time = request.data.get('can_view_team_time', profile.can_view_team_time)
+        
+        # Permissões financeiras
+        profile.can_view_client_fees = request.data.get('can_view_client_fees', profile.can_view_client_fees)
+        profile.can_edit_client_fees = request.data.get('can_edit_client_fees', profile.can_edit_client_fees)
+        profile.can_manage_expenses = request.data.get('can_manage_expenses', profile.can_manage_expenses)
+        profile.can_view_profitability = request.data.get('can_view_profitability', profile.can_view_profitability)
+        profile.can_view_team_profitability = request.data.get('can_view_team_profitability', profile.can_view_team_profitability)
+        profile.can_view_organization_profitability = request.data.get('can_view_organization_profitability', profile.can_view_organization_profitability)
+        
+        # Permissões de relatórios e análises
+        profile.can_view_analytics = request.data.get('can_view_analytics', profile.can_view_analytics)
+        profile.can_export_reports = request.data.get('can_export_reports', profile.can_export_reports)
+        profile.can_create_custom_reports = request.data.get('can_create_custom_reports', profile.can_create_custom_reports)
+        profile.can_schedule_reports = request.data.get('can_schedule_reports', profile.can_schedule_reports)
+        
+        # Permissões de workflow
+        profile.can_create_workflows = request.data.get('can_create_workflows', profile.can_create_workflows)
+        profile.can_edit_workflows = request.data.get('can_edit_workflows', profile.can_edit_workflows)
+        profile.can_assign_workflows = request.data.get('can_assign_workflows', profile.can_assign_workflows)
+        profile.can_manage_workflows = request.data.get('can_manage_workflows', profile.can_manage_workflows)
+        
+        # Gerenciamento de clientes visíveis
+        if 'visible_clients' in request.data and not profile.can_view_all_clients:
             profile.visible_clients.clear()  # Clear existing visible clients
             profile.visible_clients.add(*request.data.get('visible_clients', []))
         
@@ -1166,11 +1889,51 @@ def dashboard_summary(request):
         # Get user profile
         profile = Profile.objects.get(user=user)
         
-        # Base response dictionary
+        # Base response dictionary with permissions information
         response_data = {
+            # Permissões de administração
             'has_full_access': profile.is_org_admin,
-            'can_view_analytics': profile.can_view_analytics,
+            
+            # Permissões para visualização de clientes
+            'can_view_all_clients': profile.can_view_all_clients,
+            'can_create_clients': profile.can_create_clients,
+            'can_edit_clients': profile.can_edit_clients,
+            'can_delete_clients': profile.can_delete_clients,
+            'can_change_client_status': profile.can_change_client_status,
+            
+            # Permissões para gestão de tarefas
+            'can_assign_tasks': profile.can_assign_tasks,
+            'can_create_tasks': profile.can_create_tasks,
+            'can_edit_all_tasks': profile.can_edit_all_tasks,
+            'can_delete_tasks': profile.can_delete_tasks,
+            'can_view_all_tasks': profile.can_view_all_tasks,
+            'can_approve_tasks': profile.can_approve_tasks,
+            
+            # Permissões para gestão de tempo
+            'can_log_time': profile.can_log_time,
+            'can_edit_own_time': profile.can_edit_own_time,
+            'can_edit_all_time': profile.can_edit_all_time,
+            'can_view_team_time': profile.can_view_team_time,
+            
+            # Permissões financeiras
+            'can_view_client_fees': profile.can_view_client_fees,
+            'can_edit_client_fees': profile.can_edit_client_fees,
+            'can_manage_expenses': profile.can_manage_expenses,
             'can_view_profitability': profile.can_view_profitability,
+            'can_view_team_profitability': profile.can_view_team_profitability,
+            'can_view_organization_profitability': profile.can_view_organization_profitability,
+            
+            # Permissões de relatórios e análises
+            'can_view_analytics': profile.can_view_analytics,
+            'can_export_reports': profile.can_export_reports,
+            'can_create_custom_reports': profile.can_create_custom_reports,
+            'can_schedule_reports': profile.can_schedule_reports,
+            
+            # Permissões de workflow
+            'can_create_workflows': profile.can_create_workflows,
+            'can_edit_workflows': profile.can_edit_workflows,
+            'can_assign_workflows': profile.can_assign_workflows,
+            'can_manage_workflows': profile.can_manage_workflows,
         }
         
         # Calculate today and recent dates
@@ -1190,11 +1953,16 @@ def dashboard_summary(request):
             
         response_data['active_clients'] = clients_queryset.filter(is_active=True).count()
         
-        # Tasks data - filtered by client visibility
-        visible_client_ids = clients_queryset.values_list('id', flat=True)
-        tasks_queryset = Task.objects.filter(
-            Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
-        ).distinct()
+        # Tasks data - filtered by permissions
+        if profile.is_org_admin or profile.can_view_all_tasks:
+            # User can see all tasks in the organization
+            tasks_queryset = Task.objects.filter(client__organization=org_id)
+        else:
+            # User can only see tasks for visible clients or assigned to them
+            visible_client_ids = clients_queryset.values_list('id', flat=True)
+            tasks_queryset = Task.objects.filter(
+                Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
+            ).distinct()
         
         response_data['active_tasks'] = tasks_queryset.exclude(status='completed').count()
         response_data['overdue_tasks'] = tasks_queryset.filter(
@@ -1209,10 +1977,16 @@ def dashboard_summary(request):
             completed_at__gte=seven_days_ago
         ).count()
         
-        # Time entries data
-        time_entries = TimeEntry.objects.filter(
-            Q(client_id__in=visible_client_ids) | Q(user=user)
-        ).distinct()
+        # Time entries data - filtered by permissions
+        if profile.is_org_admin or profile.can_view_team_time:
+            # User can see all time entries in the organization
+            time_entries = TimeEntry.objects.filter(client__organization=org_id)
+        else:
+            # User can only see time entries for visible clients or their own entries
+            visible_client_ids = clients_queryset.values_list('id', flat=True)
+            time_entries = TimeEntry.objects.filter(
+                Q(client_id__in=visible_client_ids) | Q(user=user)
+            ).distinct()
         
         response_data['time_tracked_today'] = time_entries.filter(
             date=today
@@ -1223,21 +1997,83 @@ def dashboard_summary(request):
             date__lte=today
         ).aggregate(total=Sum('minutes_spent'))['total'] or 0
         
-        # Only include profitability data if user has permission
-        if profile.can_view_profitability:
+        # Incluir dados de rentabilidade se o usuário tiver permissão
+        if profile.can_view_profitability or profile.can_view_team_profitability or profile.can_view_organization_profitability:
+            # Determinar a visibilidade de clientes para rentabilidade
+            if profile.is_org_admin or profile.can_view_organization_profitability:
+                # Ver rentabilidade de toda a organização
+                profitability_clients = Client.objects.filter(organization=org_id)
+            elif profile.can_view_team_profitability:
+                # Ver rentabilidade de equipe (clientes associados a usuários de mesma função)
+                team_user_ids = Profile.objects.filter(
+                    organization=profile.organization,
+                    role=profile.role
+                ).values_list('user', flat=True)
+                profitability_clients = Client.objects.filter(
+                    Q(organization=org_id),
+                    Q(account_manager__in=team_user_ids)
+                )
+            else:
+                # Ver rentabilidade apenas dos próprios clientes
+                visible_client_ids = clients_queryset.values_list('id', flat=True)
+                profitability_clients = Client.objects.filter(id__in=visible_client_ids)
+            
+            # Buscar dados de rentabilidade
             profitability_data = ClientProfitability.objects.filter(
-                client_id__in=visible_client_ids
+                client_id__in=profitability_clients.values_list('id', flat=True)
             )
             
+            # Contagem de clientes não rentáveis
             response_data['unprofitable_clients'] = profitability_data.filter(
                 is_profitable=False
             ).count()
             
-            # Add more profitability metrics as needed
+            # Dados agregados de rentabilidade
+            profit_stats = profitability_data.aggregate(
+                total_revenue=Sum('monthly_fee'),
+                total_cost=Sum('time_cost') + Sum('total_expenses'),
+                total_profit=Sum('profit')
+            )
+            
+            if profit_stats['total_revenue']:
+                response_data['total_revenue'] = profit_stats['total_revenue']
+                response_data['total_cost'] = profit_stats['total_cost']
+                response_data['total_profit'] = profit_stats['total_profit']
+                
+                # Calcular margem de lucro média
+                avg_margin = profitability_data.exclude(profit_margin=None).aggregate(
+                    avg=Avg('profit_margin')
+                )['avg']
+                response_data['average_profit_margin'] = avg_margin or 0
+        
+        # Dados de workflows se o usuário tiver permissão relacionada
+        if profile.can_create_workflows or profile.can_edit_workflows or profile.can_assign_workflows:
+            response_data['active_workflows'] = WorkflowDefinition.objects.filter(
+                is_active=True
+            ).count()
+            
+            # Tarefas com workflows ativos
+            response_data['tasks_with_workflows'] = tasks_queryset.exclude(
+                workflow=None
+            ).count()
+            
+            # Tarefas aguardando aprovação se o usuário pode aprovar
+            if profile.can_approve_tasks:
+                tasks_needing_approval = tasks_queryset.filter(
+                    Q(current_workflow_step__requires_approval=True)
+                ).exclude(
+                    id__in=TaskApproval.objects.filter(
+                        task__in=tasks_queryset,
+                        approved=True
+                    ).values_list('task', flat=True)
+                )
+                
+                response_data['tasks_needing_approval'] = tasks_needing_approval.count()
         
         return Response(response_data)
         
     except Profile.DoesNotExist:
+        # Resposta básica para usuários sem perfil
         return Response({
             'error': 'User profile not found',
             'has_full_access': False,

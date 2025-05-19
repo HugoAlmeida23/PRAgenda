@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react"; // Removed useEffect
+import React, { useState, useMemo, useCallback } from "react";
 import { toast } from "react-toastify";
 import Header from "../components/Header";
 import api from "../api";
@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import TaskWorkflowView from './TaskOverflowView';
-
+import { usePermissions } from "../contexts/PermissionsContext";
+import { AlertCircle } from "lucide-react";
 import { Loader2 } from 'lucide-react';
 
 
@@ -90,6 +91,12 @@ const fetchTaskManagementData = async () => {
 
 // --- Main Component ---
 const TaskManagement = () => {
+  // Function to initialize or reset form data
+  const getInitialFormData = () => ({
+    title: "", description: "", client: "", category: "", assigned_to: "",
+    status: "pending", priority: 3, deadline: "", estimated_time_minutes: "",
+  });
+
   // --- React Query Client ---
   const queryClient = useQueryClient();
 
@@ -101,22 +108,8 @@ const TaskManagement = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "deadline", direction: "asc" });
   const [filters, setFilters] = useState({ status: "", client: "", priority: "", assignedTo: "", category: "" });
-
   const [selectedTaskForWorkflow, setSelectedTaskForWorkflow] = useState(null);
-
-  // Function to initialize or reset form data
-  const getInitialFormData = () => ({
-    title: "", description: "", client: "", category: "", assigned_to: "",
-    status: "pending", priority: 3, deadline: "", estimated_time_minutes: "",
-  });
-
   const [formData, setFormData] = useState(getInitialFormData());
-
-  // Initialize formData state
-  useState(() => {
-    setFormData(getInitialFormData());
-  });
-
 
   // --- Data Fetching using React Query ---
   const { data, isLoading: isLoadingData, isError, error, refetch } = useQuery({
@@ -318,17 +311,41 @@ const TaskManagement = () => {
     setNaturalLanguageInput(e.target.value);
   }, []);
 
+  // Reset form function
+  const resetForm = useCallback(() => {
+    setSelectedTask(null);
+    setFormData(getInitialFormData());
+    setShowForm(false);
+    setShowNaturalLanguageForm(false);
+    setNaturalLanguageInput("");
+    setSelectedTaskForWorkflow(null);
+  }, []);
+
   // Handle submission from the main form
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
+    const permissions = usePermissions();
+    
     if (selectedTask) {
+      const canEdit = permissions.isOrgAdmin ||
+        permissions.canEditAllTasks ||
+        (permissions.canEditAssignedTasks && selectedTask.assigned_to === permissions.userId);
+
+      if (!canEdit) {
+        toast.error("Você não tem permissão para editar esta tarefa");
+        return;
+      }
       // Update
       updateTaskMutation.mutate({ id: selectedTask.id, updatedData: formData });
     } else {
+      if (!permissions.isOrgAdmin && !permissions.canCreateTasks) {
+        toast.error("Você não tem permissão para criar tarefas");
+        return;
+      }
       // Create
       createTaskMutation.mutate(formData);
     }
-  }, [selectedTask, formData, createTaskMutation, updateTaskMutation]); // Dependencies
+  }, [selectedTask, formData, createTaskMutation, updateTaskMutation]); 
 
   // Handle NLP form submission
   const handleNaturalLanguageSubmit = useCallback(async (e) => {
@@ -394,22 +411,18 @@ const TaskManagement = () => {
     setShowNaturalLanguageForm(false); // Close NLP form if open
   }, []);
 
-  // Remova estas funções que estão fora do componente
-  const handleViewWorkflow = (task) => {
+  // Handle view workflow
+  const handleViewWorkflow = useCallback((task) => {
     setSelectedTaskForWorkflow(task);
-  };
-
-  const resetForm = useCallback(() => {
-    setSelectedTask(null);
-    setFormData(getInitialFormData());
-    setShowForm(false);
-    setShowNaturalLanguageForm(false);
-    setNaturalLanguageInput("");
-    setSelectedTaskForWorkflow(null); // Adicione esta linha
   }, []);
 
   // Confirm and trigger delete
   const confirmDelete = useCallback((taskId) => {
+    const permissions = usePermissions();
+    if (!permissions.isOrgAdmin && !permissions.canDeleteTasks) {
+      toast.error("Você não tem permissão para excluir tarefas");
+      return;
+    }
     // Could use a modal here instead of window.confirm
     if (window.confirm("Are you sure you want to delete this task? This action cannot be undone.")) {
       deleteTaskMutation.mutate(taskId);
@@ -418,9 +431,17 @@ const TaskManagement = () => {
 
   // Trigger status update
   const updateTaskStatusHandler = useCallback((task, newStatus) => {
+    const permissions = usePermissions();
+    const canUpdate = permissions.isOrgAdmin ||
+      permissions.canEditAllTasks ||
+      (permissions.canEditAssignedTasks && task.assigned_to === permissions.userId);
+
+    if (!canUpdate) {
+      toast.error("Você não tem permissão para atualizar esta tarefa");
+      return;
+    }
     updateTaskStatusMutation.mutate({ id: task.id, status: newStatus });
   }, [updateTaskStatusMutation]);
-
 
   // --- Helper Functions (can be moved outside if not using component state) ---
   const formatDate = (dateString) => {
@@ -467,13 +488,47 @@ const TaskManagement = () => {
 
   // Show loading indicator while initial data is loading
   if (isLoadingData) {
-    return <Header><LoadingView />;</Header>
+    return <Header><LoadingView /></Header>;
   }
 
   // Show error message if initial data fetching failed
   if (isError) {
-    return <Header><ErrorView message={error?.message || "Could not load task data."} onRetry={refetch} />;</Header>
+    return <Header><ErrorView message={error?.message || "Could not load task data."} onRetry={refetch} /></Header>;
   }
+
+  // Obter permissões do contexto
+  const permissions = usePermissions();
+
+  // Verificar permissões para mostrar mensagem de acesso restrito
+  if (permissions.loading) {
+    return <Header><LoadingView /></Header>;
+  }
+
+  // Verificar se usuário pode ver tarefas
+  const canViewTasks = permissions.canViewAllTasks;
+
+  // Se não tiver permissões, mostrar mensagem de acesso restrito
+  if (!canViewTasks && !permissions.canEditAssignedTasks) {
+    return (
+      <Header>
+        <div className="flex flex-col items-center justify-center min-h-screen p-4">
+          <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
+            <div className="flex items-start">
+              <AlertCircle className="h-6 w-6 mr-2" />
+              <div>
+                <p className="font-bold">Acesso Restrito</p>
+                <p>Você não possui permissões para visualizar ou gerenciar tarefas.</p>
+              </div>
+            </div>
+          </div>
+          <p className="text-gray-600">
+            Entre em contato com o administrador da sua organização para solicitar acesso.
+          </p>
+        </div>
+      </Header>
+    );
+  }
+
 
   return (
     <div className="main">
@@ -500,19 +555,22 @@ const TaskManagement = () => {
                   <FileText size={18} className="mr-2" />
                   {showNaturalLanguageForm ? "Cancel" : "Natural Language Input"}
                 </button>
-                <button
-                  onClick={() => {
-                    resetForm();
-                    setShowForm(!showForm);
-                    if (showNaturalLanguageForm)
-                      setShowNaturalLanguageForm(false);
-                  }}
-                  className={`${showForm ? "bg-white-600" : "bg-blue-600 hover:bg-blue-700"
-                    } text-white px-4 py-2 rounded-md flex items-center`}
-                >
-                  <Plus size={18} className="mr-2" />
-                  {showForm ? "Cancel" : "New Task"}
-                </button>
+                {/* Botão de Nova Tarefa */}
+                {(permissions.isOrgAdmin || permissions.canCreateTasks) && (
+                  <button
+                    onClick={() => {
+                      resetForm();
+                      setShowForm(!showForm);
+                      if (showNaturalLanguageForm)
+                        setShowNaturalLanguageForm(false);
+                    }}
+                    className={`${showForm ? "bg-white-600" : "bg-blue-600 hover:bg-blue-700"
+                      } text-white px-4 py-2 rounded-md flex items-center`}
+                  >
+                    <Plus size={18} className="mr-2" />
+                    {showForm ? "Cancel" : "New Task"}
+                  </button>
+                )}
               </div>
             </div>
 

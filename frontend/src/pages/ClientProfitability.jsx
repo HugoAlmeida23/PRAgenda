@@ -22,6 +22,8 @@ import {
   Loader2,
   CreditCard,
 } from "lucide-react";
+import { usePermissions } from "../contexts/PermissionsContext";
+import { AlertCircle } from "lucide-react";
 
 // Animation variants remain the same
 const containerVariants = {
@@ -95,7 +97,7 @@ const generateYears = () => {
 const years = generateYears();
 
 // Data fetching functions (outside component)
-const fetchProfitabilityData  = async (year, month) => {
+const fetchProfitabilityData = async (year, month) => {
   // Then fetch updated data
   const response = await api.get(`/client-profitability/?year=${year}&month=${month}`);
   console.log("Dados de rentabilidade brutos:", response.data);
@@ -114,7 +116,7 @@ const fetchClients = async () => {
 
 const ClientProfitability = () => {
   const queryClient = useQueryClient();
-  
+
   // Local state
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -179,7 +181,7 @@ const ClientProfitability = () => {
   // Derived state using useMemo
   const filteredData = useMemo(() => {
     if (!profitabilityData || profitabilityData.length === 0) return [];
-    
+
     // Start with all data
     let filtered = [...profitabilityData];
 
@@ -207,12 +209,12 @@ const ClientProfitability = () => {
         // Parse numerical values
         const valA =
           typeof a[sortConfig.key] === "string" &&
-          !isNaN(parseFloat(a[sortConfig.key]))
+            !isNaN(parseFloat(a[sortConfig.key]))
             ? parseFloat(a[sortConfig.key])
             : a[sortConfig.key];
         const valB =
           typeof b[sortConfig.key] === "string" &&
-          !isNaN(parseFloat(b[sortConfig.key]))
+            !isNaN(parseFloat(b[sortConfig.key]))
             ? parseFloat(b[sortConfig.key])
             : b[sortConfig.key];
 
@@ -225,7 +227,7 @@ const ClientProfitability = () => {
         return 0;
       });
     }
-    
+
     return filtered;
   }, [profitabilityData, filters, sortConfig]);
 
@@ -350,6 +352,51 @@ const ClientProfitability = () => {
   const isLoading = isProfitabilityLoading || isTimeEntriesLoading || isClientsLoading;
   const isRefreshing = refreshDataMutation.isPending;
 
+
+  // Obter permissões do contexto
+  const permissions = usePermissions();
+
+  // Verificar permissões para mostrar mensagem de acesso restrito
+  if (permissions.loading) {
+    return (
+      <div className="main">
+        <Header>
+          <div className="flex justify-center items-center min-h-screen">
+            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+          </div>
+        </Header>
+      </div>
+    );
+  }
+
+  // Verificar se usuário pode ver dados de rentabilidade
+  const canViewProfitability = permissions.isOrgAdmin ||
+    permissions.canViewProfitability ||
+    permissions.canViewTeamProfitability ||
+    permissions.canViewOrganizationProfitability;
+
+  if (!canViewProfitability) {
+    return (
+      <div className="main">
+        <Header>
+          <div className="flex flex-col items-center justify-center min-h-screen p-4">
+            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
+              <div className="flex items-start">
+                <AlertCircle className="h-6 w-6 mr-2" />
+                <div>
+                  <p className="font-bold">Acesso Restrito</p>
+                  <p>Você não possui permissões para visualizar dados de rentabilidade.</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-gray-600">
+              Entre em contato com o administrador da sua organização para solicitar acesso.
+            </p>
+          </div>
+        </Header>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white main">
@@ -861,9 +908,8 @@ const ClientProfitability = () => {
                         {filteredData.map((item) => (
                           <React.Fragment key={item.id}>
                             <tr
-                              className={`transition-colors hover:bg-white-50 ${
-                                item.is_profitable ? "" : "bg-red-50"
-                              }`}
+                              className={`transition-colors hover:bg-white-50 ${item.is_profitable ? "" : "bg-red-50"
+                                }`}
                             >
                               <td className="px-6 py-4 border-b border-gray-100">
                                 <div className="font-medium text-gray-900">
@@ -890,33 +936,30 @@ const ClientProfitability = () => {
                               </td>
                               <td className="px-6 py-4 border-b border-gray-100">
                                 <span
-                                  className={`font-medium ${
-                                    parseFloat(item.profit) >= 0
+                                  className={`font-medium ${parseFloat(item.profit) >= 0
                                       ? "text-green-600"
                                       : "text-red-600"
-                                  }`}
+                                    }`}
                                 >
                                   {formatCurrency(item.profit)}
                                 </span>
                               </td>
                               <td className="px-6 py-4 border-b border-gray-100">
                                 <span
-                                  className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                    parseFloat(item.profit_margin) >= 0
+                                  className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${parseFloat(item.profit_margin) >= 0
                                       ? "bg-green-100 text-green-800"
                                       : "bg-red-100 text-red-800"
-                                  }`}
+                                    }`}
                                 >
                                   {formatPercentage(item.profit_margin)}
                                 </span>
                               </td>
                               <td className="px-6 py-4 border-b border-gray-100">
                                 <span
-                                  className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                    item.is_profitable
+                                  className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${item.is_profitable
                                       ? "bg-green-100 text-green-800"
                                       : "bg-red-100 text-red-800"
-                                  }`}
+                                    }`}
                                 >
                                   {item.is_profitable
                                     ? "Rentável"
@@ -988,8 +1031,8 @@ const ClientProfitability = () => {
                                               {formatCurrency(
                                                 item.total_time_minutes > 0
                                                   ? item.time_cost /
-                                                      (item.total_time_minutes /
-                                                        60)
+                                                  (item.total_time_minutes /
+                                                    60)
                                                   : 0
                                               )}
                                             </span>
@@ -1031,9 +1074,9 @@ const ClientProfitability = () => {
                                             <span className="text-sm font-medium">
                                               {formatCurrency(
                                                 parseFloat(item.time_cost) +
-                                                  parseFloat(
-                                                    item.total_expenses
-                                                  )
+                                                parseFloat(
+                                                  item.total_expenses
+                                                )
                                               )}
                                             </span>
                                           </div>
@@ -1042,11 +1085,10 @@ const ClientProfitability = () => {
                                               Lucro:
                                             </span>
                                             <span
-                                              className={`text-sm font-medium ${
-                                                parseFloat(item.profit) >= 0
+                                              className={`text-sm font-medium ${parseFloat(item.profit) >= 0
                                                   ? "text-green-600"
                                                   : "text-red-600"
-                                              }`}
+                                                }`}
                                             >
                                               {formatCurrency(item.profit)}
                                             </span>
@@ -1109,34 +1151,34 @@ const ClientProfitability = () => {
                                               ))}
                                             {getClientTimeEntries(item.client)
                                               .length === 0 && (
-                                              <tr>
-                                                <td
-                                                  colSpan="4"
-                                                  className="px-4 py-3 text-center text-gray-500"
-                                                >
-                                                  Nenhuma entrada de tempo
-                                                  encontrada
-                                                </td>
-                                              </tr>
-                                            )}
+                                                <tr>
+                                                  <td
+                                                    colSpan="4"
+                                                    className="px-4 py-3 text-center text-gray-500"
+                                                  >
+                                                    Nenhuma entrada de tempo
+                                                    encontrada
+                                                  </td>
+                                                </tr>
+                                              )}
                                           </tbody>
                                         </table>
                                       </div>
                                       {getClientTimeEntries(item.client)
                                         .length > 5 && (
-                                        <div className="mt-3 text-right">
-                                          <a
-                                            href={`/time-entries?client=${item.client}`}
-                                            className="text-blue-600 hover:text-blue-800 text-sm inline-flex items-center px-3 py-1 rounded-md hover:bg-blue-50 transition-colors"
-                                          >
-                                            Ver todas as entradas{" "}
-                                            <ChevronRight
-                                              size={14}
-                                              className="ml-1"
-                                            />
-                                          </a>
-                                        </div>
-                                      )}
+                                          <div className="mt-3 text-right">
+                                            <a
+                                              href={`/time-entries?client=${item.client}`}
+                                              className="text-blue-600 hover:text-blue-800 text-sm inline-flex items-center px-3 py-1 rounded-md hover:bg-blue-50 transition-colors"
+                                            >
+                                              Ver todas as entradas{" "}
+                                              <ChevronRight
+                                                size={14}
+                                                className="ml-1"
+                                              />
+                                            </a>
+                                          </div>
+                                        )}
                                     </div>
                                   </div>
                                 </td>

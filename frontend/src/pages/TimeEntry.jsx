@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import AutoTimeTracking from "../components/AutoTimeTracking";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { usePermissions } from "../contexts/PermissionsContext";
+import { AlertCircle } from "lucide-react";
 
 // Componentes auxiliares de carregamento e erro
 const LoadingView = () => (
@@ -351,10 +353,18 @@ const TimeEntry = () => {
   };
 
   const handleDeleteEntry = (entryId) => {
-    if (window.confirm("Tem certeza que deseja eliminar este registo de tempo?")) {
-      deleteTimeEntryMutation.mutate(entryId);
-    }
-  };
+  // Verificar permissão para excluir registros de tempo
+  const canDelete = permissions.isOrgAdmin || permissions.canEditAllTime;
+  
+  if (!canDelete) {
+    toast.error("Você não tem permissão para excluir registros de tempo");
+    return;
+  }
+  
+  if (window.confirm("Tem certeza que deseja eliminar este registo de tempo?")) {
+    deleteTimeEntryMutation.mutate(entryId);
+  }
+};
 
   // Funções auxiliares
   const formatTimeForAPI = (timeString) => {
@@ -493,6 +503,46 @@ const TimeEntry = () => {
       </div>
     );
   };
+
+  // Obter permissões do contexto
+const permissions = usePermissions();
+
+// Verificar permissões para mostrar mensagem de acesso restrito
+if (permissions.loading) {
+  return (
+    <div className="main">
+      <Header>
+        <div className="flex justify-center items-center min-h-screen">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+        </div>
+      </Header>
+    </div>
+  );
+}
+
+// Verificar se usuário pode registrar tempo
+if (!permissions.canLogTime) {
+  return (
+    <div className="main">
+      <Header>
+        <div className="flex flex-col items-center justify-center min-h-screen p-4">
+          <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
+            <div className="flex items-start">
+              <AlertCircle className="h-6 w-6 mr-2" />
+              <div>
+                <p className="font-bold">Acesso Restrito</p>
+                <p>Você não possui permissões para registrar tempo.</p>
+              </div>
+            </div>
+          </div>
+          <p className="text-gray-600">
+            Entre em contato com o administrador da sua organização para solicitar acesso.
+          </p>
+        </div>
+      </Header>
+    </div>
+  );
+}
 
   return (
     <div className="main">

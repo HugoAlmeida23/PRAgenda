@@ -40,20 +40,71 @@ class ProfileSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Profile
-        fields = ['invitation_code', 'user', 'username', 'email', 
-                  'organization', 'organization_name',
-                  'hourly_rate', 'role', 'access_level', 'phone', 
-                  'productivity_metrics', 'is_org_admin', 'can_assign_tasks', 
-                  'can_manage_clients', 'visible_clients', 'visible_clients_info', 
-                  'can_view_all_clients', 'can_view_analytics', 'can_view_profitability']
-        read_only_fields = ['invitation_code', 'user', 'username', 
-                           'email', 'organization_name']
+        fields = [
+            # Campos básicos
+            'invitation_code', 'user', 'username', 'email', 
+            'organization', 'organization_name',
+            'hourly_rate', 'role', 'access_level', 'phone', 
+            'productivity_metrics',
+            
+            # Permissões de administração
+            'is_org_admin',
+            
+            # Permissões para gestão de clientes
+            'can_manage_clients',
+            'can_view_all_clients',
+            'can_create_clients',
+            'can_edit_clients',
+            'can_delete_clients',
+            'can_change_client_status',
+            'visible_clients',
+            'visible_clients_info',
+            
+            # Permissões para gestão de tarefas
+            'can_assign_tasks',
+            'can_create_tasks',
+            'can_edit_all_tasks',
+            'can_edit_assigned_tasks',
+            'can_delete_tasks',
+            'can_view_all_tasks',
+            'can_approve_tasks',
+            
+            # Permissões para gestão de tempo
+            'can_log_time',
+            'can_edit_own_time',
+            'can_edit_all_time',
+            'can_view_team_time',
+            
+            # Permissões financeiras
+            'can_view_client_fees',
+            'can_edit_client_fees',
+            'can_manage_expenses',
+            'can_view_profitability',
+            'can_view_team_profitability',
+            'can_view_organization_profitability',
+            
+            # Permissões de relatórios e análises
+            'can_view_analytics',
+            'can_export_reports',
+            'can_create_custom_reports',
+            'can_schedule_reports',
+            
+            # Permissões de workflow
+            'can_create_workflows',
+            'can_edit_workflows',
+            'can_assign_workflows',
+            'can_manage_workflows',
+        ]
+        read_only_fields = [
+            'invitation_code', 'user', 'username', 
+            'email', 'organization_name'
+        ]
     
     def get_visible_clients_info(self, obj):
         """Returns basic info about visible clients for display purposes"""
         visible_clients = obj.visible_clients.all()
         return [{'id': client.id, 'name': client.name} for client in visible_clients]
-
+    
 
 class ClientSerializer(serializers.ModelSerializer):
     account_manager_name = serializers.ReadOnlyField(source='account_manager.username')

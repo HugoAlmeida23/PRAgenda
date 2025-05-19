@@ -16,7 +16,16 @@ import TaskWorkflow from "./pages/TaskOverflow"
 import WorkflowDesigner from "./pages/WorkflowDesigner"
 import WorkflowManagement from "./pages/WorkflowManagement"
 import DashboardRouter from "./pages/DashboardRouter"
-const queryClient = new QueryClient();
+import { PermissionsProvider } from './contexts/PermissionsContext';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 
 
@@ -33,6 +42,8 @@ function RegisterAndLogout() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+            <PermissionsProvider>
+
       <BrowserRouter>
         <Routes>
           <Route 
@@ -123,6 +134,7 @@ function App() {
         </Routes>
         <ToastContainer />
       </BrowserRouter>
+      </PermissionsProvider>
     </QueryClientProvider>
   )
 }

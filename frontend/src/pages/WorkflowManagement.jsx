@@ -21,6 +21,8 @@ import { motion } from 'framer-motion';
 import api from '../api';
 import WorkflowDesigner from './WorkflowDesigner';
 import Header from "../components/Header";
+import { usePermissions } from "../contexts/PermissionsContext";
+import { AlertCircle } from "lucide-react";
 
 // Componente para visualizar workflows
 const WorkflowViewer = ({ workflow, onClose }) => {
@@ -44,6 +46,50 @@ const WorkflowViewer = ({ workflow, onClose }) => {
 
     fetchSteps();
   }, [workflow.id]);
+
+  // Obter permissões do contexto
+  const permissions = usePermissions();
+
+  // Verificar permissões para mostrar mensagem de acesso restrito
+  if (permissions.loading) {
+    return (
+      <div className="main">
+        <Header>
+          <div className="flex justify-center items-center min-h-screen">
+            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+          </div>
+        </Header>
+      </div>
+    );
+  }
+
+  // Verificar se usuário pode gerenciar workflows
+  const canManageWorkflows = permissions.isOrgAdmin ||
+    permissions.canCreateWorkflows ||
+    permissions.canEditWorkflows;
+
+  if (!canManageWorkflows) {
+    return (
+      <div className="main">
+        <Header>
+          <div className="flex flex-col items-center justify-center min-h-screen p-4">
+            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
+              <div className="flex items-start">
+                <AlertCircle className="h-6 w-6 mr-2" />
+                <div>
+                  <p className="font-bold">Acesso Restrito</p>
+                  <p>Você não possui permissões para gerenciar workflows.</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-gray-600">
+              Entre em contato com o administrador da sua organização para solicitar acesso.
+            </p>
+          </div>
+        </Header>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-lg">
@@ -99,7 +145,7 @@ const WorkflowViewer = ({ workflow, onClose }) => {
           </div>
 
           <h3 className="text-lg font-medium mb-4">Passos do Workflow</h3>
-          
+
           {/* Visualização do fluxo */}
           <div className="p-4 bg-white-50 rounded-lg overflow-x-auto mb-6">
             <div className="flex items-center min-w-max">
@@ -121,7 +167,7 @@ const WorkflowViewer = ({ workflow, onClose }) => {
                       )}
                     </div>
                   </div>
-                  
+
                   {index < workflowSteps.length - 1 && (
                     <div className="mx-4 text-gray-400">
                       <ChevronRight size={20} />
@@ -153,7 +199,7 @@ const WorkflowViewer = ({ workflow, onClose }) => {
                       <span className="text-gray-500">Responsável:</span> {step.assign_to_name}
                     </div>
                   )}
-                  
+
                   {step.requires_approval && (
                     <div className="text-sm">
                       <span className="text-gray-500">Requer aprovação de:</span> {step.approver_role || 'Não especificado'}
@@ -162,11 +208,20 @@ const WorkflowViewer = ({ workflow, onClose }) => {
 
                   {step.next_steps && step.next_steps.length > 0 && (
                     <div className="text-sm">
-                      <span className="text-gray-500">Próximos passos possíveis:</span> 
+                      <span className="text-gray-500">Próximos passos possíveis:</span>
                       <div className="ml-4 mt-1">
                         {/* Renderizar os próximos passos possíveis */}
-                        {Array.isArray(step.next_steps) 
+                        {Array.isArray(step.next_steps)
                           ? step.next_steps.map(nextStepId => {
+                            const nextStep = workflowSteps.find(s => s.id === nextStepId);
+                            return nextStep ? (
+                              <div key={nextStepId} className="text-sm text-blue-600">
+                                {nextStep.order}. {nextStep.name}
+                              </div>
+                            ) : null;
+                          })
+                          : typeof step.next_steps === 'string' && step.next_steps.startsWith('[')
+                            ? JSON.parse(step.next_steps).map(nextStepId => {
                               const nextStep = workflowSteps.find(s => s.id === nextStepId);
                               return nextStep ? (
                                 <div key={nextStepId} className="text-sm text-blue-600">
@@ -174,15 +229,6 @@ const WorkflowViewer = ({ workflow, onClose }) => {
                                 </div>
                               ) : null;
                             })
-                          : typeof step.next_steps === 'string' && step.next_steps.startsWith('[') 
-                            ? JSON.parse(step.next_steps).map(nextStepId => {
-                                const nextStep = workflowSteps.find(s => s.id === nextStepId);
-                                return nextStep ? (
-                                  <div key={nextStepId} className="text-sm text-blue-600">
-                                    {nextStep.order}. {nextStep.name}
-                                  </div>
-                                ) : null;
-                              })
                             : <div className="text-sm text-gray-500">Nenhum passo subsequente definido</div>
                         }
                       </div>
@@ -201,7 +247,7 @@ const WorkflowViewer = ({ workflow, onClose }) => {
 // Componente principal de gerenciamento de workflows
 const WorkflowManagement = () => {
   const queryClient = useQueryClient();
-  
+
   // Estados locais
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState(null);
@@ -210,16 +256,16 @@ const WorkflowManagement = () => {
   const [filters, setFilters] = useState({
     isActive: true,
   });
-  
+
   // Consultas React Query
-  const { 
-    data: workflows = [], 
+  const {
+    data: workflows = [],
     isLoading: isWorkflowsLoading,
     isError: isWorkflowsError,
     error: workflowsError,
-    refetch: refetchWorkflows 
+    refetch: refetchWorkflows
   } = useQuery({
-    queryKey: ['workflows'], 
+    queryKey: ['workflows'],
     queryFn: async () => {
       try {
         const response = await api.get('/workflow-definitions/');
@@ -231,10 +277,10 @@ const WorkflowManagement = () => {
     },
     staleTime: 5 * 60 * 1000, // 5 minutos
   });
-  
-  const { 
-    data: users = [], 
-    isLoading: isUsersLoading 
+
+  const {
+    data: users = [],
+    isLoading: isUsersLoading
   } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
@@ -248,7 +294,7 @@ const WorkflowManagement = () => {
     },
     staleTime: 10 * 60 * 1000, // 10 minutos
   });
-  
+
   // Mutações React Query
   const createWorkflowMutation = useMutation({
     mutationFn: async (newWorkflow) => {
@@ -258,9 +304,9 @@ const WorkflowManagement = () => {
         description: newWorkflow.description,
         is_active: newWorkflow.is_active
       });
-      
+
       const workflowId = response.data.id;
-      
+
       // Depois, criar cada passo do workflow
       for (const step of newWorkflow.steps) {
         await api.post('/workflow-steps/', {
@@ -269,7 +315,7 @@ const WorkflowManagement = () => {
           next_steps: JSON.stringify(step.next_steps) // Serializar para JSON
         });
       }
-      
+
       return response.data;
     },
     onSuccess: () => {
@@ -290,11 +336,11 @@ const WorkflowManagement = () => {
         description: updatedWorkflow.description,
         is_active: updatedWorkflow.is_active
       });
-      
+
       // Obter os passos existentes
       const stepsResponse = await api.get(`/workflow-steps/?workflow=${updatedWorkflow.id}`);
       const existingSteps = stepsResponse.data;
-      
+
       // Para cada passo no workflow atualizado...
       for (const step of updatedWorkflow.steps) {
         if (step.id && existingSteps.some(s => s.id === step.id)) {
@@ -313,14 +359,14 @@ const WorkflowManagement = () => {
           });
         }
       }
-      
+
       // Excluir passos que não estão mais presentes
       for (const existingStep of existingSteps) {
         if (!updatedWorkflow.steps.some(s => s.id === existingStep.id)) {
           await api.delete(`/workflow-steps/${existingStep.id}/`);
         }
       }
-      
+
       return updatedWorkflow;
     },
     onSuccess: () => {
@@ -350,15 +396,15 @@ const WorkflowManagement = () => {
   // Função para filtragem de workflows
   const filteredWorkflows = workflows.filter(workflow => {
     // Aplicar filtro de pesquisa
-    const matchesSearch = 
-      !searchTerm || 
+    const matchesSearch =
+      !searchTerm ||
       workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (workflow.description && workflow.description.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+
     // Aplicar filtro de status
-    const matchesStatus = 
+    const matchesStatus =
       !filters.isActive || workflow.is_active === true;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -386,10 +432,10 @@ const WorkflowManagement = () => {
       const response = await api.get(`/workflow-steps/?workflow=${workflow.id}`);
       const steps = response.data.map(step => ({
         ...step,
-        next_steps: Array.isArray(step.next_steps) 
-          ? step.next_steps 
-          : (typeof step.next_steps === 'string' && step.next_steps.startsWith('[')) 
-            ? JSON.parse(step.next_steps) 
+        next_steps: Array.isArray(step.next_steps)
+          ? step.next_steps
+          : (typeof step.next_steps === 'string' && step.next_steps.startsWith('['))
+            ? JSON.parse(step.next_steps)
             : []
       }));
 
@@ -420,11 +466,52 @@ const WorkflowManagement = () => {
   };
 
   // Verificar estado de carregamento global
-  const isLoading = isWorkflowsLoading || isUsersLoading || 
-                   createWorkflowMutation.isPending || 
-                   updateWorkflowMutation.isPending || 
-                   deleteWorkflowMutation.isPending;
+  const isLoading = isWorkflowsLoading || isUsersLoading ||
+    createWorkflowMutation.isPending ||
+    updateWorkflowMutation.isPending ||
+    deleteWorkflowMutation.isPending;
 
+    const permissions = usePermissions();
+
+  // Verificar permissões para mostrar mensagem de acesso restrito
+  if (permissions.loading) {
+    return (
+      <div className="main">
+        <Header>
+          <div className="flex justify-center items-center min-h-screen">
+            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+          </div>
+        </Header>
+      </div>
+    );
+  }
+
+  // Verificar se usuário pode ver dados de rentabilidade
+  const canManageWorkflows = permissions.canManageWorkflows;
+  console.log("Permissões do usuário:", permissions);
+
+  if (!canManageWorkflows) {
+    return (
+      <div className="main">
+        <Header>
+          <div className="flex flex-col items-center justify-center min-h-screen p-4">
+            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
+              <div className="flex items-start">
+                <AlertCircle className="h-6 w-6 mr-2" />
+                <div>
+                  <p className="font-bold">Acesso Restrito</p>
+                  <p>Você não possui permissões para gerir os workflows!</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-gray-600">
+              Entre em contato com o administrador da sua organização para solicitar acesso.
+            </p>
+          </div>
+        </Header>
+      </div>
+    );
+  }
   return (
     <div className="main">
       <Header>
@@ -433,19 +520,20 @@ const WorkflowManagement = () => {
             {/* Cabeçalho da página */}
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-2xl font-bold">Gestão de Workflows</h1>
-              
-              {!showCreateForm && !editingWorkflow && !viewingWorkflow && (
-                <button
-                  onClick={() => setShowCreateForm(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
-                  disabled={isLoading}
-                >
-                  <Plus size={18} className="mr-2" />
-                  Novo Workflow
-                </button>
-              )}
+
+              {!showCreateForm && !editingWorkflow && !viewingWorkflow &&
+                (permissions.isOrgAdmin || permissions.canCreateWorkflows) && (
+                  <button
+                    onClick={() => setShowCreateForm(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
+                    disabled={isLoading}
+                  >
+                    <Plus size={18} className="mr-2" />
+                    Novo Workflow
+                  </button>
+                )}
             </div>
-            
+
             {/* Formulário de designer de workflow (criação/edição) */}
             {(showCreateForm || editingWorkflow) && (
               <WorkflowDesigner
@@ -458,7 +546,7 @@ const WorkflowManagement = () => {
                 }}
               />
             )}
-            
+
             {/* Visualizador de workflow */}
             {viewingWorkflow && (
               <WorkflowViewer
@@ -466,13 +554,13 @@ const WorkflowManagement = () => {
                 onClose={() => setViewingWorkflow(null)}
               />
             )}
-            
+
             {/* Filtros e pesquisa */}
             {!showCreateForm && !editingWorkflow && !viewingWorkflow && (
               <div className="bg-white p-6 rounded-lg shadow mb-6">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
                   <h2 className="text-lg font-semibold mb-4 md:mb-0">Workflows</h2>
-                  
+
                   <div className="w-full md:w-1/3 mb-4 md:mb-0">
                     <div className="relative">
                       <input
@@ -488,7 +576,7 @@ const WorkflowManagement = () => {
                       />
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center">
                     <label className="flex items-center cursor-pointer">
                       <input
@@ -506,12 +594,12 @@ const WorkflowManagement = () => {
                 </div>
               </div>
             )}
-            
+
             {/* Lista de workflows */}
             {!showCreateForm && !editingWorkflow && !viewingWorkflow && (
               <div className="bg-white rounded-lg shadow overflow-hidden">
                 <h2 className="text-xl font-semibold p-6 border-b">Lista de Workflows</h2>
-                
+
                 {isWorkflowsLoading ? (
                   <div className="p-6 flex justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -616,7 +704,7 @@ const WorkflowManagement = () => {
                 )}
               </div>
             )}
-            
+
             {/* Dicas e informações sobre workflows */}
             {!showCreateForm && !editingWorkflow && !viewingWorkflow && (
               <div className="mt-6 bg-blue-50 p-4 rounded-lg border border-blue-100">

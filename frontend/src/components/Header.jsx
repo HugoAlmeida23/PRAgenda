@@ -23,6 +23,7 @@ import {
   GitPullRequest
 } from "lucide-react";
 import "../styles/modernHeaderStyles.css";
+import api from '../api';
 
 // Variants for animations
 const sidebarVariants = {
@@ -30,20 +31,20 @@ const sidebarVariants = {
     width: "240px",
     transition: { 
       type: "spring", 
-      stiffness: 400,   // Aumentar para movimento mais rápido (era 300)
-      damping: 20,      // Reduzir para menos amortecimento (era 24)
-      mass: 0.5,        // Reduzir massa para movimento mais rápido
-      velocity: 2       // Adicionar velocidade inicial
+      stiffness: 400,
+      damping: 20,
+      mass: 0.5,
+      velocity: 2
     }
   },
   closed: { 
     width: "64px",
     transition: { 
       type: "spring", 
-      stiffness: 400,   // Aumentar para movimento mais rápido
-      damping: 20,      // Reduzir para menos amortecimento
-      mass: 0.8,        // Reduzir massa
-      velocity: 2       // Adicionar velocidade inicial
+      stiffness: 400,
+      damping: 20,
+      mass: 0.8,
+      velocity: 2
     }
   }
 };
@@ -86,7 +87,7 @@ const dropdownVariants = {
   }
 };
 
-// Menu items data for easy iteration - REMOVE active property as we'll determine it dynamically
+// Menu items data for easy iteration
 const menuItems = [
   { path: "/", icon: <Home size={20} />, label: "Dashboard" },
   { path: "/clientprofitability", icon: <DollarSign size={20} />, label: "Rentabilidade" },
@@ -98,6 +99,17 @@ const menuItems = [
   { path: "/workflow-management", icon: <Settings size={20} />, label: "Gerir Workflows" }
 ];
 
+const fetchDashboardData = async () => {
+  try {
+    const response = await api.get("/profiles/");
+    console.log("Dashboard data fetched:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    return null;
+  }
+};
+
 function Header({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -106,8 +118,30 @@ function Header({ children }) {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [activePath, setActivePath] = useState("/");
+  const [userProfile, setUserProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
   const dropdownRef = useRef(null);
   const searchRef = useRef(null);
+
+  // Fetch user profile data on component mount
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      setLoading(true);
+      try {
+        const profileData = await fetchDashboardData();
+        if (profileData && profileData.length > 0) {
+          // Since the API returns an array, take the first item
+          setUserProfile(profileData[0]);
+        }
+      } catch (error) {
+        console.error("Failed to load user profile:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUserProfile();
+  }, []);
 
   // Update active path based on current location
   useEffect(() => {
@@ -123,13 +157,8 @@ function Header({ children }) {
       }
     };
     
-    // Initial check
     checkMobile();
-    
-    // Add event listener for window resize
     window.addEventListener('resize', checkMobile);
-    
-    // Cleanup
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
@@ -170,6 +199,28 @@ function Header({ children }) {
     if (isMobile) {
       toggleSidebar();
     }
+  };
+
+  // Helper function to get user initials
+  const getUserInitials = () => {
+    if (!userProfile || !userProfile.username) return "U";
+    const names = userProfile.username.split(" ");
+    if (names.length >= 2) {
+      return (names[0][0] + names[1][0]).toUpperCase();
+    }
+    return userProfile.username.substring(0, 2).toUpperCase();
+  };
+
+  // Helper function to get display name
+  const getDisplayName = () => {
+    if (!userProfile) return "Loading...";
+    return userProfile.username || "User";
+  };
+
+  // Helper function to get user email or role
+  const getUserSubtext = () => {
+    if (!userProfile) return "";
+    return userProfile.email || userProfile.role || "";
   };
 
   return (
@@ -251,12 +302,12 @@ function Header({ children }) {
                 className="avatar-circle"
                 whileHover={{ scale: 1.05 }}
               >
-                <span>HA</span>
+                <span>{getUserInitials()}</span>
               </motion.div>
               
               <div className="user-info">
-                <span className="user-name">Hugo Almeida</span>
-                <span className="user-role">Administrator</span>
+                <span className="user-name">{getDisplayName()}</span>
+                <span className="user-role">{getUserSubtext()}</span>
               </div>
               
               <motion.div
@@ -278,11 +329,11 @@ function Header({ children }) {
                 >
                   <div className="dropdown-header">
                     <div className="avatar-circle-large">
-                      <span>HA</span>
+                      <span>{getUserInitials()}</span>
                     </div>
                     <div>
-                      <p className="dropdown-name">Hugo Almeida</p>
-                      <p className="dropdown-email">hugo@tarefai.com</p>
+                      <p className="dropdown-name">{getDisplayName()}</p>
+                      <p className="dropdown-email">{userProfile?.email || userProfile?.role || ""}</p>
                     </div>
                   </div>
                   
@@ -373,12 +424,16 @@ function Header({ children }) {
                     scale: 1.02
                   }}
                 >
-                  <div className="workspace-icon">T</div>
+                  <div className="workspace-icon">
+                    {userProfile?.organization_name ? userProfile.organization_name[0].toUpperCase() : "T"}
+                  </div>
                   <motion.div 
                     className="workspace-details"
                     variants={menuItemVariants}
                   >
-                    <span className="workspace-name">TarefAi</span>
+                    <span className="workspace-name">
+                      {userProfile?.organization_name || "TarefAi"}
+                    </span>
                   </motion.div>
                 </motion.div>
               </motion.div>
