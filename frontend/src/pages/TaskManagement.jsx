@@ -505,7 +505,7 @@ const TaskManagement = () => {
   }
 
   // Verificar se usuário pode ver tarefas
-  const canViewTasks = permissions.canViewAllTasks;
+  const canViewTasks = permissions.canViewAllTasks || permissions.isOrgAdmin;
 
   // Se não tiver permissões, mostrar mensagem de acesso restrito
   if (!canViewTasks && !permissions.canEditAssignedTasks) {

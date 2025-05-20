@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import Header from "../components/Header";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,88 +24,12 @@ import {
 } from "lucide-react";
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
-
-// Animation variants remain the same
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      when: "beforeChildren",
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: { type: "spring", stiffness: 300, damping: 24 },
-  },
-};
-
-const cardVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: {
-      type: "spring",
-      stiffness: 300,
-      damping: 24,
-    },
-  },
-  hover: {
-    y: -5,
-    boxShadow:
-      "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-    transition: {
-      type: "spring",
-      stiffness: 300,
-      damping: 20,
-    },
-  },
-};
-
-const months = [
-  { value: 1, label: "Janeiro" },
-  { value: 2, label: "Fevereiro" },
-  { value: 3, label: "Março" },
-  { value: 4, label: "Abril" },
-  { value: 5, label: "Maio" },
-  { value: 6, label: "Junho" },
-  { value: 7, label: "Julho" },
-  { value: 8, label: "Agosto" },
-  { value: 9, label: "Setembro" },
-  { value: 10, label: "Outubro" },
-  { value: 11, label: "Novembro" },
-  { value: 12, label: "Dezembro" },
-];
-
-// Generate years for dropdown (current year and 5 years back)
-const generateYears = () => {
-  const currentYear = new Date().getFullYear();
-  const years = [];
-  for (let i = 0; i < 6; i++) {
-    years.push(currentYear - i);
-  }
-  return years;
-};
-
-const years = generateYears();
+import { containerVariants, itemVariants, cardVariants, months, generateYears, years } from "../variants/variants"; // Importing animation variants
 
 // Data fetching functions (outside component)
 const fetchProfitabilityData = async (year, month) => {
   // Then fetch updated data
   const response = await api.get(`/client-profitability/?year=${year}&month=${month}`);
-  console.log("Dados de rentabilidade brutos:", response.data);
-  return response.data;
-};
-
-const fetchTimeEntries = async () => {
-  const response = await api.get("/time-entries/");
   return response.data;
 };
 
@@ -131,7 +55,23 @@ const ClientProfitability = () => {
   });
   const [expandedClients, setExpandedClients] = useState({});
 
-  // React Query hooks
+  // Get permissions from context
+  const permissions = usePermissions();
+  
+  // Check if user can view profitability data
+  const canViewProfitability = useMemo(() => {
+    return permissions.isOrgAdmin ||
+      permissions.canViewProfitability ||
+      permissions.canViewTeamProfitability ||
+      permissions.canViewOrganizationProfitability;
+  }, [
+    permissions.isOrgAdmin,
+    permissions.canViewProfitability,
+    permissions.canViewTeamProfitability,
+    permissions.canViewOrganizationProfitability
+  ]);
+
+  // React Query hooks - Only fetch data if user has permission
   const {
     data: profitabilityData = [],
     isLoading: isProfitabilityLoading,
@@ -142,15 +82,7 @@ const ClientProfitability = () => {
     queryKey: ['profitability', selectedYear, selectedMonth],
     queryFn: () => fetchProfitabilityData(selectedYear, selectedMonth),
     staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-
-  const {
-    data: timeEntries = [],
-    isLoading: isTimeEntriesLoading
-  } = useQuery({
-    queryKey: ['timeEntries'],
-    queryFn: fetchTimeEntries,
-    staleTime: 5 * 60 * 1000,
+    enabled: canViewProfitability, // Only fetch if user has permission
   });
 
   const {
@@ -160,7 +92,17 @@ const ClientProfitability = () => {
     queryKey: ['clients'],
     queryFn: fetchClients,
     staleTime: 5 * 60 * 1000,
+    enabled: canViewProfitability, // Only fetch if user has permission
   });
+
+  // 5. Finally, add the useEffect for refetching
+  useEffect(() => {
+    if (canViewProfitability && !permissions.loading) {
+      // Force a refetch of all data when permissions become available
+      refetchProfitability();
+      queryClient.invalidateQueries(['clients']);
+    }
+  }, [canViewProfitability, queryClient, refetchProfitability, permissions.loading]);
 
   // Mutation for isRefreshing data
   const refreshDataMutation = useMutation({
@@ -177,6 +119,9 @@ const ClientProfitability = () => {
       toast.error("Falha ao atualizar dados de rentabilidade");
     }
   });
+
+  const isLoading = permissions.loading || isProfitabilityLoading || isClientsLoading;
+  const isRefreshing = refreshDataMutation.isPending;
 
   // Derived state using useMemo
   const filteredData = useMemo(() => {
@@ -344,20 +289,8 @@ const ClientProfitability = () => {
     return `${hours}h ${mins}m`;
   };
 
-  const getClientTimeEntries = (clientId) => {
-    return timeEntries.filter((entry) => entry.client === clientId);
-  };
-
-  // Combined isLoading state
-  const isLoading = isProfitabilityLoading || isTimeEntriesLoading || isClientsLoading;
-  const isRefreshing = refreshDataMutation.isPending;
-
-
-  // Obter permissões do contexto
-  const permissions = usePermissions();
-
-  // Verificar permissões para mostrar mensagem de acesso restrito
-  if (permissions.loading) {
+  // Render loading state while permissions are being loaded
+  if (isLoading) {
     return (
       <div className="main">
         <Header>
@@ -369,12 +302,7 @@ const ClientProfitability = () => {
     );
   }
 
-  // Verificar se usuário pode ver dados de rentabilidade
-  const canViewProfitability = permissions.isOrgAdmin ||
-    permissions.canViewProfitability ||
-    permissions.canViewTeamProfitability ||
-    permissions.canViewOrganizationProfitability;
-
+  // Verify if user can view profitability data after loading is complete
   if (!canViewProfitability) {
     return (
       <div className="main">
@@ -442,7 +370,7 @@ const ClientProfitability = () => {
                 <motion.button
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={fetchProfitabilityData}
+                  onClick={handlePeriodChange}
                   disabled={isLoading || isRefreshing}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
                 >
