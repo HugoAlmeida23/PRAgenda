@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { toast, ToastContainer } from "react-toastify";
-import Header from "../components/Header";
 import api from "../api";
 import "../styles/Home.css";
 import {

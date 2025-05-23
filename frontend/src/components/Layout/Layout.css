@@ -1,0 +1,185 @@
+/* src/components/Layout/Layout.css */
+
+/* --- :root Variables (Keep these from your existing file) --- */
+:root {
+  --primary-color: #6d28d9;
+  --primary-color-light: rgba(109, 40, 217, 0.1);
+  --text-color: #1f2937;
+  --text-color-light: #6b7280;
+  --sidebar-bg: #f9fafb; /* Light gray for sidebar */
+  --header-bg: #ffffff; /* White for header */
+  --header-text: #374151;
+  --background-color: #f3f4f6; /* Light gray for page content area background (can be overridden by pages) */
+  --hover-color: #ede9fe;
+  --active-nav-text: #ffffff;
+  --avatar-bg: #8b5cf6;
+  --avatar-text: #ffffff;
+  --border-color: #e5e7eb;
+  --notification-badge-bg: #ef4444;
+  --input-bg: #f9fafb;
+  --input-border-focus: var(--primary-color);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* --- Global Styles --- */
+body {
+  font-family: var(--font-sans);
+  margin: 0;
+  background-color: var(--background-color); /* Overall app background */
+  color: var(--text-color);
+  height: 100vh; /* Ensure body takes full viewport height */
+  overflow: hidden; /* Prevent body scrollbars, manage scroll within components */
+}
+
+/* --- Main App Layout Container --- */
+.app-layout {
+  display: flex;
+  flex-direction: column; /* Stack header on top of main content body */
+  height: 100vh;         /* Take full viewport height */
+  overflow: hidden;       /* Prevent this top-level div from scrolling */
+}
+
+/* --- Top Header --- */
+.top-header {
+  height: 60px;           /* Fixed height for the header */
+  background-color: var(--header-bg);
+  color: var(--header-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Softer shadow */
+  z-index: 1000;          /* Keep header on top */
+  flex-shrink: 0;         /* Prevent header from shrinking if content is too much */
+}
+
+/* This class name is from your Layout.jsx: <div className="main-body-content-wrapper"> */
+.main-body-content-wrapper {
+  display: flex;          /* Arrange sidebar and page content area side-by-side */
+  flex-grow: 1;           /* CRITICAL: Makes this div take all remaining vertical space after header */
+  overflow: hidden;       /* Prevent this wrapper from having scrollbars if children manage their own */
+  position: relative;     /* For positioning mobile overlay */
+}
+
+/* --- Sidebar --- */
+.sidebar {
+  background-color: var(--sidebar-bg);
+  height: 100%;           /* Take full height of its parent (.main-body-content-wrapper) */
+  overflow-y: auto;       /* Allow sidebar to scroll if its content is too long */
+  flex-shrink: 0;         /* Prevent sidebar from shrinking if page content is wide */
+  border-right: 1px solid var(--border-color);
+  transition: width 0.3s ease-in-out; /* Smooth width transition for collapse/expand */
+  z-index: 999; /* Ensure sidebar is above page content but below mobile overlay if needed */
+}
+/* Framer Motion controls width directly via variants, so these are fallbacks or for non-JS */
+.sidebar:not(.collapsed) {
+  width: 240px;
+}
+.sidebar.collapsed {
+  width: 64px;
+}
+
+
+/* --- Page Content Area (where <Outlet /> renders) --- */
+.page-content-area {
+  flex-grow: 1;           /* CRITICAL: Makes this take all remaining horizontal space next to sidebar */
+  height: 100%;           /* CRITICAL: Makes this take all available vertical height from parent */
+  overflow-y: auto;       /* CRITICAL: THIS is where the main page content should scroll */
+  background-color: var(--background-color); /* Default background, pages can override */
+  position: relative;     /* For children positioning within pages */
+  /* padding: 20px; */ /* Optional: Add global padding to content. Or let pages handle it. */
+                       /* If DashboardPages has its own padding, set this to 0. */
+}
+
+
+/* --- Styles for elements WITHIN .top-header (Copied & Verified) --- */
+.header-left { display: flex; align-items: center; }
+.sidebar-toggle { background: none; border: none; color: var(--header-text); cursor: pointer; padding: 8px; margin-right: 12px; border-radius: 6px; }
+.sidebar-toggle:hover { background-color: var(--hover-color); }
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand img { height: 32px; width: auto; }
+.brand-name { font-size: 1.25rem; font-weight: 600; color: var(--primary-color); }
+
+.header-search { flex-grow: 1; display: flex; justify-content: center; }
+.search-container { position: relative; display: flex; align-items: center; background-color: var(--input-bg); border-radius: 8px; border: 1px solid var(--border-color); transition: all 0.3s ease; }
+.search-container.focused { border-color: var(--input-border-focus); box-shadow: 0 0 0 2px rgba(109, 40, 217, 0.2); }
+.search-container .search-icon { position: absolute; left: 12px; color: var(--text-color-light); }
+.search-container input { width: 100%; padding: 8px 12px 8px 40px; border: none; background: transparent; outline: none; font-size: 0.9rem; color: var(--text-color); }
+.search-container input::placeholder { color: var(--text-color-light); }
+
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.action-button { background: none; border: none; color: var(--text-color-light); cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; }
+.action-button:hover { background-color: var(--hover-color); color: var(--primary-color); }
+.notification-btn .notification-badge { position: absolute; top: 4px; right: 4px; background-color: var(--notification-badge-bg); color: white; border-radius: 50%; font-size: 0.65rem; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-weight: 500; }
+
+.user-profile-wrapper { position: relative; }
+.user-profile { display: flex; align-items: center; padding: 6px 8px; border-radius: 8px; cursor: pointer; transition: background-color 0.2s ease; }
+.avatar-circle { width: 32px; height: 32px; border-radius: 50%; background-color: var(--avatar-bg); color: var(--avatar-text); display: flex; align-items: center; justify-content: center; font-weight: 500; font-size: 0.8rem; margin-right: 8px; text-transform: uppercase; }
+.user-info { display: flex; flex-direction: column; text-align: left; margin-right: 6px; }
+.user-name { font-size: 0.875rem; font-weight: 500; color: var(--text-color); line-height: 1.2; }
+.user-role { font-size: 0.75rem; color: var(--text-color-light); line-height: 1.2; }
+.dropdown-icon { color: var(--text-color-light); }
+
+/* User Dropdown */
+.user-dropdown { position: absolute; top: calc(100% + 8px); right: 0; background-color: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 260px; z-index: 1001; overflow: hidden; border: 1px solid var(--border-color); }
+.dropdown-header { display: flex; align-items: center; padding: 16px; border-bottom: 1px solid var(--border-color); }
+.avatar-circle-large { width: 48px; height: 48px; border-radius: 50%; background-color: var(--avatar-bg); color: var(--avatar-text); display: flex; align-items: center; justify-content: center; font-weight: 500; font-size: 1.1rem; margin-right: 12px; text-transform: uppercase; }
+.dropdown-name { font-size: 0.95rem; font-weight: 600; margin: 0 0 2px 0; }
+.dropdown-email { font-size: 0.8rem; color: var(--text-color-light); margin: 0; }
+.dropdown-menu { list-style: none; padding: 8px 0; margin: 0; }
+.dropdown-menu li a, .dropdown-menu li button { /* Apply to button too */ display: flex; align-items: center; width:100%; padding: 10px 16px; font-size: 0.875rem; color: var(--text-color); text-decoration: none; transition: background-color 0.2s ease; background: none; border: none; text-align: left; cursor: pointer; font-family: var(--font-sans); }
+.dropdown-menu li a svg, .dropdown-menu li button svg { margin-right: 10px; color: var(--text-color-light); }
+.dropdown-menu li.divider { height: 1px; background-color: var(--border-color); margin: 8px 0; }
+.dropdown-menu .logout-item button { color: #ef4444; } /* Target button for logout */
+.dropdown-menu .logout-item button svg { color: #ef4444; }
+
+
+/* --- Styles for elements WITHIN .sidebar (Copied & Verified) --- */
+.sidebar .nav-menu { list-style: none; padding: 0; margin: 16px 0; }
+.sidebar .nav-item a { display: flex; align-items: center; padding: 10px 16px; color: var(--text-color-light); text-decoration: none; border-radius: 6px; margin: 4px 8px; transition: background-color 0.2s ease, color 0.2s ease; white-space: nowrap; }
+.sidebar .nav-item.active a { background-color: var(--primary-color); color: var(--active-nav-text); }
+.sidebar .nav-item.active a .nav-icon svg { color: var(--active-nav-text); }
+.sidebar .nav-item a .nav-icon { margin-right: 12px; display: flex; align-items: center; }
+.sidebar .nav-item a .nav-icon svg { color: var(--text-color-light); transition: color 0.2s ease; }
+.sidebar .nav-item a:hover .nav-icon svg { color: var(--primary-color); }
+.sidebar .nav-item.active a:hover .nav-icon svg { color: var(--active-nav-text); }
+.sidebar .nav-text { font-size: 0.9rem; font-weight: 500; transition: opacity 0.2s ease, transform 0.2s ease; } /* For Framer Motion menuItemVariants */
+
+/* Sidebar Collapsed Specifics for icon centering when text is hidden by Framer Motion */
+.sidebar.collapsed .nav-item a { justify-content: center; padding: 10px; }
+.sidebar.collapsed .nav-icon { margin-right: 0; }
+
+.sidebar-footer { padding: 16px; margin-top: auto; border-top: 1px solid var(--border-color); }
+.workspace-info { display: flex; align-items: center; padding: 8px; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease; }
+.workspace-icon { width: 28px; height: 28px; border-radius: 6px; background-color: var(--primary-color-light); color: var(--primary-color); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.9rem; margin-right: 10px; }
+.workspace-details { display: flex; flex-direction: column; }
+.workspace-name { font-size: 0.875rem; font-weight: 500; color: var(--text-color); }
+.sidebar.collapsed .workspace-info { justify-content: center; }
+.sidebar.collapsed .workspace-icon { margin-right: 0; }
+
+
+/* --- Mobile Specific Adjustments --- */
+.sidebar-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); z-index: 998; }
+
+@media (max-width: 768px) {
+  .sidebar:not(.mobile.collapsed) { /* Styles for when sidebar is open on mobile */
+    position: fixed; /* Take over screen */
+    left: 0;
+    top: 0;
+    height: 100vh;
+    z-index: 1001; /* Higher than overlay which is 998, but could be higher than header too */
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    /* background-color by .sidebar */
+  }
+  .sidebar.mobile.collapsed {
+    /* Framer motion handles animating it off-screen or to width 0 */
+    /* It might be visually hidden by variants, but ensure it doesn't block content */
+     width: 0px !important; /* Force width to 0 if Framer Motion is not hiding it properly */
+     overflow: hidden;
+  }
+
+  /* Adjust top bar for mobile */
+  .top-header .brand-name { display: none; }
+  .top-header .header-search { display: none; }
+  .top-header .user-info { display: none; } /* Hide name/role in top bar */
+}

@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 // Removed react-bootstrap imports as they seem unused in the main return block
 // import { Container, Spinner, Card, Alert } from 'react-bootstrap';
-import Header from "../components/Header";
 import api from "../api";
 import "../styles/Home.css"; // Ensure this contains necessary styles
 

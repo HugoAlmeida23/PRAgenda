@@ -20,7 +20,6 @@ import {
 import { motion } from 'framer-motion';
 import api from '../api';
 import WorkflowDesigner from './WorkflowDesigner';
-import Header from "../components/Header";
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
 

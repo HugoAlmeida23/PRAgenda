@@ -143,7 +143,6 @@ class TaskSerializer(serializers.ModelSerializer):
                 'current_workflow_step_name', 'workflow_comment']
         read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at']
 
-
 class TimeEntrySerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
     client_name = serializers.ReadOnlyField(source='client.name')
@@ -155,10 +154,10 @@ class TimeEntrySerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'user_name', 'client', 'client_name', 
                   'task', 'task_title', 'category', 'category_name', 
                   'description', 'minutes_spent', 'date', 'start_time', 
-                  'end_time', 'created_at', 'original_text']
+                  'end_time', 'created_at', 'original_text', 'task_status_after']  # ADICIONAR task_status_after
         read_only_fields = ['id', 'created_at']
         extra_kwargs = {
-            'user': {'required': False}  # Make user field not required in validation
+            'user': {'required': False}
         }
 
 class ExpenseSerializer(serializers.ModelSerializer):

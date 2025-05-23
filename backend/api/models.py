@@ -1080,6 +1080,16 @@ class TimeEntry(models.Model):
         null=True, 
         verbose_name="Texto Original"
     )  # Para guardar o texto natural inserido pelo usuário
+    task_status_after = models.CharField(
+        max_length=20,
+        choices=[
+            ('no_change', 'Sem alteração'),
+            ('in_progress', 'Em Progresso'),
+            ('completed', 'Concluída')
+        ],
+        default='no_change',
+        verbose_name="Status da Tarefa Após Registro"
+    )
     
     class Meta:
         verbose_name = "Registro de Tempo"

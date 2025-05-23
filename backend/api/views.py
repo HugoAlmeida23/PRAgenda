@@ -1,3 +1,4 @@
+from venv import logger
 from rest_framework import viewsets, generics
 from rest_framework.request import Request
 from datetime import datetime
@@ -21,6 +22,13 @@ from django.conf import settings
 import requests
 from rest_framework.decorators import api_view, permission_classes
 from django.db.models import Sum, Count, Avg
+import logging
+from .constants.prompts import GEMINI_TIME_EXTRACTION_PROMPT
+from .services.gemini_service import GeminiService
+from django.db.models import Q
+from .services.data_service import DataService
+
+logger = logging.getLogger(__name__)
 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
@@ -45,7 +53,7 @@ class AutoTimeTrackingViewSet(viewsets.ModelViewSet):
 class ClientViewSet(viewsets.ModelViewSet):
     serializer_class = ClientSerializer
     permission_classes = [IsAuthenticated]
-    
+   
     def get_queryset(self):
         user = self.request.user
         
@@ -400,15 +408,35 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
                 client = Client.objects.get(id=client_id)
                 if not profile.can_access_client(client):
                     raise PermissionDenied("Você não tem acesso a este cliente")
-                    
-            # Criar o registro de tempo
-            serializer.save(user=self.request.user)
+            
+            # Salvar o time entry
+            time_entry = serializer.save(user=self.request.user)
+            
+            # Atualizar status da tarefa se especificado
+            self._update_task_status_if_needed(time_entry)
             
         except Profile.DoesNotExist:
             # Se não houver perfil, permitir apenas para o próprio usuário
-            serializer.save(user=self.request.user)
+            time_entry = serializer.save(user=self.request.user)
+            self._update_task_status_if_needed(time_entry)
         except Client.DoesNotExist:
             raise PermissionDenied("Cliente não encontrado")
+
+    def _update_task_status_if_needed(self, time_entry):
+        """Atualiza o status da tarefa baseado na configuração do time entry"""
+        if time_entry.task and time_entry.task_status_after != 'no_change':
+            old_status = time_entry.task.status
+            time_entry.task.status = time_entry.task_status_after
+            
+            # Se mudou para completed, definir completed_at
+            if time_entry.task_status_after == 'completed':
+                time_entry.task.completed_at = timezone.now()
+            elif old_status == 'completed' and time_entry.task_status_after != 'completed':
+                time_entry.task.completed_at = None
+                
+            time_entry.task.save()
+            
+            logger.info(f"Status da tarefa {time_entry.task.title} alterado de {old_status} para {time_entry.task_status_after}")
     
     def update(self, request, *args, **kwargs):
         # Verificar se o usuário tem permissão para editar este registro de tempo
@@ -711,6 +739,10 @@ class GeminiNLPViewSet(viewsets.ViewSet):
     """
     permission_classes = [IsAuthenticated]
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.gemini_service = GeminiService()
+
     @action(detail=False, methods=['post'])
     def process_text(self, request):
         """
@@ -735,9 +767,34 @@ class GeminiNLPViewSet(viewsets.ViewSet):
         try:
             # Obter todos os clientes e tarefas do banco de dados
             # Observação: estes já estão serializados como dicionários
-            clients_data = ClientSerializer(Client.objects.filter(is_active=True), many=True).data
-            tasks_data = TaskSerializer(Task.objects.filter(status__in=['pending', 'in_progress']), many=True).data
+            # Obter clientes e tarefas baseado nas permissões do usuário
+            # Obter clientes e tarefas com cache
+            clients_data = DataService.get_user_clients(request.user)
+            tasks_data = DataService.get_user_tasks(request.user)
+
+            if not clients_data and not tasks_data:
+                return Response(
+                    {'error': 'Nenhum cliente ou tarefa acessível encontrado'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
+            # Verificar permissões para alterar status de tarefas
+            task_status_after = request.data.get('task_status_after', 'no_change')
+            if task_status_after != 'no_change':
+                try:
+                    profile = Profile.objects.get(user=request.user)
+                    
+                    if not (profile.is_org_admin or profile.can_edit_assigned_tasks or profile.can_edit_all_tasks):
+                        return Response(
+                            {'error': 'Você não tem permissão para alterar status de tarefas'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                except Profile.DoesNotExist:
+                    return Response(
+                        {'error': 'Perfil de usuário não encontrado'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                
             # Adicionar cliente padrão se fornecido
             default_client_data = None
             if default_client_id:
@@ -748,7 +805,7 @@ class GeminiNLPViewSet(viewsets.ViewSet):
                     pass
             
             # Chamar a API do Gemini
-            extracted_info = self._call_gemini_api(
+            extracted_info = self.gemini_service.process_text(
                 text=text,
                 clients=clients_data,
                 tasks=tasks_data,
@@ -836,174 +893,6 @@ class GeminiNLPViewSet(viewsets.ViewSet):
                 return client.get('name')
         
         return None
-        
-    def _call_gemini_api(self, text, clients, tasks, default_client=None):
-        """
-        Chama a API do Gemini para processar o texto.
-        
-        Parâmetros:
-            - text: Texto a ser processado
-            - clients: Lista de clientes (já serializados como dicionários)
-            - tasks: Lista de tarefas (já serializadas como dicionários)
-            - default_client: Cliente padrão (opcional)
-            
-        Retorna:
-            Informações extraídas pelo Gemini.
-        """
-        import json
-        import uuid
-        from django.conf import settings
-        import requests
-        
-        # Definir um codificador JSON personalizado para lidar com UUIDs
-        class UUIDEncoder(json.JSONEncoder):
-            def default(self, obj):
-                if isinstance(obj, uuid.UUID):
-                    # Converter UUID para string
-                    return str(obj)
-                return super().default(obj)
-        
-        GEMINI_API_KEY = settings.GEMINI_API_KEY
-        GEMINI_API_URL = settings.GEMINI_API_URL
-        
-        try:
-            # Como clients e tasks já são dicionários, não precisamos convertê-los
-            prompt = f"""
-            Você é um assistente especializado em extrair informações de texto em linguagem natural.
-            
-            Analise o seguinte texto e identifique:
-            1. Cliente(s) mencionado(s)
-            2. Tarefa(s) mencionada(s)
-            3. Tempo gasto (em minutos)
-            4. Descrição da atividade
-            
-            TEXTO: "{text}"
-            
-            DADOS DISPONÍVEIS:
-            
-            Clientes:
-            {json.dumps(clients, indent=2, cls=UUIDEncoder)}
-            
-            Tarefas:
-            {json.dumps(tasks, indent=2, cls=UUIDEncoder)}
-            
-            Cliente Padrão (usar apenas se nenhum cliente for identificado no texto):
-            {json.dumps(default_client, indent=2, cls=UUIDEncoder) if default_client else "Nenhum"}
-            
-            Retorne APENAS um objeto JSON com o seguinte formato, sem qualquer texto adicional:
-            {{
-            "success": true,
-            "clients": [
-                {{
-                "id": "id_do_cliente",
-                "name": "nome_do_cliente",
-                "confidence": 0.9
-                }}
-            ],
-            "tasks": [
-                {{
-                "id": "id_da_tarefa",
-                "title": "título_da_tarefa",
-                "client_id": "id_do_cliente_associado",
-                "confidence": 0.8
-                }}
-            ],
-            "times": [
-                {{
-                "minutes": 120,
-                "confidence": 0.95,
-                "original_text": "2 horas"
-                }}
-            ],
-            "activities": [
-                {{
-                "description": "Descrição da atividade extraída do texto",
-                "confidence": 0.7
-                }}
-            ]
-            }}
-            
-            Se não conseguir identificar algum dos itens, retorne uma lista vazia para esse item.
-            Certifique-se de usar apenas clientes e tarefas da lista fornecida, combinando exatamente os IDs.
-            Para tempos, converta horas para minutos (ex: 2 horas = 120 minutos).
-            """
-            
-            # Preparar payload para a API
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": prompt
-                    }]
-                }],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "topP": 0.9,
-                    "topK": 40
-                }
-            }
-            
-            # Chamar a API do Gemini
-            headers = {
-                "Content-Type": "application/json"
-            }
-            
-            print(f"Enviando requisição para API Gemini...")
-            
-            response = requests.post(
-                f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
-                headers=headers,
-                json=payload
-            )
-            
-            print(f"Status code: {response.status_code}")
-            
-            if response.status_code != 200:
-                print(f"Erro na resposta: {response.text}")
-                return {
-                    "success": False,
-                    "error": f"Gemini API error: {response.status_code} - {response.text}"
-                }
-            
-            # Extrair a resposta do Gemini
-            response_json = response.json()
-            
-            try:
-                # Extrair o texto da resposta
-                text_response = response_json["candidates"][0]["content"]["parts"][0]["text"]
-                
-                print(f"Resposta da API: {text_response[:100]}...")  # Mostrar apenas os primeiros 100 caracteres para debug
-                
-                # Extrair o JSON da resposta
-                # Procurar por conteúdo JSON no texto retornado
-                import re
-                
-                json_match = re.search(r'({.*})', text_response, re.DOTALL)
-                
-                if json_match:
-                    json_str = json_match.group(1)
-                    extracted_data = json.loads(json_str)
-                    return extracted_data
-                else:
-                    print("Não foi possível extrair JSON da resposta")
-                    print(f"Resposta completa: {text_response}")
-                    return {
-                        "success": False,
-                        "error": "Could not extract JSON from Gemini response"
-                    }
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                return {
-                    "success": False,
-                    "error": f"Error parsing Gemini response: {str(e)}"
-                }
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return {
-                "success": False,
-                "error": f"Error in Gemini API call: {str(e)}"
-            }
     
     @action(detail=False, methods=['post'])
     def create_time_entries(self, request):
@@ -1026,7 +915,8 @@ class GeminiNLPViewSet(viewsets.ViewSet):
         client_id = request.data.get('client_id')
         task_id = request.data.get('task_id')
         date_str = request.data.get('date')
-        
+        task_status_after = request.data.get('task_status_after', 'no_change')  # ADICIONAR ESTA LINHA
+
         if not text:
             return Response(
                 {'error': 'Text is required'}, 
@@ -1079,13 +969,31 @@ class GeminiNLPViewSet(viewsets.ViewSet):
                 selected_client = Client.objects.get(id=client_id)
             except Client.DoesNotExist:
                 pass
-        
-        if not selected_client:
+        # Verificar se o usuário tem permissão para registrar tempo
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not profile.can_log_time:
+                return Response(
+                    {'error': 'Você não tem permissão para registrar tempo'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+                
+        except Profile.DoesNotExist:
             return Response(
-                {'error': 'No client identified and no default client provided'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': 'Perfil de usuário não encontrado'},
+                status=status.HTTP_404_NOT_FOUND
             )
         
+        # Verificar se o usuário tem acesso ao cliente selecionado
+        if selected_client:
+            if not (profile.is_org_admin or profile.can_view_all_clients):
+                if not profile.visible_clients.filter(id=selected_client.id).exists():
+                    return Response(
+                        {'error': 'Você não tem acesso a este cliente'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+       
         # Selecionar tempo
         minutes_spent = 60  # Default: 1 hora
         if extracted_data.get('times'):
@@ -1118,12 +1026,32 @@ class GeminiNLPViewSet(viewsets.ViewSet):
             minutes_spent=minutes_spent,
             description=description,
             date=date,
-            original_text=text
+            original_text=text,
+            task_status_after=task_status_after  # ADICIONAR ESTA LINHA
         )
+
         created_entries.append(entry)
-        
+        # Log da criação para auditoria
+        logger.info(f"Time entry created via NLP: User {request.user.username}, "
+                f"Client {selected_client.name}, Minutes {minutes_spent}, Date {date}")
+        # Atualizar status da tarefa se necessário
+        if selected_task and task_status_after != 'no_change':
+            old_status = selected_task.status
+            selected_task.status = task_status_after
+            
+            if task_status_after == 'completed':
+                selected_task.completed_at = timezone.now()
+            elif old_status == 'completed' and task_status_after != 'completed':
+                selected_task.completed_at = None
+                
+            selected_task.save()
+            
+            logger.info(f"Status da tarefa {selected_task.title} alterado de {old_status} para {task_status_after} via NLP")
+
         # Serializar e retornar as entradas criadas
         serializer = TimeEntrySerializer(created_entries, many=True)
+        # Invalidar cache após criar entrada de tempo
+        DataService.invalidate_user_cache(request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
               
 class WorkflowDefinitionViewSet(viewsets.ModelViewSet):

@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { toast } from "react-toastify";
-import Header from "../components/Header";
 import api from "../api";
 import "../styles/Home.css";
 import { motion, AnimatePresence } from "framer-motion";
@@ -488,12 +487,12 @@ const TaskManagement = () => {
 
   // Show loading indicator while initial data is loading
   if (isLoadingData) {
-    return <Header><LoadingView /></Header>;
+    return <LoadingView />;
   }
 
   // Show error message if initial data fetching failed
   if (isError) {
-    return <Header><ErrorView message={error?.message || "Could not load task data."} onRetry={refetch} /></Header>;
+    return <ErrorView message={error?.message || "Could not load task data."} onRetry={refetch} />;
   }
 
   // Obter permissões do contexto
@@ -501,7 +500,7 @@ const TaskManagement = () => {
 
   // Verificar permissões para mostrar mensagem de acesso restrito
   if (permissions.loading) {
-    return <Header><LoadingView /></Header>;
+    return <LoadingView />;
   }
 
   // Verificar se usuário pode ver tarefas
@@ -510,7 +509,7 @@ const TaskManagement = () => {
   // Se não tiver permissões, mostrar mensagem de acesso restrito
   if (!canViewTasks && !permissions.canEditAssignedTasks) {
     return (
-      <Header>
+      
         <div className="flex flex-col items-center justify-center min-h-screen p-4">
           <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
             <div className="flex items-start">
@@ -525,14 +524,14 @@ const TaskManagement = () => {
             Entre em contato com o administrador da sua organização para solicitar acesso.
           </p>
         </div>
-      </Header>
+      
     );
   }
 
 
   return (
     <div className="main">
-      <Header>
+     
         <div
           className="p-6 bg-white-100 min-h-screen"
           style={{ marginLeft: "3%" }}
@@ -1193,7 +1192,7 @@ const TaskManagement = () => {
           </div>
 
         </div>
-      </Header>
+ 
     </div>
   );
 };

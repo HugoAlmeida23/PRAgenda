@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
-import Header from "../components/Header";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api";
 import "../styles/Home.css";
@@ -293,11 +292,9 @@ const ClientProfitability = () => {
   if (isLoading) {
     return (
       <div className="main">
-        <Header>
           <div className="flex justify-center items-center min-h-screen">
             <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
           </div>
-        </Header>
       </div>
     );
   }
@@ -306,7 +303,6 @@ const ClientProfitability = () => {
   if (!canViewProfitability) {
     return (
       <div className="main">
-        <Header>
           <div className="flex flex-col items-center justify-center min-h-screen p-4">
             <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
               <div className="flex items-start">
@@ -321,7 +317,6 @@ const ClientProfitability = () => {
               Entre em contato com o administrador da sua organização para solicitar acesso.
             </p>
           </div>
-        </Header>
       </div>
     );
   }
@@ -333,7 +328,6 @@ const ClientProfitability = () => {
         autoClose={3000}
         hideProgressBar={false}
       />
-      <Header className="bg-white">
         <motion.div
           initial="hidden"
           animate="visible"
@@ -1237,7 +1231,6 @@ const ClientProfitability = () => {
             </div>
           </div>
         </motion.div>
-      </Header>
     </div>
   );
 };

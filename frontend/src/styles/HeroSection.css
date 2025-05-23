@@ -1,0 +1,487 @@
+/* HeroSection.css - Scoped styles with higher specificity */
+
+/* Reset and isolation from Home.css */
+.hero-command-center {
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%) !important;
+  min-height: 450px !important;
+  position: relative !important;
+  overflow: hidden !important;
+  border-radius: 24px !important;
+  margin-bottom: 2rem !important;
+  isolation: isolate !important;
+}
+
+/* Prevent Home.css interference */
+.hero-command-center,
+.hero-command-center * {
+  box-sizing: border-box !important;
+}
+
+.hero-command-center .text-gray-900,
+.hero-command-center .text-gray-800,
+.hero-command-center .text-gray-700,
+.hero-command-center .text-gray-600,
+.hero-command-center .text-gray-500 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.hero-command-center .bg-white {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.hero-command-center .bg-gray-50,
+.hero-command-center .bg-gray-100 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Override any margin/padding from Home.css */
+.hero-command-center .p-4,
+.hero-command-center .p-6,
+.hero-command-center .p-8 {
+  padding: 0 !important;
+}
+
+.hero-command-center .m-4,
+.hero-command-center .m-6,
+.hero-command-center .m-8,
+.hero-command-center .mb-4,
+.hero-command-center .mb-6,
+.hero-command-center .mb-8 {
+  margin: 0 !important;
+}
+
+/* Glass morphism effects with better contrast and specificity */
+.hero-command-center .glass-card {
+  background: rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* HeroSection specific component styles */
+.hero-command-center .hero-content {
+  position: relative !important;
+  z-index: 10 !important;
+  padding: 2rem !important;
+}
+
+.hero-command-center .hero-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  margin-bottom: 2rem !important;
+}
+
+.hero-command-center .hero-welcome {
+  flex: 1 !important;
+}
+
+.hero-command-center .hero-status {
+  display: flex !important;
+  align-items: center !important;
+  padding: 0.5rem 1rem !important;
+  border-radius: 9999px !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.hero-command-center .hero-title {
+  font-size: 3rem !important;
+  font-weight: 700 !important;
+  color: white !important;
+  margin-bottom: 0.5rem !important;
+  line-height: 1.2 !important;
+}
+
+.hero-command-center .hero-subtitle {
+  color: rgba(191, 219, 254, 1) !important;
+  font-size: 1.125rem !important;
+  margin-bottom: 0 !important;
+}
+
+.hero-command-center .hero-grid {
+  display: grid !important;
+  grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  gap: 1.5rem !important;
+  margin-bottom: 1.5rem !important;
+}
+
+.hero-command-center .hero-insights {
+  grid-column: span 8 / span 8 !important;
+}
+
+.hero-command-center .hero-actions {
+  grid-column: span 4 / span 4 !important;
+}
+
+.hero-command-center .hero-stats {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 1rem !important;
+  margin-top: 1.5rem !important;
+}
+
+.hero-command-center .hero-stat-card {
+  background: rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(10px) !important;
+  border-radius: 0.75rem !important;
+  padding: 1rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.hero-command-center .hero-stat-card .stat-value {
+  color: white !important;
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
+}
+
+.hero-command-center .hero-stat-card .stat-label {
+  color: rgba(255, 255, 255, 0.8) !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+}
+@keyframes pulse-green {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes pulse-yellow {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+.animate-pulse-yellow {
+  animation: pulse-yellow 2s ease-in-out infinite;
+}
+
+.animate-pulse-red {
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+/* Floating particles animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) translateX(0px);
+  }
+  25% {
+    transform: translateY(-10px) translateX(5px);
+  }
+  50% {
+    transform: translateY(-5px) translateX(-5px);
+  }
+  75% {
+    transform: translateY(-15px) translateX(10px);
+  }
+}
+
+.floating-particle {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Gradient mesh background */
+.gradient-mesh {
+  background: 
+    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%);
+  animation: gradient-shift 8s ease-in-out infinite alternate;
+}
+
+@keyframes gradient-shift {
+  0% {
+    background: 
+      radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%);
+  }
+  50% {
+    background: 
+      radial-gradient(circle at 60% 20%, rgba(120, 119, 198, 0.4) 0%, transparent 50%),
+      radial-gradient(circle at 20% 60%, rgba(255, 119, 198, 0.4) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(120, 219, 255, 0.4) 0%, transparent 50%);
+  }
+  100% {
+    background: 
+      radial-gradient(circle at 80% 40%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 40% 80%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 20% 20%, rgba(120, 219, 255, 0.3) 0%, transparent 50%);
+  }
+}
+
+/* AI Insights Panel specific styles */
+.ai-insights-bubble {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.ai-insights-bubble:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+/* Quick Actions Grid styles */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.quick-action-card {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-action-card:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.quick-action-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.6s ease;
+}
+
+.quick-action-card:hover::before {
+  left: 100%;
+}
+
+/* Voice command button styles */
+.voice-command-button {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.voice-command-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.voice-command-button.active {
+  background: #ef4444;
+  border-color: #dc2626;
+  animation: pulse-red 1s ease-in-out infinite;
+}
+
+/* Smart search bar styles */
+.smart-search-container {
+  position: relative;
+  width: 100%;
+}
+
+.smart-search-input {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 16px 20px;
+  width: 100%;
+  color: white;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.smart-search-input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+.smart-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Suggestions dropdown */
+.search-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  margin-top: 8px;
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.search-suggestion-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.search-suggestion-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.search-suggestion-item:last-child {
+  border-bottom: none;
+}
+
+/* Status indicators */
+.status-optimal {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.status-warning {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+}
+
+.status-critical {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+/* Responsive adjustments with specificity */
+@media (max-width: 1024px) {
+  .hero-command-center .hero-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+  
+  .hero-command-center .hero-insights,
+  .hero-command-center .hero-actions {
+    grid-column: span 1 / span 1 !important;
+  }
+  
+  .hero-command-center .hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-command-center {
+    min-height: 400px !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  .hero-command-center .hero-content {
+    padding: 1.5rem !important;
+  }
+  
+  .hero-command-center .hero-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+  
+  .hero-command-center .hero-title {
+    font-size: 2rem !important;
+  }
+  
+  .hero-command-center .hero-subtitle {
+    font-size: 1rem !important;
+  }
+  
+  .hero-command-center .hero-stats {
+    grid-template-columns: 1fr !important;
+    gap: 0.5rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-command-center {
+    min-height: 350px !important;
+  }
+  
+  .hero-command-center .hero-content {
+    padding: 1rem !important;
+  }
+  
+  .hero-command-center .hero-title {
+    font-size: 1.75rem !important;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .hero-command-center {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .glass-card,
+  .ai-insights-bubble,
+  .quick-action-card,
+  .smart-search-input {
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.8);
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .floating-particle,
+  .gradient-mesh,
+  .animate-pulse-green,
+  .animate-pulse-yellow,
+  .animate-pulse-red {
+    animation: none;
+  }
+
+  .quick-action-card,
+  .voice-command-button,
+  .smart-search-input {
+    transition: none;
+  }
+}

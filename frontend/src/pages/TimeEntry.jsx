@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { toast, ToastContainer } from "react-toastify";
-import Header from "../components/Header";
 import api from "../api";
 import "../styles/Home.css";
 import {
@@ -20,7 +19,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import {  Copy,  Download, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
+import { Copy, Download, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -119,6 +118,7 @@ const TimeEntry = () => {
     start_time: "",
     end_time: "",
     original_text: "",
+    task_status_after: "no_change",
   });
   const [isNaturalLanguageMode, setIsNaturalLanguageMode] = useState(false);
   const [naturalLanguageInput, setNaturalLanguageInput] = useState("");
@@ -318,7 +318,8 @@ const TimeEntry = () => {
       const payload = {
         text: naturalLanguageInput,
         client_id: formData.client || null,  // Cliente padrão (opcional)
-        date: formData.date
+        date: formData.date,
+        task_status_after: formData.task_status_after
       };
 
       // Se uma tarefa foi selecionada no formulário, enviar também o ID da tarefa
@@ -414,6 +415,7 @@ const TimeEntry = () => {
       date: new Date().toISOString().split("T")[0], // Data atual
       start_time: entry.start_time || "",
       end_time: entry.end_time || "",
+      task_status_after: entry.task_status_after || "no_change",
     };
 
     // Preparar formulário para edição
@@ -423,144 +425,151 @@ const TimeEntry = () => {
     toast.success("Entrada duplicada! Edite se necessário e salve.");
   };
 
+  const getTaskStatusLabel = (status) => {
+    switch (status) {
+      case 'in_progress': return 'Em Progresso';
+      case 'completed': return 'Concluída';
+      default: return 'Sem alteração';
+    }
+  };
 
   const generateExcelReport = async () => {
-  if (!timeEntries || timeEntries.length === 0) {
-    toast.warn("Não há registros para gerar relatório");
-    return;
-  }
-
-  try {
-    toast.info("Gerando relatório Excel...", { autoClose: false, toastId: "generating-excel" });
-
-    // Importar a biblioteca xlsx dinamicamente (caso não esteja no bundle)
-    const XLSX = await import('xlsx');
-
-    // Criar um novo workbook
-    const wb = XLSX.utils.book_new();
-    
-    // Agrupar dados por cliente
-    const clientGroups = timeEntries.reduce((acc, entry) => {
-      if (!acc[entry.client_name]) {
-        acc[entry.client_name] = [];
-      }
-      acc[entry.client_name].push(entry);
-      return acc;
-    }, {});
-
-    // Planilha de resumo geral
-    const summaryData = [];
-    let totalAllClients = 0;
-    
-    // Adicionar linha de cabeçalho para o resumo
-    summaryData.push(['Cliente', 'Total de Horas', 'Qtd. Registros', 'Percentual']);
-    
-    // Calcular totais e percentuais
-    Object.entries(clientGroups).forEach(([clientName, entries]) => {
-      const clientTotal = entries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
-      totalAllClients += clientTotal;
-      summaryData.push([
-        clientName,
-        formatMinutes(clientTotal),
-        entries.length,
-        0 // Placeholder para a porcentagem, será calculado depois
-      ]);
-    });
-    
-    // Adicionar linha de total
-    summaryData.push(['TOTAL', formatMinutes(totalAllClients), timeEntries.length, '100%']);
-    
-    // Calcular percentuais
-    for (let i = 1; i < summaryData.length - 1; i++) {
-      const clientTotal = summaryData[i][0] === 'TOTAL' 
-        ? totalAllClients 
-        : clientGroups[summaryData[i][0]].reduce((sum, entry) => sum + entry.minutes_spent, 0);
-      const percentage = (clientTotal / totalAllClients * 100).toFixed(1);
-      summaryData[i][3] = `${percentage}%`;
+    if (!timeEntries || timeEntries.length === 0) {
+      toast.warn("Não há registros para gerar relatório");
+      return;
     }
-    
-    // Criar planilha de resumo
-    const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
-    
-    // Definir larguras de coluna para o resumo
-    const summaryColWidths = [
-      { wch: 30 }, // Cliente
-      { wch: 15 }, // Total de Horas
-      { wch: 15 }, // Qtd. Registros
-      { wch: 12 }, // Percentual
-    ];
-    summaryWs['!cols'] = summaryColWidths;
-    
-    // Adicionar a planilha de resumo ao workbook
-    XLSX.utils.book_append_sheet(wb, summaryWs, 'Resumo');
-    
-    // Criar uma planilha para cada cliente
-    Object.entries(clientGroups).forEach(([clientName, entries]) => {
-      // Ordenar entradas por data (mais recente primeiro)
-      const sortedEntries = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
-      
-      // Preparar dados para a planilha
-      const clientData = [];
-      
-      // Cabeçalho da tabela
-      clientData.push(['Data', 'Descrição', 'Categoria', 'Tarefa', 'Minutos', 'Tempo']);
-      
-      // Adicionar entradas
-      sortedEntries.forEach(entry => {
-        clientData.push([
-          entry.date,
-          entry.description,
-          entry.category_name || '',
-          entry.task_title || '',
-          entry.minutes_spent,
-          formatMinutes(entry.minutes_spent)
+
+    try {
+      toast.info("Gerando relatório Excel...", { autoClose: false, toastId: "generating-excel" });
+
+      // Importar a biblioteca xlsx dinamicamente (caso não esteja no bundle)
+      const XLSX = await import('xlsx');
+
+      // Criar um novo workbook
+      const wb = XLSX.utils.book_new();
+
+      // Agrupar dados por cliente
+      const clientGroups = timeEntries.reduce((acc, entry) => {
+        if (!acc[entry.client_name]) {
+          acc[entry.client_name] = [];
+        }
+        acc[entry.client_name].push(entry);
+        return acc;
+      }, {});
+
+      // Planilha de resumo geral
+      const summaryData = [];
+      let totalAllClients = 0;
+
+      // Adicionar linha de cabeçalho para o resumo
+      summaryData.push(['Cliente', 'Total de Horas', 'Qtd. Registros', 'Percentual']);
+
+      // Calcular totais e percentuais
+      Object.entries(clientGroups).forEach(([clientName, entries]) => {
+        const clientTotal = entries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
+        totalAllClients += clientTotal;
+        summaryData.push([
+          clientName,
+          formatMinutes(clientTotal),
+          entries.length,
+          0 // Placeholder para a porcentagem, será calculado depois
         ]);
       });
-      
+
       // Adicionar linha de total
-      const totalMinutes = sortedEntries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
-      clientData.push(['', '', '', 'TOTAL', totalMinutes, formatMinutes(totalMinutes)]);
-      
-      // Criar planilha para o cliente
-      const ws = XLSX.utils.aoa_to_sheet(clientData);
-      
-      // Definir larguras de coluna
-      const colWidths = [
-        { wch: 12 }, // Data
-        { wch: 50 }, // Descrição
-        { wch: 18 }, // Categoria
-        { wch: 25 }, // Tarefa
-        { wch: 10 }, // Minutos
-        { wch: 12 }, // Tempo formatado
+      summaryData.push(['TOTAL', formatMinutes(totalAllClients), timeEntries.length, '100%']);
+
+      // Calcular percentuais
+      for (let i = 1; i < summaryData.length - 1; i++) {
+        const clientTotal = summaryData[i][0] === 'TOTAL'
+          ? totalAllClients
+          : clientGroups[summaryData[i][0]].reduce((sum, entry) => sum + entry.minutes_spent, 0);
+        const percentage = (clientTotal / totalAllClients * 100).toFixed(1);
+        summaryData[i][3] = `${percentage}%`;
+      }
+
+      // Criar planilha de resumo
+      const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
+
+      // Definir larguras de coluna para o resumo
+      const summaryColWidths = [
+        { wch: 30 }, // Cliente
+        { wch: 15 }, // Total de Horas
+        { wch: 15 }, // Qtd. Registros
+        { wch: 12 }, // Percentual
       ];
-      ws['!cols'] = colWidths;
-      
-      // Adicionar a planilha ao workbook
-      const safeSheetName = clientName.replace(/[\[\]\*\?\/\\]/g, '_').substring(0, 31);
-      XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
-    });
-    
-    // Gerar arquivo Excel
-    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    
-    // Criar link para download
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Relatório_Tempo_${new Date().toISOString().split('T')[0]}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    toast.dismiss("generating-excel");
-    toast.success("Relatório Excel gerado com sucesso!");
-  } catch (error) {
-    console.error("Erro ao gerar relatório Excel:", error);
-    toast.dismiss("generating-excel");
-    toast.error("Ocorreu um erro ao gerar o relatório Excel");
-  }
-};
+      summaryWs['!cols'] = summaryColWidths;
+
+      // Adicionar a planilha de resumo ao workbook
+      XLSX.utils.book_append_sheet(wb, summaryWs, 'Resumo');
+
+      // Criar uma planilha para cada cliente
+      Object.entries(clientGroups).forEach(([clientName, entries]) => {
+        // Ordenar entradas por data (mais recente primeiro)
+        const sortedEntries = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        // Preparar dados para a planilha
+        const clientData = [];
+
+        // Cabeçalho da tabela
+        clientData.push(['Data', 'Descrição', 'Categoria', 'Tarefa', 'Minutos', 'Tempo']);
+
+        // Adicionar entradas
+        sortedEntries.forEach(entry => {
+          clientData.push([
+            entry.date,
+            entry.description,
+            entry.category_name || '',
+            entry.task_title || '',
+            entry.minutes_spent,
+            formatMinutes(entry.minutes_spent)
+          ]);
+        });
+
+        // Adicionar linha de total
+        const totalMinutes = sortedEntries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
+        clientData.push(['', '', '', 'TOTAL', totalMinutes, formatMinutes(totalMinutes)]);
+
+        // Criar planilha para o cliente
+        const ws = XLSX.utils.aoa_to_sheet(clientData);
+
+        // Definir larguras de coluna
+        const colWidths = [
+          { wch: 12 }, // Data
+          { wch: 50 }, // Descrição
+          { wch: 18 }, // Categoria
+          { wch: 25 }, // Tarefa
+          { wch: 10 }, // Minutos
+          { wch: 12 }, // Tempo formatado
+        ];
+        ws['!cols'] = colWidths;
+
+        // Adicionar a planilha ao workbook
+        const safeSheetName = clientName.replace(/[\[\]\*\?\/\\]/g, '_').substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
+      });
+
+      // Gerar arquivo Excel
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      // Criar link para download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Relatório_Tempo_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.dismiss("generating-excel");
+      toast.success("Relatório Excel gerado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao gerar relatório Excel:", error);
+      toast.dismiss("generating-excel");
+      toast.error("Ocorreu um erro ao gerar o relatório Excel");
+    }
+  };
 
 
   const filteredEntries = useMemo(() => {
@@ -640,16 +649,16 @@ const TimeEntry = () => {
       }
 
       // Formatar horas se fornecidas
+      // Formatar horas se fornecidas, ou definir como null se vazio
       const submissionData = { ...formData };
 
-      if (submissionData.start_time) {
-        submissionData.start_time = formatTimeForAPI(submissionData.start_time);
-      }
+      submissionData.start_time = submissionData.start_time
+        ? formatTimeForAPI(submissionData.start_time)
+        : null;
 
-      if (submissionData.end_time) {
-        submissionData.end_time = formatTimeForAPI(submissionData.end_time);
-      }
-
+      submissionData.end_time = submissionData.end_time
+        ? formatTimeForAPI(submissionData.end_time)
+        : null;
       // Envio regular do formulário
       createTimeEntryMutation.mutate(submissionData);
     }
@@ -666,6 +675,7 @@ const TimeEntry = () => {
       start_time: "",
       end_time: "",
       original_text: "",
+      task_status_after: "no_change",
     });
     setNaturalLanguageInput("");
     setShowForm(false);
@@ -800,6 +810,14 @@ const TimeEntry = () => {
                   <li key={index} className="text-gray-700">{category.name}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {formData.task_status_after !== 'no_change' && (
+            <div className="mb-4 p-2 bg-blue-50 border border-blue-300 rounded">
+              <p className="text-blue-800 text-sm">
+                <strong>Status da tarefa:</strong> Será alterado para "{getTaskStatusLabel(formData.task_status_after)}"
+              </p>
             </div>
           )}
 
@@ -993,19 +1011,20 @@ const TimeEntry = () => {
                 {showForm ? "Cancelar" : "Registar Entradas de Tempo"}
               </button>
               <button
-              onClick={generateExcelReport}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-200 shadow-sm"
-              disabled={isLoading || timeEntries.length === 0}
-            >
-              <Download size={18} className="mr-2" />
-              Exportar
-            </button>
+                onClick={generateExcelReport}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-200 shadow-sm"
+                disabled={isLoading || timeEntries.length === 0}
+              >
+                <Download size={18} className="mr-2" />
+                Exportar
+              </button>
             </div>
             <ConfirmationDialog
               visible={showConfirmationDialog}
               extractedData={extractedEntries}
               onConfirm={confirmAndCreateEntries}
               onCancel={() => setShowConfirmationDialog(false)}
+
             />
 
             {/* Indicador de processamento */}
@@ -1080,7 +1099,22 @@ const TimeEntry = () => {
                         O sistema irá extrair o tempo gasto e categorizar a sua atividade.
                       </p>
                     </div>
-
+                    <div>
+                      <label className="block text-gray-700 mb-2">Status da Tarefa (Após Registro)</label>
+                      <select
+                        name="task_status_after"
+                        value={formData.task_status_after}
+                        onChange={handleInputChange}
+                        className="w-full p-2 border border-gray-300 rounded-md"
+                      >
+                        <option value="no_change">Sem alteração</option>
+                        <option value="in_progress">Marcar como Em Progresso</option>
+                        <option value="completed">Marcar como Concluída</option>
+                      </select>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Será aplicado à tarefa identificada no texto
+                      </p>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <div>
                         <label className="block text-gray-700 mb-2">Data</label>
@@ -1151,6 +1185,26 @@ const TimeEntry = () => {
                             </option>
                           ))}
                         </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-gray-700 mb-2">Status da Tarefa (Após Registro)</label>
+                        <select
+                          name="task_status_after"
+                          value={formData.task_status_after}
+                          onChange={handleInputChange}
+                          className="w-full p-2 border border-gray-300 rounded-md"
+                          disabled={!formData.task}
+                        >
+                          <option value="no_change">Sem alteração</option>
+                          <option value="in_progress">Marcar como Em Progresso</option>
+                          <option value="completed">Marcar como Concluída</option>
+                        </select>
+                        {!formData.task && (
+                          <p className="text-sm text-gray-500 mt-1">
+                            Selecione uma tarefa para alterar o status
+                          </p>
+                        )}
                       </div>
 
                       <div>
@@ -1296,7 +1350,7 @@ const TimeEntry = () => {
                   placeholder="Pesquisar por descrição, cliente ou tarefa..."
                   className="w-full p-2 pl-10 border border-gray-300 rounded-md"
                 />
-                
+
                 <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
               </div>
             </div>

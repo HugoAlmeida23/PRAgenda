@@ -1,7 +1,6 @@
 import React from 'react';
-import Home from './Home';
+import HomePage from './HomePage';
 import LimitedDashboard from './LimitedDashboard';
-import Header from '../components/Header';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api';
 import { Loader2 } from 'lucide-react';
@@ -102,11 +101,9 @@ const DashboardRouter = () => {
   if (isLoading) {
     return (
       <div className="bg-white main">
-        <Header>
           <div className="bg-white flex justify-center items-center min-h-screen">
             <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
           </div>
-        </Header>
       </div>
     );
   }
@@ -114,17 +111,15 @@ const DashboardRouter = () => {
   if (isError) {
     return (
       <div className="bg-white main">
-        <Header>
           <div className="bg-white flex justify-center items-center min-h-screen">
             <div className="text-red-500">Error loading dashboard data</div>
           </div>
-        </Header>
       </div>
     );
   }
   
   return data.has_full_access 
-    ? <Home dashboardData={data} /> 
+    ? <HomePage dashboardData={data} /> 
     : <LimitedDashboard dashboardData={data} />;
 };
 
