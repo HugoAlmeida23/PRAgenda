@@ -373,14 +373,12 @@ return;      }
     removeMemberMutation.isPending || updateMemberMutation.isPending; // updateMember is for edit
 
   if (isErrorOrganization) {
-    return <Header><ErrorView message={organizationError?.message || "Erro ao carregar dados da organização"} onRetry={refetchOrganization} /></Header>;
+    return <ErrorView message={organizationError?.message || "Erro ao carregar dados da organização"} onRetry={refetchOrganization} />;
   }
 
   return (
     <div className="main">
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} />
-      <Header>
-        <div className="p-6 bg-white-100 min-h-screen" style={{ marginLeft: "3%" }}>
           <div className="max-w-6xl mx-auto">
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-2xl font-bold">Gestão da Organização</h1>
@@ -670,9 +668,7 @@ return;      }
             </div>
           </div>
         </div>
-      </Header>
-    </div>
-  );
+          );
 };
 
 export default OrganizationManagement;

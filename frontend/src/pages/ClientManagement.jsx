@@ -180,30 +180,31 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({ ...client });
 
-  useEffect(() => {
+  // No modal de detalhes, limite os dados retornados
+useEffect(() => {
     const fetchClientDetails = async () => {
-      setLoading(true);
-      try {
-        // Buscar dados em paralelo para melhor performance
-        const [timeEntriesRes, tasksRes, profitabilityRes] = await Promise.all([
-          api.get(`/time-entries/?client=${client.id}&limit=5`),
-          api.get(`/tasks/?client=${client.id}&limit=5`),
-          api.get(`/client-profitability/?client=${client.id}&limit=1`)
-        ]);
+        setLoading(true);
+        try {
+            const [timeEntriesRes, tasksRes, profitabilityRes] = await Promise.all([
+                api.get(`/time-entries/?client=${client.id}&ordering=-date`), // Remove limit, aplique no frontend
+                api.get(`/tasks/?client=${client.id}&ordering=-created_at`),
+                api.get(`/client-profitability/?client=${client.id}&limit=1`)
+            ]);
 
-        setTimeEntries(timeEntriesRes.data || []);
-        setTasks(tasksRes.data || []);
-        setProfitabilityData(profitabilityRes.data.length > 0 ? profitabilityRes.data[0] : null);
-      } catch (error) {
-        console.error("Erro ao buscar detalhes do cliente:", error);
-        toast.error("Falha ao carregar detalhes do cliente");
-      } finally {
-        setLoading(false);
-      }
+            // Limite no frontend
+            setTimeEntries(timeEntriesRes.data?.slice(0, 5) || []);
+            setTasks(tasksRes.data?.slice(0, 5) || []);
+            setProfitabilityData(profitabilityRes.data.length > 0 ? profitabilityRes.data[0] : null);
+        } catch (error) {
+            console.error("Erro ao buscar detalhes do cliente:", error);
+            toast.error("Falha ao carregar detalhes do cliente");
+        } finally {
+            setLoading(false);
+        }
     };
 
     fetchClientDetails();
-  }, [client.id]);
+}, [client.id]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -1243,13 +1244,13 @@ const ClientManagement = () => {
     permissions.canViewAllClients;
 
   if (permissions.loading) {
-    return <Header><LoadingView /></Header>;
+    return <LoadingView />;
   }
 
   if (!canViewClients) {
     return (
       <div className="main">
-        <Header>
+      
           <div className="flex flex-col items-center justify-center min-h-screen p-4">
             <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
               <div className="flex items-start">
@@ -1264,7 +1265,7 @@ const ClientManagement = () => {
               Entre em contato com o administrador da sua organização para solicitar acesso.
             </p>
           </div>
-        </Header>
+      
       </div>
     );
   }
@@ -1277,7 +1278,7 @@ const ClientManagement = () => {
         hideProgressBar={false}
       />
 
-      <Header>
+    
         <motion.div
           initial="hidden"
           animate="visible"
@@ -1772,8 +1773,6 @@ const ClientManagement = () => {
             </motion.div>
           </div>
         </motion.div>
-      </Header>
-
       {/* Modal de Detalhes do Cliente */}
       {showClientModal && selectedClient && (
         <ClientDetailsModal

@@ -17,7 +17,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from .utils import update_profitability_for_period, update_current_month_profitability
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from django.conf import settings
 import requests
 from rest_framework.decorators import api_view, permission_classes
@@ -35,17 +35,25 @@ class ProfileViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        return Profile.objects.filter(user=self.request.user)
+        return Profile.objects.select_related(
+            'user',
+            'organization'
+        ).prefetch_related(
+            'visible_clients__organization',
+            'visible_clients__account_manager'
+        ).filter(user=self.request.user)
     
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user) 
+        serializer.save(user=self.request.user)
 
 class AutoTimeTrackingViewSet(viewsets.ModelViewSet):
     serializer_class = AutoTimeTrackingSerializer
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        return AutoTimeTracking.objects.filter(user=self.request.user).order_by('-start_time')
+        return AutoTimeTracking.objects.select_related(
+            'user'
+        ).filter(user=self.request.user).order_by('-start_time')
     
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -58,10 +66,41 @@ class ClientViewSet(viewsets.ModelViewSet):
         user = self.request.user
         
         try:
-            profile = Profile.objects.get(user=user)
+            # ✅ OTIMIZADO: Uma única query para o profile com organização
+            profile = Profile.objects.select_related(
+                'organization'
+            ).prefetch_related(
+                'visible_clients__organization',
+                'visible_clients__account_manager'
+            ).get(user=user)
             
             # Apply filters if provided
-            queryset = Client.objects.all()
+            # ✅ OTIMIZADO: Base queryset com todas as relações necessárias
+            queryset = Client.objects.select_related(
+                'organization',
+                'account_manager'
+            ).prefetch_related(
+                # Prefetch tarefas relacionadas para evitar N+1 em relatórios
+                Prefetch(
+                    'tasks',
+                    queryset=Task.objects.select_related(
+                        'category',
+                        'assigned_to'
+                    ).filter(status__in=['pending', 'in_progress'])
+                ),
+                # Prefetch registros de tempo recentes
+                Prefetch(
+                    'time_entries',
+                    queryset=TimeEntry.objects.select_related(
+                        'user',
+                        'task',
+                        'category'
+                    ).order_by('-date')
+                ),
+                # Prefetch dados de rentabilidade
+                'profitability_records'
+            )
+            
             is_active = self.request.query_params.get('is_active')
             if is_active is not None:
                 queryset = queryset.filter(is_active=is_active == 'true')
@@ -72,27 +111,25 @@ class ClientViewSet(viewsets.ModelViewSet):
                 
             # Aplicando permissões granulares
             if profile.is_org_admin:
-                # Administradores veem todos os clientes da organização
                 return queryset.filter(organization=profile.organization)
             elif profile.can_view_all_clients:
-                # Usuários com permissão para ver todos os clientes
                 return queryset.filter(organization=profile.organization)
             else:
-                # Outros usuários só veem clientes explicitamente concedidos
-                return profile.visible_clients.all().filter(id__in=queryset)
+                # ✅ OTIMIZADO: Usar prefetch já carregado
+                visible_client_ids = [c.id for c in profile.visible_clients.all()]
+                return queryset.filter(id__in=visible_client_ids)
                 
         except Profile.DoesNotExist:
             return Client.objects.none()
     
     def perform_create(self, serializer):
-        # Verificar se o usuário tem permissão para criar clientes
         try:
-            profile = Profile.objects.get(user=self.request.user)
+            # ✅ OTIMIZADO: select_related para organização
+            profile = Profile.objects.select_related('organization').get(user=self.request.user)
             
             if not (profile.is_org_admin or profile.can_create_clients):
                 raise PermissionDenied("Você não tem permissão para criar clientes")
                 
-            # Set the organization based on the user's profile
             if profile.organization:
                 serializer.save(organization=profile.organization)
             else:
@@ -101,20 +138,20 @@ class ClientViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Perfil de usuário não encontrado")
 
     def update(self, request, *args, **kwargs):
-        # Verificar se o usuário tem permissão para editar clientes
         try:
-            profile = Profile.objects.get(user=request.user)
+            # ✅ OTIMIZADO: select_related para organização
+            profile = Profile.objects.select_related('organization').get(user=request.user)
             client = self.get_object()
             
             if not (profile.is_org_admin or profile.can_edit_clients):
                 raise PermissionDenied("Você não tem permissão para editar clientes")
                 
-            # Verificar se o cliente pertence à mesma organização
             if client.organization != profile.organization:
                 raise PermissionDenied("Este cliente não pertence à sua organização")
                 
-            # Para usuários que não podem ver todos os clientes, verificar se têm acesso a este cliente
+            # Para usuários que não podem ver todos os clientes
             if not (profile.is_org_admin or profile.can_view_all_clients):
+                # ✅ OTIMIZADO: Usar exists() em vez de filter().exists()
                 if not profile.visible_clients.filter(id=client.id).exists():
                     raise PermissionDenied("Você não tem acesso a este cliente")
             
@@ -124,7 +161,6 @@ class ClientViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Perfil de usuário não encontrado")
 
     def destroy(self, request, *args, **kwargs):
-        # Verificar se o usuário tem permissão para excluir clientes
         try:
             profile = Profile.objects.get(user=request.user)
             
@@ -137,19 +173,14 @@ class ClientViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['patch'])
     def toggle_status(self, request, pk=None):
-        """
-        Alterna o status de ativo/inativo de um cliente
-        """
         client = self.get_object()
         
-        # Verificar se o usuário tem permissão para alterar o status do cliente
         try:
             profile = Profile.objects.get(user=request.user)
             
             if not (profile.is_org_admin or profile.can_change_client_status):
                 raise PermissionDenied("Você não tem permissão para alterar o status do cliente")
                 
-            # Alternar o status
             client.is_active = not client.is_active
             client.save()
             
@@ -172,10 +203,33 @@ class TaskViewSet(viewsets.ModelViewSet):
         user = self.request.user
         
         try:
-            profile = Profile.objects.get(user=user)
+            # ✅ OTIMIZADO: Uma query para profile com organização
+            profile = Profile.objects.select_related('organization').get(user=user)
             
-            # Base queryset
-            base_queryset = Task.objects.all()
+            # ✅ OTIMIZADO: Base queryset com todas as relações
+            base_queryset = Task.objects.select_related(
+                'client__organization',
+                'client__account_manager',
+                'category',
+                'assigned_to',
+                'created_by',
+                'workflow',
+                'current_workflow_step'
+            ).prefetch_related(
+                # Prefetch time entries para cálculos de tempo gasto
+                Prefetch(
+                    'time_entries',
+                    queryset=TimeEntry.objects.select_related('user')
+                ),
+                # Prefetch aprovações de workflow
+                Prefetch(
+                    'approvals',
+                    queryset=TaskApproval.objects.select_related(
+                        'workflow_step',
+                        'approved_by'
+                    )
+                )
+            )
             
             # Apply filters if provided
             status_param = self.request.query_params.get('status')
@@ -183,77 +237,70 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status_values = status_param.split(',')
                 base_queryset = base_queryset.filter(status__in=status_values)
                 
-            # Filter by client if provided
             client_id = self.request.query_params.get('client')
             if client_id:
                 base_queryset = base_queryset.filter(client_id=client_id)
             
-            # Filter overdue tasks if requested
             overdue_param = self.request.query_params.get('overdue')
             if overdue_param and overdue_param.lower() == 'true':
                 today = timezone.now()
                 base_queryset = base_queryset.filter(deadline__lt=today.date())
                 
-            # Filter by deadline
             due_param = self.request.query_params.get('due')
             if due_param:
                 today = timezone.now().date()
                 if due_param == 'today':
                     base_queryset = base_queryset.filter(deadline__date=today)
                 elif due_param == 'this-week':
-                    # Calculate first and last day of current week
                     week_start = today - timezone.timedelta(days=today.weekday())
                     week_end = week_start + timezone.timedelta(days=6)
                     base_queryset = base_queryset.filter(deadline__date__range=[week_start, week_end])
             
-            # Verificar organização
             if not profile.organization:
                 return Task.objects.none()
                 
             # Apply permission-based filtering
             if profile.is_org_admin:
-                # Admins see all tasks in their organization
                 if profile.organization:
                     return base_queryset.filter(client__organization=profile.organization)
                 return Task.objects.none()
             elif profile.can_view_all_tasks:
-                # Users with permission to view all tasks
                 if profile.organization:
                     return base_queryset.filter(client__organization=profile.organization)
                 return Task.objects.none()
             else:
-                # Regular users only see tasks for their visible clients or assigned to them
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
+                # ✅ OTIMIZADO: Usar values_list para IDs e uma query
+                visible_client_ids = list(
+                    profile.visible_clients.values_list('id', flat=True)
+                )
                 return base_queryset.filter(
                     Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
                 ).distinct()
                 
         except Profile.DoesNotExist:
             return Task.objects.none()
-    
+        
     def perform_create(self, serializer):
-        # Verificar se o usuário tem permissão para criar tarefas
         try:
-            profile = Profile.objects.get(user=self.request.user)
+            profile = Profile.objects.select_related('organization').get(user=self.request.user)
             
             if not (profile.is_org_admin or profile.can_create_tasks):
                 raise PermissionDenied("Você não tem permissão para criar tarefas")
                 
-            # Verificar se o cliente selecionado está acessível para o usuário
             client_id = self.request.data.get('client')
             if client_id:
-                client = Client.objects.get(id=client_id)
+                # ✅ OTIMIZADO: select_related para organização do cliente
+                client = Client.objects.select_related('organization').get(id=client_id)
                 if not profile.can_access_client(client):
                     raise PermissionDenied("Você não tem acesso a este cliente")
             
-            # Criar a tarefa
             serializer.save(created_by=self.request.user)
             
         except Profile.DoesNotExist:
             raise PermissionDenied("Perfil de usuário não encontrado")
         except Client.DoesNotExist:
             raise PermissionDenied("Cliente não encontrado")
-            
+       
     def update(self, request, *args, **kwargs):
         # Verificar se o usuário tem permissão para editar esta tarefa
         try:
@@ -348,51 +395,65 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        user = self.request.user
-        
-        try:
-            profile = Profile.objects.get(user=user)
+            user = self.request.user
             
-            # Base queryset
-            base_queryset = TimeEntry.objects.all()
-            
-            # Filter by date range if provided
-            start_date = self.request.query_params.get('start_date')
-            end_date = self.request.query_params.get('end_date')
-            if start_date and end_date:
-                base_queryset = base_queryset.filter(date__range=[start_date, end_date])
+            try:
+                # ✅ OTIMIZADO: Profile com organização
+                profile = Profile.objects.select_related('organization').get(user=user)
                 
-            # Filter by client if provided
-            client_id = self.request.query_params.get('client')
-            if client_id:
-                base_queryset = base_queryset.filter(client_id=client_id)
+                # ✅ OTIMIZADO: Base queryset com todas as relações necessárias
+                base_queryset = TimeEntry.objects.select_related(
+                    'user',
+                    'client__organization',
+                    'client__account_manager',
+                    'task__category',
+                    'task__assigned_to',
+                    'category'
+                ).prefetch_related(
+                    # Prefetch apenas se necessário para relatórios
+                    # 'task__time_entries'  # Remover se não usado
+                )
                 
-            # Filter by user if provided
-            user_id = self.request.query_params.get('user')
-            if user_id:
-                base_queryset = base_queryset.filter(user_id=user_id)
-            
-            # Apply permission-based filtering
-            if profile.is_org_admin:
-                # Admins can see all time entries in the organization
-                if profile.organization:
-                    return base_queryset.filter(client__organization=profile.organization)
-                return TimeEntry.objects.none()
-            elif profile.can_view_team_time:
-                # Users with permission to view team time
-                if profile.organization:
-                    return base_queryset.filter(client__organization=profile.organization)
-                return TimeEntry.objects.none()
-            else:
-                # Regular users only see time entries for their visible clients or their own entries
-                visible_client_ids = list(profile.visible_clients.values_list('id', flat=True))
-                return base_queryset.filter(
-                    Q(client_id__in=visible_client_ids) | Q(user=user)
-                ).distinct()
+                # Apply filters
+                start_date = self.request.query_params.get('start_date')
+                end_date = self.request.query_params.get('end_date')
+                if start_date and end_date:
+                    base_queryset = base_queryset.filter(date__range=[start_date, end_date])
+                    
+                client_id = self.request.query_params.get('client')
+                if client_id:
+                    base_queryset = base_queryset.filter(client_id=client_id)
+                    
+                user_id = self.request.query_params.get('user')
+                if user_id:
+                    base_queryset = base_queryset.filter(user_id=user_id)
                 
-        except Profile.DoesNotExist:
-            # If no profile, only show the user's own entries
-            return TimeEntry.objects.filter(user=user)
+                # Apply permission-based filtering
+                if profile.is_org_admin:
+                    if profile.organization:
+                        return base_queryset.filter(client__organization=profile.organization)
+                    return TimeEntry.objects.none()
+                elif profile.can_view_team_time:
+                    if profile.organization:
+                        return base_queryset.filter(client__organization=profile.organization)
+                    return TimeEntry.objects.none()
+                else:
+                    # ✅ OTIMIZADO: Usar values_list para evitar query extra
+                    visible_client_ids = list(
+                        profile.visible_clients.values_list('id', flat=True)
+                    )
+                    return base_queryset.filter(
+                        Q(client_id__in=visible_client_ids) | Q(user=user)
+                    ).distinct()
+                    
+            except Profile.DoesNotExist:
+                return TimeEntry.objects.filter(user=user).select_related(
+                    'user',
+                    'client',
+                    'task',
+                    'category'
+                )
+
     
     def perform_create(self, serializer):
         # Verificar se o usuário tem permissão para registrar tempo
@@ -571,16 +632,21 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        queryset = Expense.objects.all()
-        # Filter by date range if provided
+        # ✅ OTIMIZADO: select_related para cliente e criador
+        queryset = Expense.objects.select_related(
+            'client__organization',
+            'created_by'
+        )
+        
         start_date = self.request.GET.get('start_date')
         end_date = self.request.GET.get('end_date')
         if start_date and end_date:
             queryset = queryset.filter(date__range=[start_date, end_date])
-        # Filter by client if provided
+            
         client_id = self.request.GET.get('client')
         if client_id:
             queryset = queryset.filter(client_id=client_id)
+            
         return queryset
     
     def perform_create(self, serializer):
@@ -594,26 +660,28 @@ class ClientProfitabilityViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         
         try:
-            profile = Profile.objects.get(user=user)
+            # ✅ OTIMIZADO: Profile com organização
+            profile = Profile.objects.select_related('organization').get(user=user)
             
-            # Check permission to view profitability data
             if not (profile.is_org_admin or profile.can_view_profitability):
                 return ClientProfitability.objects.none()
             
-            base_queryset = ClientProfitability.objects.all()
+            # ✅ OTIMIZADO: select_related para cliente e organização
+            base_queryset = ClientProfitability.objects.select_related(
+                'client__organization',
+                'client__account_manager'
+            )
             
-            # Filter by year/month if provided
+            # Apply filters
             year = self.request.query_params.get('year')
             month = self.request.query_params.get('month')
             if year and month:
                 base_queryset = base_queryset.filter(year=year, month=month)
             
-            # Filter by client if provided
             client_id = self.request.query_params.get('client')
             if client_id:
                 base_queryset = base_queryset.filter(client_id=client_id)
                 
-            # Filter by profitability if specified
             is_profitable = self.request.query_params.get('is_profitable')
             if is_profitable is not None:
                 is_profitable_bool = is_profitable.lower() == 'true'
@@ -622,11 +690,12 @@ class ClientProfitabilityViewSet(viewsets.ReadOnlyModelViewSet):
             # Apply client visibility filtering
             if profile.organization:
                 if profile.is_org_admin or profile.can_view_all_clients:
-                    # Admins see all profitability data in the organization
                     return base_queryset.filter(client__organization=profile.organization)
                 else:
-                    # Regular users only see profitability data for visible clients
-                    visible_client_ids = profile.visible_clients.values_list('id', flat=True)
+                    # ✅ OTIMIZADO: values_list para evitar query extra
+                    visible_client_ids = list(
+                        profile.visible_clients.values_list('id', flat=True)
+                    )
                     return base_queryset.filter(client_id__in=visible_client_ids)
             
             return ClientProfitability.objects.none()
@@ -1060,8 +1129,15 @@ class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        # Aplicar filtragem com base no status, se fornecido
-        queryset = WorkflowDefinition.objects.all()
+        queryset = WorkflowDefinition.objects.select_related(
+            'created_by'
+        ).prefetch_related(
+            Prefetch(
+                'steps',
+                queryset=WorkflowStep.objects.select_related('assign_to').order_by('order')
+            )
+        )
+        
         is_active = self.request.query_params.get('is_active')
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active == 'true')
@@ -1191,7 +1267,6 @@ class TaskApprovalViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(approved_by=self.request.user)
         
-# Adicionar ao views.py existente
 class OrganizationViewSet(viewsets.ModelViewSet):
     """
     ViewSet para visualizar e editar organizações.
@@ -1204,19 +1279,37 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         
-        # Se for um superusuário/admin, pode ver todas as organizações
         if user.is_superuser:
-            return Organization.objects.all()
+            # ✅ OTIMIZADO: prefetch para membros e clientes
+            return Organization.objects.prefetch_related(
+                Prefetch(
+                    'members',
+                    queryset=Profile.objects.select_related('user')
+                ),
+                Prefetch(
+                    'clients',
+                    queryset=Client.objects.select_related('account_manager')
+                )
+            )
             
-        # Tentar obter o perfil do usuário
         try:
-            profile = Profile.objects.get(user=user)
+            # ✅ OTIMIZADO: select_related para organização
+            profile = Profile.objects.select_related('organization').get(user=user)
             
-            # Se tiver uma organização associada, retorna essa organização
             if profile.organization:
-                return Organization.objects.filter(id=profile.organization.id)
+                return Organization.objects.filter(
+                    id=profile.organization.id
+                ).prefetch_related(
+                    Prefetch(
+                        'members',
+                        queryset=Profile.objects.select_related('user')
+                    ),
+                    Prefetch(
+                        'clients',
+                        queryset=Client.objects.select_related('account_manager')
+                    )
+                )
             
-            # Caso não tenha organização
             return Organization.objects.none()
                 
         except Profile.DoesNotExist:
@@ -1814,194 +1907,171 @@ def dashboard_summary(request):
     user = request.user
     
     try:
-        # Get user profile
-        profile = Profile.objects.get(user=user)
+        # ✅ OTIMIZADO: Uma única query para profile com organização
+        profile = Profile.objects.select_related('organization').get(user=user)
         
-        # Base response dictionary with permissions information
+        # Base response com permissões
         response_data = {
-            # Permissões de administração
             'has_full_access': profile.is_org_admin,
-            
-            # Permissões para visualização de clientes
             'can_view_all_clients': profile.can_view_all_clients,
             'can_create_clients': profile.can_create_clients,
             'can_edit_clients': profile.can_edit_clients,
             'can_delete_clients': profile.can_delete_clients,
             'can_change_client_status': profile.can_change_client_status,
-            
-            # Permissões para gestão de tarefas
             'can_assign_tasks': profile.can_assign_tasks,
             'can_create_tasks': profile.can_create_tasks,
             'can_edit_all_tasks': profile.can_edit_all_tasks,
             'can_delete_tasks': profile.can_delete_tasks,
             'can_view_all_tasks': profile.can_view_all_tasks,
             'can_approve_tasks': profile.can_approve_tasks,
-            
-            # Permissões para gestão de tempo
             'can_log_time': profile.can_log_time,
             'can_edit_own_time': profile.can_edit_own_time,
             'can_edit_all_time': profile.can_edit_all_time,
             'can_view_team_time': profile.can_view_team_time,
-            
-            # Permissões financeiras
             'can_view_client_fees': profile.can_view_client_fees,
             'can_edit_client_fees': profile.can_edit_client_fees,
             'can_manage_expenses': profile.can_manage_expenses,
             'can_view_profitability': profile.can_view_profitability,
             'can_view_team_profitability': profile.can_view_team_profitability,
             'can_view_organization_profitability': profile.can_view_organization_profitability,
-            
-            # Permissões de relatórios e análises
             'can_view_analytics': profile.can_view_analytics,
             'can_export_reports': profile.can_export_reports,
             'can_create_custom_reports': profile.can_create_custom_reports,
             'can_schedule_reports': profile.can_schedule_reports,
-            
-            # Permissões de workflow
             'can_create_workflows': profile.can_create_workflows,
             'can_edit_workflows': profile.can_edit_workflows,
             'can_assign_workflows': profile.can_assign_workflows,
             'can_manage_workflows': profile.can_manage_workflows,
         }
         
-        # Calculate today and recent dates
         today = timezone.now().date()
         seven_days_ago = today - timezone.timedelta(days=7)
-        
-        # Get organization ID if user belongs to one
         org_id = profile.organization.id if profile.organization else None
         
-        # Clients data - filtered by permissions
+        # ✅ OTIMIZADO: Clients data com uma query
         if profile.is_org_admin or profile.can_view_all_clients:
-            # User can see all clients in their organization
-            clients_queryset = Client.objects.filter(organization=org_id)
+            clients_count = Client.objects.filter(
+                organization_id=org_id,
+                is_active=True
+            ).count()
         else:
-            # User can only see assigned clients
-            clients_queryset = profile.visible_clients.all()
+            # ✅ OTIMIZADO: count() direto sem carregar objetos
+            clients_count = profile.visible_clients.filter(is_active=True).count()
             
-        response_data['active_clients'] = clients_queryset.filter(is_active=True).count()
+        response_data['active_clients'] = clients_count
         
-        # Tasks data - filtered by permissions
+        # ✅ OTIMIZADO: Tasks data com queries agregadas
         if profile.is_org_admin or profile.can_view_all_tasks:
-            # User can see all tasks in the organization
-            tasks_queryset = Task.objects.filter(client__organization=org_id)
+            task_stats = Task.objects.filter(
+                client__organization_id=org_id
+            ).aggregate(
+                active_tasks=Count('id', filter=~Q(status='completed')),
+                overdue_tasks=Count('id', filter=Q(status='pending', deadline__lt=today)),
+                today_tasks=Count('id', filter=Q(deadline__date=today)),
+                completed_week=Count('id', filter=Q(status='completed', completed_at__gte=seven_days_ago))
+            )
         else:
-            # User can only see tasks for visible clients or assigned to them
-            visible_client_ids = clients_queryset.values_list('id', flat=True)
-            tasks_queryset = Task.objects.filter(
+            # ✅ OTIMIZADO: Usar values_list e agregação
+            visible_client_ids = list(profile.visible_clients.values_list('id', flat=True))
+            task_stats = Task.objects.filter(
                 Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
-            ).distinct()
+            ).distinct().aggregate(
+                active_tasks=Count('id', filter=~Q(status='completed')),
+                overdue_tasks=Count('id', filter=Q(status='pending', deadline__lt=today)),
+                today_tasks=Count('id', filter=Q(deadline__date=today)),
+                completed_week=Count('id', filter=Q(status='completed', completed_at__gte=seven_days_ago))
+            )
         
-        response_data['active_tasks'] = tasks_queryset.exclude(status='completed').count()
-        response_data['overdue_tasks'] = tasks_queryset.filter(
-            status='pending',
-            deadline__lt=today
-        ).count()
-        response_data['today_tasks'] = tasks_queryset.filter(
-            deadline__date=today
-        ).count()
-        response_data['completed_tasks_week'] = tasks_queryset.filter(
-            status='completed',
-            completed_at__gte=seven_days_ago
-        ).count()
+        response_data.update({
+            'active_tasks': task_stats['active_tasks'] or 0,
+            'overdue_tasks': task_stats['overdue_tasks'] or 0,
+            'today_tasks': task_stats['today_tasks'] or 0,
+            'completed_tasks_week': task_stats['completed_week'] or 0,
+        })
         
-        # Time entries data - filtered by permissions
+        # ✅ OTIMIZADO: Time entries com agregação
         if profile.is_org_admin or profile.can_view_team_time:
-            # User can see all time entries in the organization
-            time_entries = TimeEntry.objects.filter(client__organization=org_id)
+            time_stats = TimeEntry.objects.filter(
+                client__organization_id=org_id
+            ).aggregate(
+                today_time=Sum('minutes_spent', filter=Q(date=today)),
+                week_time=Sum('minutes_spent', filter=Q(date__gte=seven_days_ago, date__lte=today))
+            )
         else:
-            # User can only see time entries for visible clients or their own entries
-            visible_client_ids = clients_queryset.values_list('id', flat=True)
-            time_entries = TimeEntry.objects.filter(
+            visible_client_ids = list(profile.visible_clients.values_list('id', flat=True))
+            time_stats = TimeEntry.objects.filter(
                 Q(client_id__in=visible_client_ids) | Q(user=user)
-            ).distinct()
+            ).distinct().aggregate(
+                today_time=Sum('minutes_spent', filter=Q(date=today)),
+                week_time=Sum('minutes_spent', filter=Q(date__gte=seven_days_ago, date__lte=today))
+            )
         
-        response_data['time_tracked_today'] = time_entries.filter(
-            date=today
-        ).aggregate(total=Sum('minutes_spent'))['total'] or 0
+        response_data.update({
+            'time_tracked_today': time_stats['today_time'] or 0,
+            'time_tracked_week': time_stats['week_time'] or 0,
+        })
         
-        response_data['time_tracked_week'] = time_entries.filter(
-            date__gte=seven_days_ago,
-            date__lte=today
-        ).aggregate(total=Sum('minutes_spent'))['total'] or 0
-        
-        # Incluir dados de rentabilidade se o usuário tiver permissão
+        # ✅ OTIMIZADO: Profitability com agregação
         if profile.can_view_profitability or profile.can_view_team_profitability or profile.can_view_organization_profitability:
-            # Determinar a visibilidade de clientes para rentabilidade
             if profile.is_org_admin or profile.can_view_organization_profitability:
-                # Ver rentabilidade de toda a organização
-                profitability_clients = Client.objects.filter(organization=org_id)
+                profit_clients = Client.objects.filter(organization_id=org_id)
             elif profile.can_view_team_profitability:
-                # Ver rentabilidade de equipe (clientes associados a usuários de mesma função)
                 team_user_ids = Profile.objects.filter(
                     organization=profile.organization,
                     role=profile.role
                 ).values_list('user', flat=True)
-                profitability_clients = Client.objects.filter(
-                    Q(organization=org_id),
-                    Q(account_manager__in=team_user_ids)
+                profit_clients = Client.objects.filter(
+                    organization_id=org_id,
+                    account_manager__in=team_user_ids
                 )
             else:
-                # Ver rentabilidade apenas dos próprios clientes
-                visible_client_ids = clients_queryset.values_list('id', flat=True)
-                profitability_clients = Client.objects.filter(id__in=visible_client_ids)
+                profit_clients = profile.visible_clients.all()
             
-            # Buscar dados de rentabilidade
-            profitability_data = ClientProfitability.objects.filter(
-                client_id__in=profitability_clients.values_list('id', flat=True)
-            )
-            
-            # Contagem de clientes não rentáveis
-            response_data['unprofitable_clients'] = profitability_data.filter(
-                is_profitable=False
-            ).count()
-            
-            # Dados agregados de rentabilidade
-            profit_stats = profitability_data.aggregate(
+            # ✅ OTIMIZADO: Uma query agregada para todos os dados de rentabilidade
+            profit_stats = ClientProfitability.objects.filter(
+                client_id__in=profit_clients.values_list('id', flat=True)
+            ).aggregate(
+                unprofitable_count=Count('id', filter=Q(is_profitable=False)),
                 total_revenue=Sum('monthly_fee'),
-                total_cost=Sum('time_cost') + Sum('total_expenses'),
-                total_profit=Sum('profit')
+                total_time_cost=Sum('time_cost'),
+                total_expenses=Sum('total_expenses'),
+                avg_margin=Avg('profit_margin', filter=~Q(profit_margin=None))
             )
             
-            if profit_stats['total_revenue']:
-                response_data['total_revenue'] = profit_stats['total_revenue']
-                response_data['total_cost'] = profit_stats['total_cost']
-                response_data['total_profit'] = profit_stats['total_profit']
-                
-                # Calcular margem de lucro média
-                avg_margin = profitability_data.exclude(profit_margin=None).aggregate(
-                    avg=Avg('profit_margin')
-                )['avg']
-                response_data['average_profit_margin'] = avg_margin or 0
+            response_data.update({
+                'unprofitable_clients': profit_stats['unprofitable_count'] or 0,
+                'total_revenue': profit_stats['total_revenue'] or 0,
+                'total_cost': (profit_stats['total_time_cost'] or 0) + (profit_stats['total_expenses'] or 0),
+                'average_profit_margin': profit_stats['avg_margin'] or 0,
+            })
         
-        # Dados de workflows se o usuário tiver permissão relacionada
+        # ✅ OTIMIZADO: Workflow data se necessário
         if profile.can_create_workflows or profile.can_edit_workflows or profile.can_assign_workflows:
-            response_data['active_workflows'] = WorkflowDefinition.objects.filter(
-                is_active=True
-            ).count()
+            workflow_stats = {
+                'active_workflows': WorkflowDefinition.objects.filter(is_active=True).count(),
+                'tasks_with_workflows': Task.objects.filter(
+                    client__organization_id=org_id
+                ).exclude(workflow=None).count()
+            }
+            response_data.update(workflow_stats)
             
-            # Tarefas com workflows ativos
-            response_data['tasks_with_workflows'] = tasks_queryset.exclude(
-                workflow=None
-            ).count()
-            
-            # Tarefas aguardando aprovação se o usuário pode aprovar
             if profile.can_approve_tasks:
-                tasks_needing_approval = tasks_queryset.filter(
-                    Q(current_workflow_step__requires_approval=True)
+                # ✅ OTIMIZADO: Query complexa mas otimizada para aprovações pendentes
+                tasks_needing_approval = Task.objects.filter(
+                    client__organization_id=org_id,
+                    current_workflow_step__requires_approval=True
                 ).exclude(
                     id__in=TaskApproval.objects.filter(
-                        task__in=tasks_queryset,
-                        approved=True
+                        approved=True,
+                        task__client__organization_id=org_id
                     ).values_list('task', flat=True)
-                )
+                ).count()
                 
-                response_data['tasks_needing_approval'] = tasks_needing_approval.count()
+                response_data['tasks_needing_approval'] = tasks_needing_approval
         
         return Response(response_data)
         
     except Profile.DoesNotExist:
-        # Resposta básica para usuários sem perfil
         return Response({
             'error': 'User profile not found',
             'has_full_access': False,

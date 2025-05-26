@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useCallback } from "react";
-import { toast } from "react-toastify";
 import api from "../api";
 import "../styles/Home.css";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from '@tanstack/react-query';
+import { toast, ToastContainer } from "react-toastify";
 import {
   CheckCircle,
   Clock,
@@ -27,6 +27,91 @@ import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
 import { Loader2 } from 'lucide-react';
 
+const UniversalBackground = () => {
+  const particles = Array.from({ length: 12 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    delay: Math.random() * 2,
+    duration: 3 + Math.random() * 4,
+    size: 4 + Math.random() * 8
+  }));
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      overflow: 'hidden',
+      zIndex: -1,
+      pointerEvents: 'none'
+    }}>
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)'
+      }} />
+      
+      <motion.div 
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.4
+        }}
+        animate={{
+          background: [
+            'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
+          ]
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          repeatType: "reverse"
+        }}
+      />
+
+      {particles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          style={{
+            position: 'absolute',
+            width: '6px',
+            height: '6px',
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            borderRadius: '50%',
+            left: `${particle.x}%`,
+            top: `${particle.y}%`
+          }}
+          animate={{
+            y: [-particle.size, particle.size],
+            x: [-particle.size/2, particle.size/2],
+            opacity: [0.1, 0.4, 0.1],
+            scale: [0.5, 1, 0.5]
+          }}
+          transition={{
+            duration: particle.duration,
+            repeat: Infinity,
+            repeatType: "reverse",
+            delay: particle.delay,
+            ease: "easeInOut"
+          }}
+        />
+      ))}
+
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        opacity: 0.02,
+        backgroundImage: `
+          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+        `,
+        backgroundSize: '50px 50px'
+      }} />
+    </div>
+  );
+};
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "Pending" },
@@ -90,6 +175,8 @@ const fetchTaskManagementData = async () => {
 
 // --- Main Component ---
 const TaskManagement = () => {
+  const permissions = usePermissions(); // AQUI!
+
   // Function to initialize or reset form data
   const getInitialFormData = () => ({
     title: "", description: "", client: "", category: "", assigned_to: "",
@@ -417,7 +504,6 @@ const TaskManagement = () => {
 
   // Confirm and trigger delete
   const confirmDelete = useCallback((taskId) => {
-    const permissions = usePermissions();
     if (!permissions.isOrgAdmin && !permissions.canDeleteTasks) {
       toast.error("Você não tem permissão para excluir tarefas");
       return;
@@ -426,7 +512,7 @@ const TaskManagement = () => {
     if (window.confirm("Are you sure you want to delete this task? This action cannot be undone.")) {
       deleteTaskMutation.mutate(taskId);
     }
-  }, [deleteTaskMutation]);
+  }, [deleteTaskMutation, permissions]);
 
   // Trigger status update
   const updateTaskStatusHandler = useCallback((task, newStatus) => {
@@ -495,8 +581,6 @@ const TaskManagement = () => {
     return <ErrorView message={error?.message || "Could not load task data."} onRetry={refetch} />;
   }
 
-  // Obter permissões do contexto
-  const permissions = usePermissions();
 
   // Verificar permissões para mostrar mensagem de acesso restrito
   if (permissions.loading) {
@@ -530,13 +614,19 @@ const TaskManagement = () => {
 
 
   return (
-    <div className="main">
-     
-        <div
-          className="p-6 bg-white-100 min-h-screen"
-          style={{ marginLeft: "3%" }}
-        >
-          <div className="max-w-6xl mx-auto">
+    <div style={{
+      position: 'relative',
+      minHeight: '100vh',
+      color: 'white'
+    }}>
+<UniversalBackground />
+<ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        style={{ zIndex: 9999 }}
+      />
+
             <div className="flex justify-between items-center mb-6">
               <h1 className="text-2xl font-bold">Task Management</h1>
               <div className="flex space-x-3">
@@ -871,7 +961,7 @@ const TaskManagement = () => {
                     onChange={handleFilterChange}
                     className="w-full p-2 border border-gray-300 rounded-md"
                   >
-                    <option value="">All Statuses</option>
+                    <option value="">All Status</option>
                     {STATUS_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -1190,10 +1280,6 @@ const TaskManagement = () => {
               )}
             </div>
           </div>
-
-        </div>
- 
-    </div>
   );
 };
 

@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api";
-import "../styles/Home.css";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   DollarSign,
@@ -20,14 +19,23 @@ import {
   Briefcase,
   Loader2,
   CreditCard,
+  Filter,
+  Search,
+  Eye,
+  EyeOff,
+  Sparkles,
+  Brain,
+  Target,
+  Activity,
+  BarChart3,
+  TrendingDown
 } from "lucide-react";
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
-import { containerVariants, itemVariants, cardVariants, months, generateYears, years } from "../variants/variants"; // Importing animation variants
 
-// Data fetching functions (outside component)
+
+// Data fetching functions
 const fetchProfitabilityData = async (year, month) => {
-  // Then fetch updated data
   const response = await api.get(`/client-profitability/?year=${year}&month=${month}`);
   return response.data;
 };
@@ -37,10 +45,115 @@ const fetchClients = async () => {
   return response.data;
 };
 
+// Componente de fundo universal (mesmo da dashboard)
+const UniversalBackground = () => {
+  const particles = Array.from({ length: 12 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    delay: Math.random() * 2,
+    duration: 3 + Math.random() * 4,
+    size: 4 + Math.random() * 8
+  }));
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      overflow: 'hidden',
+      zIndex: -1,
+      pointerEvents: 'none'
+    }}>
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)'
+      }} />
+      
+      <motion.div 
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.4
+        }}
+        animate={{
+          background: [
+            'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
+          ]
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          repeatType: "reverse"
+        }}
+      />
+
+      {particles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          style={{
+            position: 'absolute',
+            width: '6px',
+            height: '6px',
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            borderRadius: '50%',
+            left: `${particle.x}%`,
+            top: `${particle.y}%`
+          }}
+          animate={{
+            y: [-particle.size, particle.size],
+            x: [-particle.size/2, particle.size/2],
+            opacity: [0.1, 0.4, 0.1],
+            scale: [0.5, 1, 0.5]
+          }}
+          transition={{
+            duration: particle.duration,
+            repeat: Infinity,
+            repeatType: "reverse",
+            delay: particle.delay,
+            ease: "easeInOut"
+          }}
+        />
+      ))}
+
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        opacity: 0.02,
+        backgroundImage: `
+          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+        `,
+        backgroundSize: '50px 50px'
+      }} />
+    </div>
+  );
+};
+
+// Dados mock para demonstração
+const months = [
+  { value: 1, label: "Janeiro" },
+  { value: 2, label: "Fevereiro" },
+  { value: 3, label: "Março" },
+  { value: 4, label: "Abril" },
+  { value: 5, label: "Maio" },
+  { value: 6, label: "Junho" },
+  { value: 7, label: "Julho" },
+  { value: 8, label: "Agosto" },
+  { value: 9, label: "Setembro" },
+  { value: 10, label: "Outubro" },
+  { value: 11, label: "Novembro" },
+  { value: 12, label: "Dezembro" },
+];
+
+const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+
 const ClientProfitability = () => {
   const queryClient = useQueryClient();
 
-  // Local state
+  // Estados locais
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [sortConfig, setSortConfig] = useState({
@@ -51,13 +164,14 @@ const ClientProfitability = () => {
     client: "",
     profitableOnly: false,
     unprofitableOnly: false,
+    searchTerm: ""
   });
   const [expandedClients, setExpandedClients] = useState({});
+  const [showFilters, setShowFilters] = useState(false);
 
-  // Get permissions from context
+  // Permissões
   const permissions = usePermissions();
   
-  // Check if user can view profitability data
   const canViewProfitability = useMemo(() => {
     return permissions.isOrgAdmin ||
       permissions.canViewProfitability ||
@@ -70,97 +184,68 @@ const ClientProfitability = () => {
     permissions.canViewOrganizationProfitability
   ]);
 
-  // React Query hooks - Only fetch data if user has permission
-  const {
-    data: profitabilityData = [],
-    isLoading: isProfitabilityLoading,
-    isError: isProfitabilityError,
-    error: profitabilityError,
-    refetch: refetchProfitability
-  } = useQuery({
-    queryKey: ['profitability', selectedYear, selectedMonth],
-    queryFn: () => fetchProfitabilityData(selectedYear, selectedMonth),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    enabled: canViewProfitability, // Only fetch if user has permission
-  });
+  // React Query hooks - dados reais
+const {
+  data: profitabilityData = [],
+  isLoading: isProfitabilityLoading,
+  isError: isProfitabilityError,
+  error: profitabilityError,
+  refetch: refetchProfitability
+} = useQuery({
+  queryKey: ['profitability', selectedYear, selectedMonth],
+  queryFn: () => fetchProfitabilityData(selectedYear, selectedMonth),
+  staleTime: 5 * 60 * 1000, // 5 minutes
+  enabled: canViewProfitability,
+});
 
-  const {
-    data: clients = [],
-    isLoading: isClientsLoading
-  } = useQuery({
-    queryKey: ['clients'],
-    queryFn: fetchClients,
-    staleTime: 5 * 60 * 1000,
-    enabled: canViewProfitability, // Only fetch if user has permission
-  });
+const {
+  data: clients = [],
+  isLoading: isClientsLoading
+} = useQuery({
+  queryKey: ['clients'],
+  queryFn: fetchClients,
+  staleTime: 5 * 60 * 1000,
+  enabled: canViewProfitability,
+});
 
-  // 5. Finally, add the useEffect for refetching
-  useEffect(() => {
-    if (canViewProfitability && !permissions.loading) {
-      // Force a refetch of all data when permissions become available
-      refetchProfitability();
-      queryClient.invalidateQueries(['clients']);
-    }
-  }, [canViewProfitability, queryClient, refetchProfitability, permissions.loading]);
-
-  // Mutation for isRefreshing data
-  const refreshDataMutation = useMutation({
-    mutationFn: () => api.post("/client-profitability/", {
-      year: selectedYear,
-      month: selectedMonth,
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['profitability'] });
-      toast.success("Dados de rentabilidade atualizados com sucesso!");
-    },
-    onError: (error) => {
-      console.error("Error isRefreshing profitability data:", error);
-      toast.error("Falha ao atualizar dados de rentabilidade");
-    }
-  });
-
-  const isLoading = permissions.loading || isProfitabilityLoading || isClientsLoading;
-  const isRefreshing = refreshDataMutation.isPending;
-
-  // Derived state using useMemo
+const isLoading = isProfitabilityLoading || isClientsLoading;
+  // Dados filtrados
   const filteredData = useMemo(() => {
     if (!profitabilityData || profitabilityData.length === 0) return [];
 
-    // Start with all data
     let filtered = [...profitabilityData];
 
-    // Apply client filter
-    if (filters.client) {
-      filtered = filtered.filter(
-        (item) => item.client === filters.client
+    // Filtro por termo de busca
+    if (filters.searchTerm) {
+      filtered = filtered.filter(item =>
+        item.client_name.toLowerCase().includes(filters.searchTerm.toLowerCase())
       );
     }
 
-    // Apply profitability filters
-    if (filters.profitableOnly && !filters.unprofitableOnly) {
-      filtered = filtered.filter((item) => item.is_profitable);
-    } else if (!filters.profitableOnly && filters.unprofitableOnly) {
-      filtered = filtered.filter((item) => !item.is_profitable);
+    // Filtro por cliente específico
+    if (filters.client) {
+      filtered = filtered.filter(item => item.client === parseInt(filters.client));
     }
 
-    // Apply sorting
+    // Filtros de rentabilidade
+    if (filters.profitableOnly && !filters.unprofitableOnly) {
+      filtered = filtered.filter(item => item.is_profitable);
+    } else if (!filters.profitableOnly && filters.unprofitableOnly) {
+      filtered = filtered.filter(item => !item.is_profitable);
+    }
+
+    // Ordenação
     if (sortConfig.key) {
       filtered.sort((a, b) => {
-        // Handle null values
         if (a[sortConfig.key] === null) return 1;
         if (b[sortConfig.key] === null) return -1;
 
-        // Parse numerical values
-        const valA =
-          typeof a[sortConfig.key] === "string" &&
-            !isNaN(parseFloat(a[sortConfig.key]))
-            ? parseFloat(a[sortConfig.key])
-            : a[sortConfig.key];
-        const valB =
-          typeof b[sortConfig.key] === "string" &&
-            !isNaN(parseFloat(b[sortConfig.key]))
-            ? parseFloat(b[sortConfig.key])
-            : b[sortConfig.key];
+        const valA = typeof a[sortConfig.key] === "string" && !isNaN(parseFloat(a[sortConfig.key]))
+          ? parseFloat(a[sortConfig.key])
+          : a[sortConfig.key];
+        const valB = typeof b[sortConfig.key] === "string" && !isNaN(parseFloat(b[sortConfig.key]))
+          ? parseFloat(b[sortConfig.key])
+          : b[sortConfig.key];
 
         if (valA < valB) {
           return sortConfig.direction === "asc" ? -1 : 1;
@@ -174,8 +259,25 @@ const ClientProfitability = () => {
 
     return filtered;
   }, [profitabilityData, filters, sortConfig]);
+// Mutation para refresh de dados
+const refreshDataMutation = useMutation({
+  mutationFn: () => api.post("/client-profitability/", {
+    year: selectedYear,
+    month: selectedMonth,
+  }),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['profitability'] });
+    toast.success("Dados de rentabilidade atualizados com sucesso!");
+  },
+  onError: (error) => {
+    console.error("Error refreshing profitability data:", error);
+    toast.error("Falha ao atualizar dados de rentabilidade");
+  }
+});
 
-  // Calculate summary stats with useMemo
+const isRefreshing = refreshDataMutation.isPending;
+
+  // Estatísticas resumo
   const summaryStats = useMemo(() => {
     if (!filteredData || filteredData.length === 0) {
       return {
@@ -189,32 +291,18 @@ const ClientProfitability = () => {
       };
     }
 
-    const profitableClients = filteredData.filter((item) => item.is_profitable).length;
-    const unprofitableClients = filteredData.filter(
-      (item) => !item.is_profitable
-    ).length;
-    const totalRevenue = filteredData.reduce(
-      (sum, item) => sum + (parseFloat(item.monthly_fee) || 0),
-      0
-    );
-    const totalCost = filteredData.reduce(
-      (sum, item) =>
-        sum +
-        (parseFloat(item.time_cost) || 0) +
-        (parseFloat(item.total_expenses) || 0),
-      0
-    );
-    const totalProfit = filteredData.reduce(
-      (sum, item) => sum + (parseFloat(item.profit) || 0),
-      0
-    );
+    const profitableClients = filteredData.filter(item => item.is_profitable).length;
+    const unprofitableClients = filteredData.filter(item => !item.is_profitable).length;
+    const totalRevenue = filteredData.reduce((sum, item) => sum + (parseFloat(item.monthly_fee) || 0), 0);
+    const totalCost = filteredData.reduce((sum, item) =>
+      sum + (parseFloat(item.time_cost) || 0) + (parseFloat(item.total_expenses) || 0), 0);
+    const totalProfit = filteredData.reduce((sum, item) => sum + (parseFloat(item.profit) || 0), 0);
     const margins = filteredData
-      .filter((item) => item.profit_margin !== null)
-      .map((item) => parseFloat(item.profit_margin) || 0);
-    const averageMargin =
-      margins.length > 0
-        ? margins.reduce((sum, margin) => sum + margin, 0) / margins.length
-        : 0;
+      .filter(item => item.profit_margin !== null)
+      .map(item => parseFloat(item.profit_margin) || 0);
+    const averageMargin = margins.length > 0
+      ? margins.reduce((sum, margin) => sum + margin, 0) / margins.length
+      : 0;
 
     return {
       totalClients: filteredData.length,
@@ -227,7 +315,15 @@ const ClientProfitability = () => {
     };
   }, [filteredData]);
 
-  // Event handlers
+  // useEffect DEPOIS das queries
+useEffect(() => {
+  if (canViewProfitability && !permissions.loading) {
+    refetchProfitability();
+    queryClient.invalidateQueries(['clients']);
+  }
+}, [canViewProfitability, queryClient, refetchProfitability, permissions.loading]);
+
+  // Handlers
   const handleFilterChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFilters({
@@ -244,21 +340,13 @@ const ClientProfitability = () => {
     setSortConfig({ key, direction });
   };
 
-  const handlePeriodChange = () => {
-    // Will automatically trigger a refetch due to query key dependencies
-    refetchProfitability();
-  };
-
   const resetFilters = () => {
     setFilters({
       client: "",
       profitableOnly: false,
       unprofitableOnly: false,
+      searchTerm: ""
     });
-  };
-
-  const refreshData = () => {
-    refreshDataMutation.mutate();
   };
 
   const toggleClientDetails = (clientId) => {
@@ -268,7 +356,17 @@ const ClientProfitability = () => {
     });
   };
 
-  // Helper functions
+
+  const refreshData = () => {
+  refreshDataMutation.mutate();
+};
+
+const handlePeriodChange = () => {
+  refetchProfitability();
+};
+
+
+  // Funções auxiliares
   const formatCurrency = (value) => {
     return new Intl.NumberFormat("pt-PT", {
       style: "currency",
@@ -288,951 +386,1969 @@ const ClientProfitability = () => {
     return `${hours}h ${mins}m`;
   };
 
-  // Render loading state while permissions are being loaded
-  if (isLoading) {
+  // Estilos glass
+  const glassStyle = {
+    background: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '16px'
+  };
+
+  // Variantes de animação
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.2
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 200,
+        damping: 20
+      }
+    }
+  };
+
+  if (permissions.loading || isLoading) {
     return (
-      <div className="main">
-          <div className="flex justify-center items-center min-h-screen">
-            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
-          </div>
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'white'
+      }}>
+        <UniversalBackground />
+        <motion.div
+          animate={{
+            rotate: 360,
+            scale: [1, 1.1, 1]
+          }}
+          transition={{
+            rotate: { duration: 2, repeat: Infinity, ease: "linear" },
+            scale: { duration: 1, repeat: Infinity }
+          }}
+        >
+          <Brain size={48} style={{ color: 'rgb(147, 51, 234)' }} />
+        </motion.div>
+        <p style={{ marginLeft: '1rem', fontSize: '1rem' }}>
+          Analisando dados de rentabilidade...
+        </p>
       </div>
     );
   }
 
-  // Verify if user can view profitability data after loading is complete
   if (!canViewProfitability) {
     return (
-      <div className="main">
-          <div className="flex flex-col items-center justify-center min-h-screen p-4">
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
-              <div className="flex items-start">
-                <AlertCircle className="h-6 w-6 mr-2" />
-                <div>
-                  <p className="font-bold">Acesso Restrito</p>
-                  <p>Você não possui permissões para visualizar dados de rentabilidade.</p>
-                </div>
-              </div>
-            </div>
-            <p className="text-gray-600">
-              Entre em contato com o administrador da sua organização para solicitar acesso.
-            </p>
-          </div>
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem'
+      }}>
+        <UniversalBackground />
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          style={{
+            ...glassStyle,
+            padding: '2rem',
+            textAlign: 'center',
+            maxWidth: '500px',
+            color: 'white'
+          }}
+        >
+          <AlertTriangle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>
+            Acesso Restrito
+          </h2>
+          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>
+            Você não possui permissões para visualizar dados de rentabilidade.
+          </p>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+            Entre em contato com o administrador da sua organização para solicitar acesso.
+          </p>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white main">
+    <div style={{
+      position: 'relative',
+      minHeight: '100vh',
+      color: 'white'
+    }}>
+      <UniversalBackground />
       <ToastContainer
         position="top-right"
         autoClose={3000}
         hideProgressBar={false}
+        style={{ zIndex: 9999 }}
       />
+
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={containerVariants}
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          padding: '2rem',
+          paddingTop: '1rem'
+        }}
+      >
+        {/* Header */}
         <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={containerVariants}
-          className="bg-white p-6 min-h-screen"
-          style={{ marginLeft: "3%" }}
+          variants={itemVariants}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '2rem',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}
         >
-          <div className="bg-white max-w-7xl mx-auto">
-            <motion.div
-              variants={itemVariants}
-              className="bg-white flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4"
+          <div>
+            <h1 style={{
+              fontSize: '1.8rem',
+              fontWeight: '700',
+              margin: '0 0 0.5rem 0',
+              background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>
+              Análise de Rentabilidade
+            </h1>
+            <p style={{
+              fontSize: '1rem',
+              color: 'rgba(191, 219, 254, 1)',
+              margin: 0
+            }}>
+              Insights inteligentes sobre a performance dos seus clientes
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+onClick={refreshData}  // em vez de onClick={() => {/* refreshData */}}
+              disabled={isRefreshing}
+              style={{
+                ...glassStyle,
+                padding: '0.75rem 1.5rem',
+                border: '1px solid rgba(52, 211, 153, 0.3)',
+                background: 'rgba(52, 211, 153, 0.2)',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem',
+                fontWeight: '500'
+              }}
             >
-              <h1 className="text-2xl font-bold">Análise de Rentabilidade</h1>
-              <div className="flex space-x-3">
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={refreshData}
-                  disabled={isLoading || isRefreshing}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                      Atualizando...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw size={18} className="mr-2" />
-                      Atualizar Dados
-                    </>
-                  )}
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={handlePeriodChange}
-                  disabled={isLoading || isRefreshing}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
-                >
-                  <Download size={18} className="mr-2" />
-                  Exportar Relatório
-                </motion.button>
-              </div>
-            </motion.div>
+              {isRefreshing ? (
+                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <RefreshCw size={18} />
+              )}
+              {isRefreshing ? 'Atualizando...' : 'Atualizar Dados'}
+            </motion.button>
 
-            {/* Period Selector */}
-            <div className="bg-white p-6 rounded-lg shadow mb-6">
-              <h2 className="text-lg font-semibold mb-4">Selecionar Período</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-gray-700 mb-2">Ano</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                  >
-                    {years.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-gray-700 mb-2">Mês</label>
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                  >
-                    {months.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handlePeriodChange}  // ou a função de export que tiveres
+              style={{
+                ...glassStyle,
+                padding: '0.75rem 1.5rem',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem',
+                fontWeight: '500'
+              }}
+            >
+              <Download size={18} />
+              Exportar Relatório
+            </motion.button>
+          </div>
+        </motion.div>
+
+        {/* Período e Filtros */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            marginBottom: '2rem'
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '1.5rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <motion.div
+                animate={{
+                  rotate: [0, 360],
+                  scale: [1, 1.1, 1]
+                }}
+                transition={{
+                  rotate: { duration: 8, repeat: Infinity, ease: "linear" },
+                  scale: { duration: 2, repeat: Infinity }
+                }}
+                style={{
+                  padding: '0.5rem',
+                  backgroundColor: 'rgba(147, 51, 234, 0.2)',
+                  borderRadius: '12px'
+                }}
+              >
+                <Calendar style={{ color: 'rgb(196, 181, 253)' }} size={20} />
+              </motion.div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                  Período e Filtros
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                  Configure a análise conforme necessário
+                </p>
               </div>
             </div>
 
-            {/* Summary Stats Dashboard */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              {/* Total Revenue Card */}
-              <motion.div
-                variants={cardVariants}
-                whileHover="hover"
-                className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-all duration-300"
-              >
-                <div className="flex items-center">
-                  <div className="p-3 rounded-lg bg-green-100 text-green-700 mr-2">
-                    <DollarSign size={24} strokeWidth={1.5} />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-gray-600 text-sm font-medium">
-                      Receita Total
-                    </p>
-                    {isLoading ? (
-                      <div className="flex items-center space-x-2 mt-4">
-                        <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                        <span className="text-sm text-gray-500"></span>
-                      </div>
-                    ) : (
-                      <h3 className="text-2xl font-bold text-gray-900 mt-4">
-                        {formatCurrency(summaryStats.totalRevenue)}
-                      </h3>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setShowFilters(!showFilters)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255, 255, 255, 0.7)',
+                cursor: 'pointer',
+                padding: '0.5rem',
+                borderRadius: '8px'
+              }}
+            >
+              {showFilters ? <EyeOff size={20} /> : <Eye size={20} />}
+            </motion.button>
+          </div>
 
-              {/* Total Profit Card */}
-              <motion.div
-                variants={cardVariants}
-                whileHover="hover"
-                className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-all duration-300"
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1rem'
+          }}>
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                marginBottom: '0.5rem',
+                color: 'rgba(255, 255, 255, 0.8)'
+              }}>
+                Ano
+              </label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: 'white',
+                  fontSize: '0.875rem'
+                }}
               >
-                <div className="flex items-center">
-                  <div className="p-3 rounded-lg bg-blue-100 text-blue-700 mr-2">
-                    <TrendingUp size={24} strokeWidth={1.5} />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-gray-600 text-sm font-medium">
-                      Lucro Total
-                    </p>
-                    {isLoading ? (
-                      <div className="flex items-center space-x-2 mt-4">
-                        <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                        <span className="text-sm text-gray-500"></span>
-                      </div>
-                    ) : (
-                      <h3 className="text-2xl font-bold text-gray-900 mt-4">
-                        {formatCurrency(summaryStats.totalProfit)}
-                      </h3>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* Average Margin Card */}
-              <motion.div
-                variants={cardVariants}
-                whileHover="hover"
-                className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-all duration-300"
-              >
-                <div className="flex items-center">
-                  <div className="p-3 rounded-lg bg-purple-100 text-purple-700 mr-2">
-                    <PieChart size={24} strokeWidth={1.5} />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-gray-600 text-sm font-medium">
-                      Margem Média
-                    </p>
-                    {isLoading ? (
-                      <div className="flex items-center space-x-2 mt-4">
-                        <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                        <span className="text-sm text-gray-500"></span>
-                      </div>
-                    ) : (
-                      <h3 className="text-2xl font-bold text-gray-900 mt-4">
-                        {formatPercentage(summaryStats.averageMargin)}
-                      </h3>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* Client Status Card */}
-              <motion.div
-                variants={cardVariants}
-                whileHover="hover"
-                className="bg-white p-6 rounded-xl shadow-md border border-green-200 hover:shadow-lg transition-all duration-300"
-              >
-                {" "}
-                <div className="flex items-center">
-                  <div className="p-3 rounded-lg bg-amber-100 text-amber-700 mr-2">
-                    <Users size={24} strokeWidth={1.5} />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-gray-600 text-sm font-medium">
-                      Status de Clientes
-                    </p>
-                    {isLoading ? (
-                      <div className="flex items-center space-x-2 mt-4">
-                        <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
-                        <span className="text-sm text-gray-500"></span>
-                      </div>
-                    ) : (
-                      <div className="mt-4 flex items-center space-x-4">
-                        <div className="flex items-center">
-                          <span className="h-3 w-3 bg-green-500 rounded-full mr-1"></span>
-                          <span className="text-sm">
-                            {summaryStats.profitableClients} Rentáveis
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="h-3 w-3 bg-red-500 rounded-full mr-1"></span>
-                          <span className="text-sm">
-                            {summaryStats.unprofitableClients} Não Rentáveis
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
+                {years.map((year) => (
+                  <option key={year} value={year} style={{ background: '#1f2937', color: 'white' }}>
+                    {year}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* Filters */}
-            <div className="bg-white p-6 rounded-lg shadow mb-6">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
-                <h2 className="text-lg font-semibold mb-4 md:mb-0">Filtros</h2>
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="profitableOnly"
-                      name="profitableOnly"
-                      checked={filters.profitableOnly}
-                      onChange={handleFilterChange}
-                      className="h-5 w-5 text-blue-600 rounded"
-                    />
-                    <label htmlFor="profitableOnly" className="ml-2 mr-2">
-                      Apenas Rentáveis
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="unprofitableOnly"
-                      name="unprofitableOnly"
-                      checked={filters.unprofitableOnly}
-                      onChange={handleFilterChange}
-                      className="h-5 w-5 text-blue-600 rounded"
-                    />
-                    <label htmlFor="unprofitableOnly" className="ml-2">
-                      Apenas Não Rentáveis
-                    </label>
-                  </div>
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                marginBottom: '0.5rem',
+                color: 'rgba(255, 255, 255, 0.8)'
+              }}>
+                Mês
+              </label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: 'white',
+                  fontSize: '0.875rem'
+                }}
+              >
+                {months.map((month) => (
+                  <option key={month.value} value={month.value} style={{ background: '#1f2937', color: 'white' }}>
+                    {month.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                marginBottom: '0.5rem',
+                color: 'rgba(255, 255, 255, 0.8)'
+              }}>
+                Buscar Cliente
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Search
+                  size={18}
+                  style={{
+                    position: 'absolute',
+                    left: '0.75rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'rgba(255, 255, 255, 0.5)'
+                  }}
+                />
+                <input
+                  type="text"
+                  name="searchTerm"
+                  value={filters.searchTerm}
+                  onChange={handleFilterChange}
+                  placeholder="Digite o nome do cliente..."
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                style={{
+                  borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                  paddingTop: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2rem',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    id="profitableOnly"
+                    name="profitableOnly"
+                    checked={filters.profitableOnly}
+                    onChange={handleFilterChange}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  <label htmlFor="profitableOnly" style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    Apenas Rentáveis
+                  </label>
                 </div>
-                <div className="w-full md:w-1/3 mt-4 md:mt-0">
-                  <div className="relative">
-                    <select
-                      name="client"
-                      value={filters.client}
-                      onChange={handleFilterChange}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="">Todos os Clientes</option>
-                      {clients.map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Users
-                      className="absolute left-3 top-2.5 text-gray-400"
-                      size={18}
-                    />
-                  </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    id="unprofitableOnly"
+                    name="unprofitableOnly"
+                    checked={filters.unprofitableOnly}
+                    onChange={handleFilterChange}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  <label htmlFor="unprofitableOnly" style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    Apenas Não Rentáveis
+                  </label>
                 </div>
+
+                <select
+                  name="client"
+                  value={filters.client}
+                  onChange={handleFilterChange}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Clientes</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+
                 <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={resetFilters}
-                  disabled={isLoading || isRefreshing}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                    fontWeight: '500'
+                  }}
                 >
                   Limpar Filtros
                 </motion.button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Cards de Estatísticas */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '1.5rem',
+            marginBottom: '2rem'
+          }}
+        >
+          {/* Receita Total */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              background: 'rgba(52, 211, 153, 0.1)',
+              border: '1px solid rgba(52, 211, 153, 0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{
+                padding: '0.75rem',
+                backgroundColor: 'rgba(52, 211, 153, 0.2)',
+                borderRadius: '12px',
+                marginRight: '1rem'
+              }}>
+                <DollarSign size={24} style={{ color: 'rgb(52, 211, 153)' }} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                  Receita Total
+                </h3>
+                <p style={{ margin: 0, fontSize: '2rem', fontWeight: '700', color: 'rgb(52, 211, 153)' }}>
+                  {formatCurrency(summaryStats.totalRevenue)}
+                </p>
               </div>
             </div>
+            {isLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite', color: 'rgb(52, 211, 153)' }} />
+                <span style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>Calculando...</span>
+              </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                De {summaryStats.totalClients} clientes ativos
+              </p>
+            )}
+          </motion.div>
 
-            {/* Profitability Table */}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <h2 className="text-xl font-semibold p-6 border-b">
-                Análise de Rentabilidade por Cliente
-              </h2>
-
-              {isLoading ? (
-                <div className="p-6 flex justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-                </div>
-              ) : profitabilityData.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  Nenhum dado de rentabilidade encontrado para o período
-                  selecionado.
-                </div>
-              ) : (
-                <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-white-50">
-                        <tr>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <motion.button
-                              whileHover={{ scale: 1.03 }}
-                              whileTap={{ scale: 0.97 }}
-                              onClick={() => handleSort("client_name")}
-                              disabled={isLoading || isRefreshing}
-                              className="bg-blue-200 hover:bg-blue-700 text-white px-4 
-                              py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
-                            >
-                              Cliente
-                              <span className="ml-2">
-                                {sortConfig.key === "client_name" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  ) : (
-                                    <ChevronDown
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  )
-                                ) : (
-                                  <ChevronDown
-                                    size={14}
-                                    className="text-gray-400"
-                                  />
-                                )}
-                              </span>
-                            </motion.button>
-                          </th>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <motion.button
-                              whileHover={{ scale: 1.03 }}
-                              whileTap={{ scale: 0.97 }}
-                              onClick={() => handleSort("monthly_fee")}
-                              disabled={isLoading || isRefreshing}
-                              className="bg-blue-200 hover:bg-blue-700 text-white px-4 
-                              py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
-                            >
-                              Avença Mensal
-                              <span className="ml-2">
-                                {sortConfig.key === "monthly_fee" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  ) : (
-                                    <ChevronDown
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  )
-                                ) : (
-                                  <ChevronDown
-                                    size={14}
-                                    className="text-gray-400"
-                                  />
-                                )}
-                              </span>
-                            </motion.button>
-                          </th>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <motion.button
-                              whileHover={{ scale: 1.03 }}
-                              whileTap={{ scale: 0.97 }}
-                              onClick={() => handleSort("time_cost")}
-                              disabled={isLoading || isRefreshing}
-                              className="bg-blue-200 hover:bg-blue-700 text-white px-4 
-                              py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
-                            >
-                              Custo do Tempo
-                              <span className="ml-2">
-                                {sortConfig.key === "time_cost" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  ) : (
-                                    <ChevronDown
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  )
-                                ) : (
-                                  <ChevronDown
-                                    size={14}
-                                    className="text-gray-400"
-                                  />
-                                )}
-                              </span>
-                            </motion.button>
-                          </th>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <motion.button
-                              whileHover={{ scale: 1.03 }}
-                              whileTap={{ scale: 0.97 }}
-                              onClick={() => handleSort("total_expenses")}
-                              disabled={isLoading || isRefreshing}
-                              className="bg-blue-200 hover:bg-blue-700 text-white px-4 
-                              py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
-                            >
-                              Despesas
-                              <span className="ml-2">
-                                {sortConfig.key === "total_expenses" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  ) : (
-                                    <ChevronDown
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  )
-                                ) : (
-                                  <ChevronDown
-                                    size={14}
-                                    className="text-gray-400"
-                                  />
-                                )}
-                              </span>
-                            </motion.button>
-                          </th>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <motion.button
-                              whileHover={{ scale: 1.03 }}
-                              whileTap={{ scale: 0.97 }}
-                              onClick={() => handleSort("profit")}
-                              disabled={isLoading || isRefreshing}
-                              className="bg-blue-200 hover:bg-blue-700 text-white px-4 
-                              py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
-                            >
-                              Lucro
-                              <span className="ml-2">
-                                {sortConfig.key === "profit" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  ) : (
-                                    <ChevronDown
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  )
-                                ) : (
-                                  <ChevronDown
-                                    size={14}
-                                    className="text-gray-400"
-                                  />
-                                )}
-                              </span>
-                            </motion.button>
-                          </th>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <motion.button
-                              whileHover={{ scale: 1.03 }}
-                              whileTap={{ scale: 0.97 }}
-                              onClick={() => handleSort("profit_margin")}
-                              disabled={isLoading || isRefreshing}
-                              className="bg-blue-200 hover:bg-blue-700 text-white px-4 
-                              py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm text-xs font-medium"
-                            >
-                              Margem
-                              <span className="ml-2">
-                                {sortConfig.key === "profit_margin" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  ) : (
-                                    <ChevronDown
-                                      size={14}
-                                      className="text-blue-600"
-                                    />
-                                  )
-                                ) : (
-                                  <ChevronDown
-                                    size={14}
-                                    className="text-gray-400"
-                                  />
-                                )}
-                              </span>
-                            </motion.button>
-                          </th>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <span className="text-xs font-medium text-gray-600">
-                              Status
-                            </span>
-                          </th>
-                          <th className="px-6 py-4 border-b border-gray-200">
-                            <span className="text-xs font-medium text-gray-600">
-                              Ações
-                            </span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredData.map((item) => (
-                          <React.Fragment key={item.id}>
-                            <tr
-                              className={`transition-colors hover:bg-white-50 ${item.is_profitable ? "" : "bg-red-50"
-                                }`}
-                            >
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <div className="font-medium text-gray-900">
-                                  {item.client_name}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <div className="font-medium">
-                                  {formatCurrency(item.monthly_fee)}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <div className="font-medium">
-                                  {formatCurrency(item.time_cost)}
-                                </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {formatTime(item.total_time_minutes)}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <div className="font-medium">
-                                  {formatCurrency(item.total_expenses)}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <span
-                                  className={`font-medium ${parseFloat(item.profit) >= 0
-                                      ? "text-green-600"
-                                      : "text-red-600"
-                                    }`}
-                                >
-                                  {formatCurrency(item.profit)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <span
-                                  className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${parseFloat(item.profit_margin) >= 0
-                                      ? "bg-green-100 text-green-800"
-                                      : "bg-red-100 text-red-800"
-                                    }`}
-                                >
-                                  {formatPercentage(item.profit_margin)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <span
-                                  className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${item.is_profitable
-                                      ? "bg-green-100 text-green-800"
-                                      : "bg-red-100 text-red-800"
-                                    }`}
-                                >
-                                  {item.is_profitable
-                                    ? "Rentável"
-                                    : "Não Rentável"}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 border-b border-gray-100">
-                                <motion.button
-                                  whileHover={{ scale: 1.03 }}
-                                  whileTap={{ scale: 0.97 }}
-                                  onClick={() =>
-                                    toggleClientDetails(item.client)
-                                  }
-                                  disabled={isLoading || isRefreshing}
-                                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
-                                >
-                                  {expandedClients[item.client] ? (
-                                    <>
-                                      <ChevronUp size={16} className="mr-1" />
-                                      <span className="text-sm">Esconder</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <ChevronDown size={16} className="mr-1" />
-                                      <span className="text-sm">Detalhes</span>
-                                    </>
-                                  )}
-                                </motion.button>
-                              </td>
-                            </tr>
-                            {expandedClients[item.client] && (
-                              <tr>
-                                <td
-                                  colSpan="8"
-                                  className="px-6 py-4 border-b border-gray-100 bg-white-50"
-                                >
-                                  <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
-                                    <h4 className="text-base font-medium text-gray-900 mb-4 flex items-center">
-                                      <span className="w-1 h-6 bg-blue-600 rounded-full mr-3"></span>
-                                      Detalhes de Rentabilidade:{" "}
-                                      {item.client_name}
-                                    </h4>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                                      <div className="bg-white-50 rounded-lg p-4">
-                                        <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                                          <Clock
-                                            size={16}
-                                            className="mr-2 text-blue-600"
-                                          />
-                                          Análise de Tempo
-                                        </h5>
-                                        <div className="space-y-3">
-                                          <div className="flex justify-between border-b border-gray-200 pb-2">
-                                            <span className="text-sm text-gray-600">
-                                              Total de Horas:
-                                            </span>
-                                            <span className="text-sm font-medium">
-                                              {formatTime(
-                                                item.total_time_minutes
-                                              )}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between border-b border-gray-200 pb-2">
-                                            <span className="text-sm text-gray-600">
-                                              Custo Médio por Hora:
-                                            </span>
-                                            <span className="text-sm font-medium">
-                                              {formatCurrency(
-                                                item.total_time_minutes > 0
-                                                  ? item.time_cost /
-                                                  (item.total_time_minutes /
-                                                    60)
-                                                  : 0
-                                              )}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between pb-2">
-                                            <span className="text-sm text-gray-600">
-                                              Última Atualização:
-                                            </span>
-                                            <span className="text-sm font-medium">
-                                              {new Date(
-                                                item.last_updated
-                                              ).toLocaleDateString()}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <div className="bg-white-50 rounded-lg p-4">
-                                        <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                                          <CreditCard
-                                            size={16}
-                                            className="mr-2 text-blue-600"
-                                          />
-                                          Rentabilidade
-                                        </h5>
-                                        <div className="space-y-3">
-                                          <div className="flex justify-between border-b border-gray-200 pb-2">
-                                            <span className="text-sm text-gray-600">
-                                              Receita Total:
-                                            </span>
-                                            <span className="text-sm font-medium">
-                                              {formatCurrency(item.monthly_fee)}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between border-b border-gray-200 pb-2">
-                                            <span className="text-sm text-gray-600">
-                                              Custos Totais:
-                                            </span>
-                                            <span className="text-sm font-medium">
-                                              {formatCurrency(
-                                                parseFloat(item.time_cost) +
-                                                parseFloat(
-                                                  item.total_expenses
-                                                )
-                                              )}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between pb-2">
-                                            <span className="text-sm text-gray-600">
-                                              Lucro:
-                                            </span>
-                                            <span
-                                              className={`text-sm font-medium ${parseFloat(item.profit) >= 0
-                                                  ? "text-green-600"
-                                                  : "text-red-600"
-                                                }`}
-                                            >
-                                              {formatCurrency(item.profit)}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <div className="bg-white-50 rounded-lg p-4">
-                                      <h5 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-                                        <Calendar
-                                          size={16}
-                                          className="mr-2 text-blue-600"
-                                        />
-                                        Entradas de Tempo Recentes
-                                      </h5>
-                                      <div className="overflow-hidden rounded-lg border border-gray-200">
-                                        <table className="min-w-full divide-y divide-gray-200 text-sm">
-                                          <thead>
-                                            <tr className="bg-white-100">
-                                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
-                                                Data
-                                              </th>
-                                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
-                                                Descrição
-                                              </th>
-                                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
-                                                Tempo
-                                              </th>
-                                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">
-                                                Usuário
-                                              </th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="bg-white divide-y divide-gray-200">
-                                            {getClientTimeEntries(item.client)
-                                              .slice(0, 5)
-                                              .map((entry) => (
-                                                <tr
-                                                  key={entry.id}
-                                                  className="hover:bg-white-50 transition-colors"
-                                                >
-                                                  <td className="px-4 py-3 whitespace-nowrap">
-                                                    {entry.date}
-                                                  </td>
-                                                  <td className="px-4 py-3">
-                                                    <div className="truncate max-w-xs">
-                                                      {entry.description}
-                                                    </div>
-                                                  </td>
-                                                  <td className="px-4 py-3 whitespace-nowrap">
-                                                    {formatTime(
-                                                      entry.minutes_spent
-                                                    )}
-                                                  </td>
-                                                  <td className="px-4 py-3 whitespace-nowrap">
-                                                    {entry.user_name}
-                                                  </td>
-                                                </tr>
-                                              ))}
-                                            {getClientTimeEntries(item.client)
-                                              .length === 0 && (
-                                                <tr>
-                                                  <td
-                                                    colSpan="4"
-                                                    className="px-4 py-3 text-center text-gray-500"
-                                                  >
-                                                    Nenhuma entrada de tempo
-                                                    encontrada
-                                                  </td>
-                                                </tr>
-                                              )}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                      {getClientTimeEntries(item.client)
-                                        .length > 5 && (
-                                          <div className="mt-3 text-right">
-                                            <a
-                                              href={`/time-entries?client=${item.client}`}
-                                              className="text-blue-600 hover:text-blue-800 text-sm inline-flex items-center px-3 py-1 rounded-md hover:bg-blue-50 transition-colors"
-                                            >
-                                              Ver todas as entradas{" "}
-                                              <ChevronRight
-                                                size={14}
-                                                className="ml-1"
-                                              />
-                                            </a>
-                                          </div>
-                                        )}
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Cards Section with Insights */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-              {/* Most Profitable Clients */}
-              <div className="bg-white p-6 rounded-xl shadow-md border border-green-200">
-                <h3 className="text-lg font-semibold mb-4 flex items-center">
-                  <TrendingUp size={20} className="mr-2 text-green-600" />
-                  Clientes Mais Rentáveis
+          {/* Lucro Total */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              background: summaryStats.totalProfit >= 0 ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+              border: summaryStats.totalProfit >= 0 ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{
+                padding: '0.75rem',
+                backgroundColor: summaryStats.totalProfit >= 0 ? 'rgba(59, 130, 246, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                borderRadius: '12px',
+                marginRight: '1rem'
+              }}>
+                {summaryStats.totalProfit >= 0 ? 
+                  <TrendingUp size={24} style={{ color: 'rgb(59, 130, 246)' }} /> :
+                  <TrendingDown size={24} style={{ color: 'rgb(239, 68, 68)' }} />
+                }
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                  Lucro Total
                 </h3>
-                <div className="space-y-4">
-                  {isLoading ? (
-                    <div className="flex justify-center p-4">
-                      <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
-                    </div>
-                  ) : (
-                    filteredData
-                      .filter((item) => item.is_profitable)
-                      .sort(
-                        (a, b) =>
-                          parseFloat(b.profit_margin) -
-                          parseFloat(a.profit_margin)
-                      )
-                      .slice(0, 5)
-                      .map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-3 bg-white-50 rounded-lg"
-                        >
-                          <div className="flex items-center">
-                            <div className="p-2 rounded-full bg-green-100 mr-3">
-                              <Briefcase size={16} className="text-green-600" />
+                <p style={{ 
+                  margin: 0, 
+                  fontSize: '2rem', 
+                  fontWeight: '700', 
+                  color: summaryStats.totalProfit >= 0 ? 'rgb(59, 130, 246)' : 'rgb(239, 68, 68)'
+                }}>
+                  {formatCurrency(summaryStats.totalProfit)}
+                </p>
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+              Custos: {formatCurrency(summaryStats.totalCost)}
+            </p>
+          </motion.div>
+
+          {/* Margem Média */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              background: 'rgba(147, 51, 234, 0.1)',
+              border: '1px solid rgba(147, 51, 234, 0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{
+                padding: '0.75rem',
+                backgroundColor: 'rgba(147, 51, 234, 0.2)',
+                borderRadius: '12px',
+                marginRight: '1rem'
+              }}>
+                <PieChart size={24} style={{ color: 'rgb(147, 51, 234)' }} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                  Margem Média
+                </h3>
+                <p style={{ margin: 0, fontSize: '2rem', fontWeight: '700', color: 'rgb(147, 51, 234)' }}>
+                  {formatPercentage(summaryStats.averageMargin)}
+                </p>
+              </div>
+            </div>
+            <div style={{
+              width: '100%',
+              height: '4px',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '2px',
+              overflow: 'hidden'
+            }}>
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.max(0, Math.min(100, summaryStats.averageMargin + 50))}%` }}
+                transition={{ duration: 1, ease: "easeOut" }}
+                style={{
+                  height: '100%',
+                  background: 'linear-gradient(to right, rgb(147, 51, 234), rgb(196, 181, 253))',
+                  borderRadius: '2px'
+                }}
+              />
+            </div>
+          </motion.div>
+
+          {/* Status dos Clientes */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid rgba(251, 191, 36, 0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{
+                padding: '0.75rem',
+                backgroundColor: 'rgba(251, 191, 36, 0.2)',
+                borderRadius: '12px',
+                marginRight: '1rem'
+              }}>
+                <Users size={24} style={{ color: 'rgb(251, 191, 36)' }} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                  Status dos Clientes
+                </h3>
+                <p style={{ margin: 0, fontSize: '2rem', fontWeight: '700', color: 'rgb(251, 191, 36)' }}>
+                  {summaryStats.totalClients}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: 'rgb(52, 211, 153)',
+                  borderRadius: '50%'
+                }} />
+                <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                  {summaryStats.profitableClients} Rentáveis
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: 'rgb(239, 68, 68)',
+                  borderRadius: '50%'
+                }} />
+                <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                  {summaryStats.unprofitableClients} Não Rentáveis
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+
+        {/* Insights AI */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            marginBottom: '2rem',
+            background: 'rgba(147, 51, 234, 0.05)',
+            border: '1px solid rgba(147, 51, 234, 0.2)'
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            marginBottom: '1rem'
+          }}>
+            <motion.div
+              animate={{
+                rotate: [0, 360],
+                scale: [1, 1.1, 1]
+              }}
+              transition={{
+                rotate: { duration: 8, repeat: Infinity, ease: "linear" },
+                scale: { duration: 2, repeat: Infinity }
+              }}
+              style={{
+                padding: '0.5rem',
+                backgroundColor: 'rgba(147, 51, 234, 0.2)',
+                borderRadius: '12px'
+              }}
+            >
+              <Brain style={{ color: 'rgb(196, 181, 253)' }} size={20} />
+            </motion.div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                AI Insights
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                Análise inteligente dos seus dados
+              </p>
+            </div>
+            <motion.div
+              animate={{
+                rotate: [0, 10, -10, 0],
+                scale: [1, 1.1, 1]
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              style={{ marginLeft: 'auto' }}
+            >
+              <Sparkles style={{ color: 'rgb(196, 181, 253)' }} size={16} />
+            </motion.div>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: '1rem'
+          }}>
+            {summaryStats.unprofitableClients > 0 && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}
+              >
+                <AlertTriangle size={20} style={{ color: 'rgb(239, 68, 68)', marginTop: '0.25rem', flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                    Clientes Não Rentáveis Detectados
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    {summaryStats.unprofitableClients} clientes estão gerando prejuízo. 
+                    Considere revisar os preços ou otimizar os processos.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
+            {summaryStats.averageMargin > 30 && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 }}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(52, 211, 153, 0.2)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}
+              >
+                <Target size={20} style={{ color: 'rgb(52, 211, 153)', marginTop: '0.25rem', flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                    Excelente Performance
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    Margem de lucro acima de 30%! Sua operação está muito eficiente.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
+            {summaryStats.totalClients > 0 && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}
+              >
+                <BarChart3 size={20} style={{ color: 'rgb(59, 130, 246)', marginTop: '0.25rem', flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                    Oportunidade de Crescimento
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    Com {summaryStats.profitableClients} clientes rentáveis, 
+                    há potencial para escalar os serviços mais lucrativos.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Tabela de Rentabilidade */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            ...glassStyle,
+            padding: 0,
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{
+            padding: '1.5rem',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                padding: '0.5rem',
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                borderRadius: '12px'
+              }}>
+                <Activity style={{ color: 'rgb(59, 130, 246)' }} size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
+                  Análise Detalhada por Cliente
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                  {filteredData.length} clientes encontrados
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div style={{
+              padding: '3rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '1rem'
+            }}>
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              >
+                <Loader2 size={32} style={{ color: 'rgb(59, 130, 246)' }} />
+              </motion.div>
+              <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.7)' }}>
+                Carregando dados de rentabilidade...
+              </p>
+            </div>
+          ) : filteredData.length === 0 ? (
+            <div style={{
+              padding: '3rem',
+              textAlign: 'center',
+              color: 'rgba(255, 255, 255, 0.6)'
+            }}>
+              <Users size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>
+                Nenhum cliente encontrado
+              </h4>
+              <p style={{ margin: 0 }}>
+                Ajuste os filtros para ver os dados de rentabilidade.
+              </p>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse'
+              }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("client_name")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Cliente
+                        {sortConfig.key === "client_name" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("monthly_fee")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Receita
+                        {sortConfig.key === "monthly_fee" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("time_cost")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Custos
+                        {sortConfig.key === "time_cost" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("profit")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Lucro
+                        {sortConfig.key === "profit" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("profit_margin")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Margem
+                        {sortConfig.key === "profit_margin" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'center',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      Status
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'center',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredData.map((item, index) => (
+                    <React.Fragment key={item.id}>
+                      <motion.tr
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        style={{
+                          backgroundColor: item.is_profitable ? 
+                            'rgba(52, 211, 153, 0.05)' : 
+                            'rgba(239, 68, 68, 0.05)',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                        }}
+                      >
+                        <td style={{ padding: '1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <div style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '50%',
+                              background: item.is_profitable ? 
+                                'rgba(52, 211, 153, 0.2)' : 
+                                'rgba(239, 68, 68, 0.2)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.875rem',
+                              fontWeight: '600',
+                              color: 'white'
+                            }}>
+                              {item.client_name.substring(0, 2).toUpperCase()}
                             </div>
                             <div>
-                              <p className="font-medium">{item.client_name}</p>
-                              <p className="text-xs text-gray-500">
-                                {formatCurrency(item.monthly_fee)} de receita
+                              <p style={{ 
+                                margin: 0, 
+                                fontWeight: '600', 
+                                color: 'white',
+                                fontSize: '0.875rem'
+                              }}>
+                                {item.client_name}
                               </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-green-600">
-                              {formatPercentage(item.profit_margin)}
-                            </p>
-                            <p className="text-xs text-gray-500">margem</p>
-                          </div>
-                        </div>
-                      ))
-                  )}
-
-                  {!isLoading &&
-                    profitabilityData.filter((item) => item.is_profitable)
-                      .length === 0 && (
-                      <div className="text-center py-4 text-gray-500">
-                        Nenhum cliente rentável no período selecionado.
-                      </div>
-                    )}
-                </div>
-              </div>
-
-              {/* Problematic Clients */}
-              <div className="bg-white p-6 rounded-xl shadow-md border border-red-200">
-                <h3 className="text-lg font-semibold mb-4 flex items-center">
-                  <AlertTriangle size={20} className="mr-2 text-red-600" />
-                  Clientes Com Problemas de Rentabilidade
-                </h3>
-                <div className="space-y-4">
-                  {isLoading ? (
-                    <div className="flex justify-center p-4">
-                      <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
-                    </div>
-                  ) : (
-                    profitabilityData
-                      .filter((item) => !item.is_profitable)
-                      .sort(
-                        (a, b) =>
-                          parseFloat(a.profit_margin) -
-                          parseFloat(b.profit_margin)
-                      )
-                      .slice(0, 5)
-                      .map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-3 bg-red-50 rounded-lg"
-                        >
-                          <div className="flex items-center">
-                            <div className="p-2 rounded-full bg-red-100 mr-3">
-                              <Briefcase size={16} className="text-red-600" />
-                            </div>
-                            <div>
-                              <p className="font-medium">{item.client_name}</p>
-                              <p className="text-xs text-gray-500">
+                              <p style={{ 
+                                margin: 0, 
+                                fontSize: '0.75rem', 
+                                color: 'rgba(255, 255, 255, 0.6)' 
+                              }}>
                                 {formatTime(item.total_time_minutes)} investidas
                               </p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-bold text-red-600">
-                              {formatPercentage(item.profit_margin)}
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          <p style={{ 
+                            margin: 0, 
+                            fontWeight: '600', 
+                            color: 'rgb(52, 211, 153)',
+                            fontSize: '0.875rem'
+                          }}>
+                            {formatCurrency(item.monthly_fee)}
+                          </p>
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          <div>
+                            <p style={{ 
+                              margin: 0, 
+                              fontWeight: '600', 
+                              color: 'rgb(251, 146, 60)',
+                              fontSize: '0.875rem'
+                            }}>
+                              {formatCurrency(parseFloat(item.time_cost) + parseFloat(item.total_expenses))}
                             </p>
-                            <p className="text-xs text-gray-500">margem</p>
+                            <p style={{ 
+                              margin: 0, 
+                              fontSize: '0.75rem', 
+                              color: 'rgba(255, 255, 255, 0.6)' 
+                            }}>
+                              Tempo: {formatCurrency(item.time_cost)}
+                            </p>
                           </div>
-                        </div>
-                      ))
-                  )}
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          <p style={{ 
+                            margin: 0, 
+                            fontWeight: '700', 
+                            color: parseFloat(item.profit) >= 0 ? 'rgb(52, 211, 153)' : 'rgb(239, 68, 68)',
+                            fontSize: '0.875rem'
+                          }}>
+                            {formatCurrency(item.profit)}
+                          </p>
+                        </td>
+                        <td style={{ padding: '1rem' }}>
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '0.25rem 0.75rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            backgroundColor: parseFloat(item.profit_margin) >= 0 ? 
+                              'rgba(52, 211, 153, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            border: parseFloat(item.profit_margin) >= 0 ? 
+                              '1px solid rgba(52, 211, 153, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                            color: parseFloat(item.profit_margin) >= 0 ? 
+                              'rgb(110, 231, 183)' : 'rgb(252, 165, 165)'
+                          }}>
+                            {formatPercentage(item.profit_margin)}
+                          </div>
+                        </td>
+                        <td style={{ padding: '1rem', textAlign: 'center' }}>
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            backgroundColor: item.is_profitable ? 
+                              'rgba(52, 211, 153, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                            border: item.is_profitable ? 
+                              '1px solid rgba(52, 211, 153, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                            color: item.is_profitable ? 
+                              'rgb(110, 231, 183)' : 'rgb(252, 165, 165)',
+                            gap: '0.5rem'
+                          }}>
+                            {item.is_profitable ? (
+                              <TrendingUp size={12} />
+                            ) : (
+                              <TrendingDown size={12} />
+                            )}
+                            {item.is_profitable ? "Rentável" : "Não Rentável"}
+                          </div>
+                        </td>
+                        <td style={{ padding: '1rem', textAlign: 'center' }}>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => toggleClientDetails(item.client)}
+                            style={{
+                              ...glassStyle,
+                              padding: '0.5rem 1rem',
+                              background: 'rgba(59, 130, 246, 0.2)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              color: 'white',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: '0.75rem',
+                              fontWeight: '500'
+                            }}
+                          >
+                            {expandedClients[item.client] ? (
+                              <>
+                                <ChevronUp size={14} />
+                                Menos
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown size={14} />
+                                Detalhes
+                              </>
+                            )}
+                          </motion.button>
+                        </td>
+                      </motion.tr>
 
-                  {!isLoading &&
-                    profitabilityData.filter((item) => !item.is_profitable)
-                      .length === 0 && (
-                      <div className="text-center py-4 text-gray-500">
-                        Nenhum cliente não rentável no período selecionado.
-                      </div>
-                    )}
-                </div>
-              </div>
+                      {/* Linha expandida com detalhes */}
+                      <AnimatePresence>
+                        {expandedClients[item.client] && (
+                          <motion.tr
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            <td colSpan="7" style={{
+                              padding: 0,
+                              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                              borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                            }}>
+                              <div style={{ padding: '1.5rem' }}>
+                                <div style={{
+                                  ...glassStyle,
+                                  padding: '1.5rem',
+                                  background: 'rgba(255, 255, 255, 0.05)'
+                                }}>
+                                  <h4 style={{
+                                    margin: '0 0 1.5rem 0',
+                                    fontSize: '1rem',
+                                    fontWeight: '600',
+                                    color: 'white',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.75rem'
+                                  }}>
+                                    <div style={{
+                                      width: '4px',
+                                      height: '24px',
+                                      background: 'linear-gradient(to bottom, rgb(59, 130, 246), rgb(147, 51, 234))',
+                                      borderRadius: '2px'
+                                    }} />
+                                    Análise Detalhada: {item.client_name}
+                                  </h4>
+
+                                  <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                                    gap: '1.5rem',
+                                    marginBottom: '1.5rem'
+                                  }}>
+                                    {/* Análise de Tempo */}
+                                    <div style={{
+                                      ...glassStyle,
+                                      padding: '1rem',
+                                      background: 'rgba(59, 130, 246, 0.1)',
+                                      border: '1px solid rgba(59, 130, 246, 0.2)'
+                                    }}>
+                                      <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.75rem',
+                                        marginBottom: '1rem'
+                                      }}>
+                                        <Clock size={18} style={{ color: 'rgb(59, 130, 246)' }} />
+                                        <h5 style={{
+                                          margin: 0,
+                                          fontSize: '0.875rem',
+                                          fontWeight: '600',
+                                          color: 'white'
+                                        }}>
+                                          Análise de Tempo
+                                        </h5>
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                        <div style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          padding: '0.5rem 0',
+                                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                                        }}>
+                                          <span style={{
+                                            fontSize: '0.75rem',
+                                            color: 'rgba(255, 255, 255, 0.7)'
+                                          }}>
+                                            Total de Horas:
+                                          </span>
+                                          <span style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: '600',
+                                            color: 'white'
+                                          }}>
+                                            {formatTime(item.total_time_minutes)}
+                                          </span>
+                                        </div>
+                                        <div style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          padding: '0.5rem 0',
+                                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                                        }}>
+                                          <span style={{
+                                            fontSize: '0.75rem',
+                                            color: 'rgba(255, 255, 255, 0.7)'
+                                          }}>
+                                            Custo por Hora:
+                                          </span>
+                                          <span style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: '600',
+                                            color: 'white'
+                                          }}>
+                                            {formatCurrency(
+                                              item.total_time_minutes > 0
+                                                ? item.time_cost / (item.total_time_minutes / 60)
+                                                : 0
+                                            )}
+                                          </span>
+                                        </div>
+                                        <div style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          padding: '0.5rem 0'
+                                        }}>
+                                          <span style={{
+                                            fontSize: '0.75rem',
+                                            color: 'rgba(255, 255, 255, 0.7)'
+                                          }}>
+                                            Última Atualização:
+                                          </span>
+                                          <span style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: '600',
+                                            color: 'white'
+                                          }}>
+                                            {new Date(item.last_updated).toLocaleDateString('pt-PT')}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Análise Financeira */}
+                                    <div style={{
+                                      ...glassStyle,
+                                      padding: '1rem',
+                                      background: 'rgba(52, 211, 153, 0.1)',
+                                      border: '1px solid rgba(52, 211, 153, 0.2)'
+                                    }}>
+                                      <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.75rem',
+                                        marginBottom: '1rem'
+                                      }}>
+                                        <CreditCard size={18} style={{ color: 'rgb(52, 211, 153)' }} />
+                                        <h5 style={{
+                                          margin: 0,
+                                          fontSize: '0.875rem',
+                                          fontWeight: '600',
+                                          color: 'white'
+                                        }}>
+                                          Breakdown Financeiro
+                                        </h5>
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                        <div style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          padding: '0.5rem 0',
+                                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                                        }}>
+                                          <span style={{
+                                            fontSize: '0.75rem',
+                                            color: 'rgba(255, 255, 255, 0.7)'
+                                          }}>
+                                            Receita Mensal:
+                                          </span>
+                                          <span style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: '600',
+                                            color: 'rgb(52, 211, 153)'
+                                          }}>
+                                            {formatCurrency(item.monthly_fee)}
+                                          </span>
+                                        </div>
+                                        <div style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          padding: '0.5rem 0',
+                                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                                        }}>
+                                          <span style={{
+                                            fontSize: '0.75rem',
+                                            color: 'rgba(255, 255, 255, 0.7)'
+                                          }}>
+                                            Custos Totais:
+                                          </span>
+                                          <span style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: '600',
+                                            color: 'rgb(251, 146, 60)'
+                                          }}>
+                                            {formatCurrency(
+                                              parseFloat(item.time_cost) + parseFloat(item.total_expenses)
+                                            )}
+                                          </span>
+                                        </div>
+                                        <div style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          padding: '0.5rem 0',
+                                          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                          borderRadius: '8px',
+                                          paddingLeft: '0.75rem',
+                                          paddingRight: '0.75rem'
+                                        }}>
+                                          <span style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: '600',
+                                            color: 'white'
+                                          }}>
+                                            Lucro Final:
+                                          </span>
+                                          <span style={{
+                                            fontSize: '1rem',
+                                            fontWeight: '700',
+                                            color: parseFloat(item.profit) >= 0 ? 'rgb(52, 211, 153)' : 'rgb(239, 68, 68)'
+                                          }}>
+                                            {formatCurrency(item.profit)}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Recomendações AI */}
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.2 }}
+                                    style={{
+                                      ...glassStyle,
+                                      padding: '1rem',
+                                      background: 'rgba(147, 51, 234, 0.1)',
+                                      border: '1px solid rgba(147, 51, 234, 0.2)'
+                                    }}
+                                  >
+                                    <div style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.75rem',
+                                      marginBottom: '1rem'
+                                    }}>
+                                      <motion.div
+                                        animate={{ rotate: [0, 360] }}
+                                        transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                                      >
+                                        <Brain size={18} style={{ color: 'rgb(196, 181, 253)' }} />
+                                      </motion.div>
+                                      <h5 style={{
+                                        margin: 0,
+                                        fontSize: '0.875rem',
+                                        fontWeight: '600',
+                                        color: 'white'
+                                      }}>
+                                        Recomendações Inteligentes
+                                      </h5>
+                                      <Sparkles size={14} style={{ color: 'rgb(196, 181, 253)' }} />
+                                    </div>
+                                    <div style={{
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '0.75rem'
+                                    }}>
+                                      {!item.is_profitable ? (
+                                        <>
+                                          <div style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: '0.5rem',
+                                            padding: '0.75rem',
+                                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                            borderRadius: '8px',
+                                            border: '1px solid rgba(239, 68, 68, 0.2)'
+                                          }}>
+                                            <AlertTriangle size={16} style={{ 
+                                              color: 'rgb(239, 68, 68)', 
+                                              marginTop: '0.125rem',
+                                              flexShrink: 0 
+                                            }} />
+                                            <div>
+                                              <p style={{ 
+                                                margin: '0 0 0.25rem 0', 
+                                                fontSize: '0.75rem', 
+                                                fontWeight: '600', 
+                                                color: 'white' 
+                                              }}>
+                                                Cliente Não Rentável
+                                              </p>
+                                              <p style={{ 
+                                                margin: 0, 
+                                                fontSize: '0.75rem', 
+                                                color: 'rgba(255, 255, 255, 0.8)' 
+                                              }}>
+                                                Considere aumentar a avença ou otimizar os processos para reduzir o tempo gasto.
+                                              </p>
+                                            </div>
+                                          </div>
+                                          <div style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: '0.5rem',
+                                            padding: '0.75rem',
+                                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                            borderRadius: '8px',
+                                            border: '1px solid rgba(59, 130, 246, 0.2)'
+                                          }}>
+                                            <Target size={16} style={{ 
+                                              color: 'rgb(59, 130, 246)', 
+                                              marginTop: '0.125rem',
+                                              flexShrink: 0 
+                                            }} />
+                                            <div>
+                                              <p style={{ 
+                                                margin: '0 0 0.25rem 0', 
+                                                fontSize: '0.75rem', 
+                                                fontWeight: '600', 
+                                                color: 'white' 
+                                              }}>
+                                                Sugestão de Melhoria
+                                              </p>
+                                              <p style={{ 
+                                                margin: 0, 
+                                                fontSize: '0.75rem', 
+                                                color: 'rgba(255, 255, 255, 0.8)' 
+                                              }}>
+                                                Avença sugerida: {formatCurrency(
+                                                  (parseFloat(item.time_cost) + parseFloat(item.total_expenses)) * 1.3
+                                                )} (margem de 30%)
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <div style={{
+                                          display: 'flex',
+                                          alignItems: 'flex-start',
+                                          gap: '0.5rem',
+                                          padding: '0.75rem',
+                                          backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                                          borderRadius: '8px',
+                                          border: '1px solid rgba(52, 211, 153, 0.2)'
+                                        }}>
+                                          <Target size={16} style={{ 
+                                            color: 'rgb(52, 211, 153)', 
+                                            marginTop: '0.125rem',
+                                            flexShrink: 0 
+                                          }} />
+                                          <div>
+                                            <p style={{ 
+                                              margin: '0 0 0.25rem 0', 
+                                              fontSize: '0.75rem', 
+                                              fontWeight: '600', 
+                                              color: 'white' 
+                                            }}>
+                                              Cliente Rentável
+                                            </p>
+                                            <p style={{ 
+                                              margin: 0, 
+                                              fontSize: '0.75rem', 
+                                              color: 'rgba(255, 255, 255, 0.8)' 
+                                            }}>
+                                              Ótima performance! Considere expandir os serviços para este cliente.
+                                            </p>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                </div>
+                              </div>
+                            </td>
+                          </motion.tr>
+                        )}
+                      </AnimatePresence>
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
         </motion.div>
+
+        {/* Insights Finais */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+          gap: '1.5rem'
+        }}>
+          {/* Clientes Mais Rentáveis */}
+          <motion.div
+            variants={itemVariants}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              background: 'rgba(52, 211, 153, 0.05)',
+              border: '1px solid rgba(52, 211, 153, 0.2)'
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              marginBottom: '1.5rem'
+            }}>
+              <TrendingUp size={20} style={{ color: 'rgb(52, 211, 153)' }} />
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600', color: 'white' }}>
+                Top Clientes Rentáveis
+              </h3>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {filteredData
+                .filter(item => item.is_profitable)
+                .sort((a, b) => parseFloat(b.profit_margin) - parseFloat(a.profit_margin))
+                .slice(0, 3)
+                .map((item, index) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '1rem',
+                      backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(52, 211, 153, 0.2)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        background: 'rgba(52, 211, 153, 0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        color: 'white'
+                      }}>
+                        #{index + 1}
+                      </div>
+                      <div>
+                        <p style={{ 
+                          margin: 0, 
+                          fontWeight: '600', 
+                          color: 'white',
+                          fontSize: '0.875rem'
+                        }}>
+                          {item.client_name}
+                        </p>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: '0.75rem', 
+                          color: 'rgba(255, 255, 255, 0.7)' 
+                        }}>
+                          {formatCurrency(item.monthly_fee)} receita
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ 
+                        margin: 0, 
+                        fontWeight: '700', 
+                        color: 'rgb(52, 211, 153)',
+                        fontSize: '0.875rem'
+                      }}>
+                        {formatPercentage(item.profit_margin)}
+                      </p>
+                      <p style={{ 
+                        margin: 0, 
+                        fontSize: '0.75rem', 
+                        color: 'rgba(255, 255, 255, 0.7)' 
+                      }}>
+                        margem
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
+
+              {filteredData.filter(item => item.is_profitable).length === 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '2rem',
+                  color: 'rgba(255, 255, 255, 0.6)'
+                }}>
+                  <TrendingUp size={32} style={{ marginBottom: '0.5rem', opacity: 0.5 }} />
+                  <p style={{ margin: 0, fontSize: '0.875rem' }}>
+                    Nenhum cliente rentável no período selecionado.
+                  </p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Clientes Problemáticos */}
+          <motion.div
+            variants={itemVariants}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              background: 'rgba(239, 68, 68, 0.05)',
+              border: '1px solid rgba(239, 68, 68, 0.2)'
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              marginBottom: '1.5rem'
+            }}>
+              <AlertTriangle size={20} style={{ color: 'rgb(239, 68, 68)' }} />
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600', color: 'white' }}>
+                Clientes Críticos
+              </h3>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {filteredData
+                .filter(item => !item.is_profitable)
+                .sort((a, b) => parseFloat(a.profit_margin) - parseFloat(b.profit_margin))
+                .slice(0, 3)
+                .map((item, index) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '1rem',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(239, 68, 68, 0.2)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        color: 'white'
+                      }}>
+                        !
+                      </div>
+                      <div>
+                        <p style={{ 
+                          margin: 0, 
+                          fontWeight: '600', 
+                          color: 'white',
+                          fontSize: '0.875rem'
+                        }}>
+                          {item.client_name}
+                        </p>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: '0.75rem', 
+                          color: 'rgba(255, 255, 255, 0.7)' 
+                        }}>
+                          {formatTime(item.total_time_minutes)} investidas
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ 
+                        margin: 0, 
+                        fontWeight: '700', 
+                        color: 'rgb(239, 68, 68)',
+                        fontSize: '0.875rem'
+                      }}>
+                        {formatPercentage(item.profit_margin)}
+                      </p>
+                      <p style={{ 
+                        margin: 0, 
+                        fontSize: '0.75rem', 
+                        color: 'rgba(255, 255, 255, 0.7)' 
+                      }}>
+                        prejuízo
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
+
+              {filteredData.filter(item => !item.is_profitable).length === 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '2rem',
+                  color: 'rgba(255, 255, 255, 0.6)'
+                }}>
+                  <Target size={32} style={{ marginBottom: '0.5rem', opacity: 0.5, color: 'rgb(52, 211, 153)' }} />
+                  <p style={{ margin: 0, fontSize: '0.875rem' }}>
+                    Excelente! Todos os clientes são rentáveis.
+                  </p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      </motion.div>
+
+      {/* Floating Action Button */}
+      <motion.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 1, type: "spring", stiffness: 200 }}
+        style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          zIndex: 100
+        }}
+      >
+        <motion.button
+          whileHover={{ 
+            scale: 1.1,
+            boxShadow: '0 0 30px rgba(147, 51, 234, 0.5)'
+          }}
+          whileTap={{ scale: 0.9 }}
+          style={{
+            width: '60px',
+            height: '60px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, rgb(147, 51, 234), rgb(196, 181, 253))',
+            border: 'none',
+            color: 'white',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 10px 25px rgba(147, 51, 234, 0.3)',
+            backdropFilter: 'blur(12px)'
+          }}
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <motion.div
+            animate={{ rotate: [0, 360] }}
+            transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+          >
+            <Brain size={24} />
+          </motion.div>
+        </motion.button>
+      </motion.div>
+
+      {/* CSS personalizado para animações */}
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        input::placeholder {
+          color: rgba(255, 255, 255, 0.5) !important;
+        }
+        
+        select option {
+          background: #1f2937 !important;
+          color: white !important;
+        }
+        
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.5);
+        }
+        
+        /* Smooth transitions para todos os elementos */
+        * {
+          transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+        }
+        
+        /* Efeito hover suave para botões */
+        button:hover {
+          transform: translateY(-1px);
+        }
+        
+        /* Animação para loading states */
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        /* Melhores efeitos de glass morphism */
+        .glass-effect {
+          backdrop-filter: blur(20px) saturate(180%);
+          -webkit-backdrop-filter: blur(20px) saturate(180%);
+        }
+      `}</style>
     </div>
   );
 };
 
 export default ClientProfitability;
+          

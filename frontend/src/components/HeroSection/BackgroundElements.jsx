@@ -19,7 +19,7 @@ const BackgroundElements = ({ businessStatus }) => {
 
     const getGradientColors = () => {
         return {
-                    from: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)',
+                    from: 'linear-gradient(135deg, rgb(30, 67, 128) 0%, rgb(35, 13, 56) 50%, rgb(7, 92, 107) 100%)',
                     accent: 'rgb(255, 255, 255)'
                 };
     };
@@ -308,20 +308,6 @@ const BackgroundElements = ({ businessStatus }) => {
                 animate="animate"
                 transition={{ delay: 1.5 }}
             />
-
-            {/* Animated Wave Lines */}
-            <svg 
-                style={waveStyle}
-                viewBox="0 0 1200 120"
-                preserveAspectRatio="none"
-            >
-                <motion.path
-                    d="M0,60 C300,120 600,0 900,60 C1050,90 1200,30 1200,60 L1200,120 L0,120 Z"
-                    fill="white"
-                    variants={waveVariants}
-                    animate="animate"
-                />
-            </svg>
 
             {/* Grid Pattern Overlay */}
             <div style={gridStyle} />

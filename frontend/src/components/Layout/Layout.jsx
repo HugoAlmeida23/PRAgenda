@@ -1,424 +1,609 @@
-// src/components/Layout/Layout.jsx
-
-import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useLocation, useNavigate, Link, Outlet } from "react-router-dom";
-import simpleLogo from "../../assets/simplelogo.png"; // Make sure this path is correct from Layout.jsx
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation, useNavigate, Link, Outlet } from 'react-router-dom';
 import {
-  Home, Users, Clock, CheckSquare, DollarSign, Settings, HelpCircle, Bell, Search,
-  ChevronDown, ChevronUp, LogOut, CreditCard, Menu, X, User as ProfileIcon, // Renamed User to avoid conflict with User model
-  Briefcase, GitPullRequest
-} from "lucide-react";
-import "./Layout.css"; // Assuming you copied modernHeaderStyles.css to Layout.css
-import api from '../../api'; // Make sure this path is correct
+  Home, Users, Clock, CheckSquare, DollarSign, Settings,
+  Bell, Search, Menu, X, LogOut, User,
+  Briefcase, GitPullRequest, Sparkles, Zap, Brain,
+  BarChart3, TrendingUp, Calendar, FileText, HelpCircle
+} from 'lucide-react';
+import api from '../../api'; // Adjust the import based on your API setup
 
-// --- Variants (Copied from your original Header.jsx) ---
-const sidebarVariants = {
-  open: {
-    width: "240px",
-    transition: { type: "spring", stiffness: 400, damping: 20, mass: 0.5, velocity: 2 }
-  },
-  closed: {
-    width: "64px",
-    transition: { type: "spring", stiffness: 400, damping: 20, mass: 0.8, velocity: 2 }
-  }
+// Background Component (similar to BackgroundElements)
+const UnifiedBackground = () => {
+  const particles = Array.from({ length: 8 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    delay: Math.random() * 2,
+    duration: 3 + Math.random() * 4,
+    size: 4 + Math.random() * 8
+  }));
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      overflowY: 'hidden',
+      zIndex: -1
+    }}>
+      {/* Main Gradient */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'linear-gradient(135deg, rgb(30, 67, 128) 0%, rgb(35, 13, 56) 50%, rgb(7, 92, 107) 100%)',
+
+      }} />
+
+      {/* Animated Overlay */}
+      <motion.div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.4
+        }}
+        animate={{
+          background: [
+            'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
+          ]
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          repeatType: "reverse"
+        }}
+      />
+
+      {/* Floating Particles */}
+      {particles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          style={{
+            position: 'absolute',
+            width: '6px',
+            height: '6px',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            borderRadius: '50%',
+            left: `${particle.x}%`,
+            top: `${particle.y}%`
+          }}
+          animate={{
+            y: [-particle.size, particle.size],
+            x: [-particle.size / 2, particle.size / 2],
+            opacity: [0.1, 0.4, 0.1],
+            scale: [0.5, 1, 0.5]
+          }}
+          transition={{
+            duration: particle.duration,
+            repeat: Infinity,
+            repeatType: "reverse",
+            delay: particle.delay,
+            ease: "easeInOut"
+          }}
+        />
+      ))}
+
+      {/* Grid Pattern */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        opacity: 0.02,
+        backgroundImage: `
+          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+        `,
+        backgroundSize: '50px 50px'
+      }} />
+    </div>
+  );
 };
 
-const menuItemVariants = {
-  open: { x: 0, opacity: 1, transition: { y: { stiffness: 1000, velocity: -100 } } },
-  closed: { x: -20, opacity: 0, transition: { y: { stiffness: 1000 } } }
-};
-
-const dropdownVariants = {
-  hidden: { opacity: 0, y: -10, scale: 0.95, transition: { duration: 0.1 } },
-  visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 500, damping: 24 } }
-};
-
-// --- Menu Items Data (Copied from your original Header.jsx) ---
-const menuItems = [
-  { path: "/", icon: <Home size={20} />, label: "Dashboard" },
-  { path: "/clientprofitability", icon: <DollarSign size={20} />, label: "Rentabilidade" },
-  { path: "/tasks", icon: <CheckSquare size={20} />, label: "Tarefas" },
-  { path: "/timeentry", icon: <Clock size={20} />, label: "Registo de Tempos" },
-  { path: "/clients", icon: <Users size={20} />, label: "Clientes" },
-  { path: "/organization", icon: <Briefcase size={20} />, label: "Organização" },
-  { path: "/workflow-designer", icon: <GitPullRequest size={20} />, label: "Workflow Designer" },
-  { path: "/workflow-management", icon: <Settings size={20} />, label: "Gerir Workflows" }
-];
-
-// --- API Call (Adapted from your original Header.jsx) ---
-const fetchLayoutUserProfileData = async () => { // Renamed to avoid conflicts if imported elsewhere
-  try {
-    const response = await api.get("/profiles/"); // This endpoint returns an array of profiles
-    if (response.data && response.data.length > 0) {
-      // Assuming the first profile in the array is the logged-in user's
-      return response.data[0];
-    }
-    console.warn("fetchLayoutUserProfileData: No profile data found or empty array returned.");
-    return null;
-  } catch (error) {
-    console.error("Error fetching user profile data for layout:", error);
-    return null;
-  }
-};
-
-const Layout = () => {
-  const location = useLocation();
+// Navigation Component
+const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   const navigate = useNavigate();
 
-  // State variables (from your original Header.jsx, adapted)
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    const storedState = localStorage.getItem('sidebarCollapsed');
-    if (storedState !== null) return JSON.parse(storedState);
-    return window.innerWidth <= 768; // Default collapse on mobile
-  });
-  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [activePath, setActivePath] = useState(location.pathname);
-  const [userProfile, setUserProfile] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(true); // Renamed from 'loading'
+  const menuItems = [
+    { path: "/", icon: Home, label: "Dashboard", category: "main" },
+    { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade", category: "analytics" },
+    { path: "/tasks", icon: CheckSquare, label: "Tarefas", category: "main" },
+    { path: "/timeentry", icon: Clock, label: "Registo de Tempos", category: "main" },
+    { path: "/clients", icon: Users, label: "Clientes", category: "main" },
+    { path: "/organization", icon: Briefcase, label: "Organização", category: "settings" },
+    { path: "/workflow-designer", icon: GitPullRequest, label: "Workflow Designer", category: "advanced" },
+    { path: "/workflow-management", icon: Settings, label: "Gerir Workflows", category: "advanced" }
+  ];
 
-  const dropdownRef = useRef(null);
-  const searchRef = useRef(null);
-
-  // Fetch user profile data
-  useEffect(() => {
-    const loadUserProfile = async () => {
-      setLoadingProfile(true);
-      const profileData = await fetchLayoutUserProfileData();
-      setUserProfile(profileData);
-      setLoadingProfile(false);
-    };
-    loadUserProfile();
-  }, []);
-
-  // Update active path
-  useEffect(() => {
-    setActivePath(location.pathname);
-  }, [location]);
-
-  // Check mobile and persist sidebar state
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth <= 768;
-      setIsMobile(mobile);
-      if (mobile && !JSON.parse(localStorage.getItem('userManuallyToggledSidebarOnMobile'))) {
-        // If becoming mobile and user hasn't explicitly toggled on mobile, collapse.
-        setSidebarCollapsed(true);
-      }
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []); // Removed sidebarCollapsed from deps to avoid loops with localStorage
-
-  useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed));
-  }, [sidebarCollapsed]);
-
-
-  // Click outside handlers
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setUserDropdownOpen(false);
-      }
-      if (searchRef.current && !searchRef.current.contains(event.target)) {
-        setSearchFocused(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Toggle functions
-  const toggleSidebar = () => {
-    const newState = !sidebarCollapsed;
-    setSidebarCollapsed(newState);
-    if(isMobile) {
-        localStorage.setItem('userManuallyToggledSidebarOnMobile', JSON.stringify(!newState)); // Store if sidebar is open
-    }
-  };
-  const toggleUserDropdown = () => setUserDropdownOpen(!userDropdownOpen);
-
-  // Menu item click
-  const handleMenuItemClick = (path, e) => {
-    e.preventDefault();
+  const handleMenuClick = (path) => {
     navigate(path);
-    if (isMobile && !sidebarCollapsed) { // If mobile and sidebar is open, close it
-      toggleSidebar();
-    }
+    onClose();
   };
 
-  // Helper functions for user display (from your original Header.jsx)
-  const getUserInitials = () => {
-    if (loadingProfile || !userProfile || !userProfile.username) return "U";
-    const names = userProfile.username.split(" ");
-    if (names.length >= 2) return (names[0][0] + names[1][0]).toUpperCase();
-    return userProfile.username.substring(0, 2).toUpperCase();
-  };
-
-  const getDisplayName = () => {
-    if (loadingProfile) return "Carregando...";
-    return userProfile?.username || "User";
-  };
-
-  const getUserSubtext = () => {
-    if (loadingProfile) return "";
-    return userProfile?.email || userProfile?.role || "";
-  };
-
-  // === THE JSX FROM YOUR ORIGINAL Header.jsx's return statement, with Outlet ===
   return (
-    <div className="app-layout">
-      {/* Top Header */}
-      <header className="top-header">
-        <div className="header-left">
-          <motion.button
-            className="sidebar-toggle"
-            onClick={toggleSidebar}
-            aria-label={sidebarCollapsed ? "Expandir sidebar" : "Recolher sidebar"}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 998
+            }}
+          />
+
+          {/* Navigation Panel */}
+          <motion.div
+            initial={{ x: -320, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -320, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            style={{
+              position: 'fixed',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: '320px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(20px)',
+              borderRight: '1px solid rgba(255, 255, 255, 0.2)',
+              zIndex: 999,
+              display: 'flex',
+              flexDirection: 'column',
+              color: 'white'
+            }}
           >
-            {/* On mobile, icon always reflects current OPEN state of sidebar.
-                On desktop, icon reflects collapsed state to suggest action.
-            */}
-            {isMobile ? (sidebarCollapsed ? <Menu size={20} /> : <X size={20} />)
-                      : (sidebarCollapsed ? <Menu size={20} /> : <X size={20} />)}
+            {/* Header */}
+            <div style={{
+              padding: '2rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '1rem'
+              }}>
+                <motion.div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem'
+                  }}
+                  whileHover={{ scale: 1.02 }}
+                >
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '12px',
+                    background: 'rgba(147, 51, 234, 0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: '700',
+                    fontSize: '1.2rem'
+                  }}>
+                    T
+                  </div>
+                  <span style={{
+                    fontSize: '1.5rem',
+                    fontWeight: '700'
+                  }}>
+                    TarefAi
+                  </span>
+                </motion.div>
+
+                <motion.button
+                  onClick={onClose}
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    cursor: 'pointer',
+                    padding: '0.5rem',
+                    borderRadius: '8px'
+                  }}
+                >
+                  <X size={20} />
+                </motion.button>
+              </div>
+
+              {/* User Info */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '1rem',
+                borderRadius: '12px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: 'rgba(147, 51, 234, 0.8)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: '600',
+                  marginRight: '1rem'
+                }}>
+                  {userProfile?.username?.substring(0, 2).toUpperCase() || 'U'}
+                </div>
+                <div>
+                  <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
+                    {userProfile?.username || 'Utilizador'}
+                  </div>
+                  <div style={{
+                    fontSize: '0.875rem',
+                    color: 'rgba(255, 255, 255, 0.7)'
+                  }}>
+                    {userProfile?.organization_name || 'Organização'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Menu Items */}
+            <div style={{
+              flex: 1,
+              padding: '1rem 0',
+              overflowX: 'hidden',
+              overflowY: 'auto',
+              // Custom scrollbar styles
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent',
+              // WebKit scrollbar styles
+              WebkitScrollbar: {
+                width: '6px'
+              },
+              WebkitScrollbarTrack: {
+                background: 'transparent'
+              },
+              WebkitScrollbarThumb: {
+                background: 'rgba(255, 255, 255, 0.3)',
+                borderRadius: '3px',
+                transition: 'background 0.2s ease'
+              },
+              WebkitScrollbarThumbHover: {
+                background: 'rgba(255, 255, 255, 0.5)'
+              }
+            }}>
+              {menuItems.map((item, index) => {
+                const IconComponent = item.icon;
+                const isActive = currentPath === item.path;
+
+                return (
+                  <motion.div
+                    key={item.path}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                  >
+                    <motion.button
+                      onClick={() => handleMenuClick(item.path)}
+                      whileHover={{ scale: 1.02, x: 8 }}
+                      whileTap={{ scale: 0.98 }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '1rem 2rem',
+                        background: isActive ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
+                        border: 'none',
+                        color: 'white',
+                        fontSize: '0.9rem',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        borderRadius: '0 24px 24px 0',
+                        margin: '0.25rem 0',
+                        transition: 'all 0.2s ease',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{
+                        marginRight: '1rem',
+                        padding: '0.5rem',
+                        borderRadius: '8px',
+                        background: isActive ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)'
+                      }}>
+                        <IconComponent size={18} />
+                      </div>
+                      {item.label}
+                    </motion.button>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '2rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+            }}>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '1rem',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: 'white',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: '500'
+                }}
+                onClick={() => {
+                  localStorage.clear();
+                  window.location.href = '/login';
+                }}
+              >
+                <LogOut size={18} style={{ marginRight: '0.75rem' }} />
+                Terminar Sessão
+              </motion.button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// Main Layout Component
+const Layout = () => {
+  const location = useLocation();
+  const [navOpen, setNavOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState({
+    username: 'João Silva',
+    organization_name: 'Contabilidade Silva'
+  });
+
+  // Mock notifications
+  const [notifications] = useState(2);
+
+  const toggleNav = () => setNavOpen(!navOpen);
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      position: 'relative',
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+    }}>
+      <UnifiedBackground />
+
+      {/* Top Navigation Bar */}
+      <motion.header
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(20px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+          padding: '1rem 2rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: 'white'
+        }}
+      >
+        {/* Left Side */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <motion.button
+            onClick={toggleNav}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '12px',
+              padding: '0.75rem',
+              color: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Menu size={20} />
           </motion.button>
 
-          <div className="brand">
-            <motion.img
-              src={simpleLogo}
-              alt="TarefAi Logo"
-              whileHover={{ rotate: 10, scale: 1.05 }}
-              transition={{ type: "spring", stiffness: 400, damping: 10 }}
+          {/* Search Bar */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'rgba(255, 255, 255, 0.15)',
+              borderRadius: '24px',
+              padding: '0.75rem 1.5rem',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              minWidth: '300px'
+            }}
+          >
+            <Search
+              size={18}
+              style={{
+                marginRight: '0.75rem',
+                color: 'rgba(255, 255, 255, 0.7)'
+              }}
             />
-            {/* Hide brand name on mobile for space, or if sidebar is collapsed and it's not mobile (very narrow view) */}
-            {(!isMobile || (isMobile && !sidebarCollapsed)) && (!sidebarCollapsed || isMobile) &&
-                <motion.span
-                className="brand-name"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 }}
-                >
-                TarefAi
-                </motion.span>
-            }
-          </div>
+            <input
+              type="text"
+              placeholder="Pesquisar ou descrever tarefa..."
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                fontSize: '0.9rem',
+                outline: 'none',
+                width: '100%'
+              }}
+            />
+            <motion.div
+              animate={{
+                scale: [1, 1.2, 1],
+                opacity: [0.7, 1, 0.7]
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            >
+              <Sparkles
+                size={16}
+                style={{ color: 'rgb(196, 181, 253)' }}
+              />
+            </motion.div>
+          </motion.div>
         </div>
 
-        <div className="header-actions">
+        {/* Right Side */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <motion.button
-            className="action-button"
-            aria-label="Ajuda"
             whileHover={{ scale: 1.1, y: -2 }}
             whileTap={{ scale: 0.95 }}
-          >
-            <HelpCircle size={20} />
-          </motion.button>
-
-          <motion.button
-            className="action-button notification-btn"
-            aria-label="Notificações"
-            whileHover={{ scale: 1.1, y: -2 }}
-            whileTap={{ scale: 0.95 }}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '12px',
+              padding: '0.75rem',
+              color: 'white',
+              cursor: 'pointer',
+              position: 'relative'
+            }}
           >
             <Bell size={20} />
-            <span className="notification-badge">3</span>
+            {notifications > 0 && (
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                style={{
+                  position: 'absolute',
+                  top: '-4px',
+                  right: '-4px',
+                  background: '#ef4444',
+                  color: 'white',
+                  borderRadius: '50%',
+                  fontSize: '0.75rem',
+                  fontWeight: '600',
+                  width: '20px',
+                  height: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                {notifications}
+              </motion.span>
+            )}
           </motion.button>
 
-          <div className="user-profile-wrapper" ref={dropdownRef}>
+          {/* AI Assistant Button */}
+          {/* <motion.button
+            whileHover={{ 
+              scale: 1.05,
+              boxShadow: '0 0 20px rgba(147, 51, 234, 0.5)'
+            }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              background: 'rgba(147, 51, 234, 0.3)',
+              border: '1px solid rgba(147, 51, 234, 0.5)',
+              borderRadius: '12px',
+              padding: '0.75rem 1rem',
+              color: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.875rem',
+              fontWeight: '500'
+            }}
+          >
             <motion.div
-              className="user-profile"
-              onClick={toggleUserDropdown}
-              whileHover={{ backgroundColor: "var(--hover-color)" }}
+              animate={{ rotate: [0, 360] }}
+              transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
             >
-              <motion.div
-                className="avatar-circle"
-                whileHover={{ scale: 1.05 }}
-              >
-                <span>{getUserInitials()}</span>
-              </motion.div>
-
-              {/* Hide user name/role text on mobile for space */}
-              {!isMobile && (
-                  <div className="user-info">
-                    <span className="user-name">{getDisplayName()}</span>
-                    <span className="user-role">{getUserSubtext()}</span>
-                  </div>
-              )}
-
-              <motion.div
-                animate={{ rotate: userDropdownOpen ? 180 : 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <ChevronDown size={18} className="dropdown-icon" />
-              </motion.div>
+              <Brain size={18} />
             </motion.div>
-
-            <AnimatePresence>
-              {userDropdownOpen && (
-                <motion.div
-                  className="user-dropdown"
-                  variants={dropdownVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="hidden"
-                >
-                  <div className="dropdown-header">
-                    <div className="avatar-circle-large">
-                      <span>{getUserInitials()}</span>
-                    </div>
-                    <div>
-                      <p className="dropdown-name">{getDisplayName()}</p>
-                      <p className="dropdown-email">{userProfile?.email || userProfile?.role || ""}</p>
-                    </div>
-                  </div>
-
-                  <ul className="dropdown-menu">
-                    <motion.li whileHover={{ x: 5, backgroundColor: 'var(--hover-color)' }}>
-                      <Link to="/profile" onClick={() => setUserDropdownOpen(false)}> {/* Use Link for navigation */}
-                        <ProfileIcon size={18} />
-                        <span>Perfil</span>
-                      </Link>
-                    </motion.li>
-                    <motion.li whileHover={{ x: 5, backgroundColor: 'var(--hover-color)' }}>
-                      <Link to="/billing" onClick={() => setUserDropdownOpen(false)}>
-                        <CreditCard size={18} />
-                        <span>Subscrição</span>
-                      </Link>
-                    </motion.li>
-                    <li className="divider"></li>
-                    <motion.li whileHover={{ x: 5, backgroundColor: 'var(--hover-color)' }}>
-                      <Link to="/help" onClick={() => setUserDropdownOpen(false)}>
-                        <HelpCircle size={18} />
-                        <span>Ajuda & Suporte</span>
-                      </Link>
-                    </motion.li>
-                    <li className="divider"></li>
-                    <motion.li
-                      className="logout-item"
-                      whileHover={{ x: 5, backgroundColor: 'rgba(255, 76, 81, 0.1)' }}
-                    >
-                      {/* For logout, you might want a function call instead of direct navigation */}
-                      <button onClick={() => { console.log('Logout clicked'); setUserDropdownOpen(false); navigate('/logout'); }} style={{all: 'unset', display: 'flex', alignItems: 'center', width: '100%', padding: '10px 16px', cursor: 'pointer'}}>
-                        <LogOut size={18} />
-                        <span style={{marginLeft: '10px'}}>Sair</span>
-                      </button>
-                    </motion.li>
-                  </ul>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+            AI Assistant
+          </motion.button> */}
         </div>
-      </header>
+      </motion.header>
 
-      {/* Main Layout with Sidebar and Content */}
-      {/* This div was called "main-layout" in your original Header, renaming to avoid class name collision */}
-      <div className="main-body-content-wrapper">
-        {/* Sidebar Navigation */}
-        <motion.nav
-          className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${isMobile ? 'mobile' : ''}`}
-          variants={sidebarVariants}
-          initial={false} // Prevent animation on initial load if state is from localStorage
-          animate={(isMobile && sidebarCollapsed) ? "closed" : (sidebarCollapsed ? "closed" : "open")}
-        >
-          {/* Content of sidebar: only render if not (mobile AND collapsed) */}
-          { !(isMobile && sidebarCollapsed) && (
-            <>
-              <ul className="nav-menu">
-                {menuItems.map((item) => ( // Removed index from key as item.path should be unique
-                  <motion.li
-                    key={item.path}
-                    className={`nav-item ${activePath === item.path ? 'active' : ''}`}
-                    whileHover={!sidebarCollapsed ? { // Only apply this hover if sidebar is open
-                      x: 5,
-                      backgroundColor: activePath === item.path ? 'var(--primary-color-light)' : 'var(--hover-color)'
-                    } : {}}
-                    transition={{ type: "spring", stiffness: 500, damping: 17 }}
-                  >
-                    <Link // Changed <a> to <Link>
-                      to={item.path}
-                      onClick={(e) => handleMenuItemClick(item.path, e)}
-                      title={item.label} // Tooltip, useful when collapsed
-                    >
-                      <span className="nav-icon">{item.icon}</span>
-                      {/* Show text only if sidebar is NOT collapsed */}
-                      {!sidebarCollapsed &&
-                        <motion.span
-                            className="nav-text"
-                            variants={menuItemVariants} // These variants handle opacity/x for text
-                            initial="closed"
-                            animate="open"
-                            exit="closed"
-                        >
-                            {item.label}
-                        </motion.span>
-                      }
-                    </Link>
-                  </motion.li>
-                ))}
-              </ul>
+      {/* Navigation Panel */}
+      <NavigationPanel
+        isOpen={navOpen}
+        onClose={() => setNavOpen(false)}
+        currentPath={location.pathname}
+        userProfile={userProfile}
+      />
 
-              {/* Show footer only if sidebar is NOT collapsed */}
-              {!sidebarCollapsed &&
-                <motion.div
-                    className="sidebar-footer"
-                    variants={menuItemVariants} // Use same variants for consistency
-                    initial="closed"
-                    animate="open"
-                    exit="closed"
-                >
-                    <motion.div
-                    className="workspace-info"
-                    whileHover={{
-                        backgroundColor: 'var(--hover-color)',
-                        scale: 1.02
-                    }}
-                    >
-                    <div className="workspace-icon">
-                        {/* Use loadingProfile state here */}
-                        {loadingProfile ? "" : (userProfile?.organization_name ? userProfile.organization_name[0].toUpperCase() : "W")}
-                    </div>
-                    {/* Text part of workspace info, also animates */}
-                    <motion.div
-                        className="workspace-details"
-                        variants={menuItemVariants} // Re-use variants if applicable, or create new ones
-                    >
-                        <span className="workspace-name">
-                        {loadingProfile ? "" : (userProfile?.organization_name || "Workspace")}
-                        </span>
-                    </motion.div>
-                    </motion.div>
-                </motion.div>
-              }
-            </>
-          )}
-        </motion.nav>
+      {/* Main Content */}
+      <motion.main
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          minHeight: 'calc(100vh - 80px)'
+        }}
+      >
+        <Outlet />
+      </motion.main>
 
-        {/* Mobile overlay: shown if mobile and sidebar is NOT collapsed (i.e., open) */}
-        <AnimatePresence>
-          {isMobile && !sidebarCollapsed && (
-            <motion.div
-              className="sidebar-overlay"
-              onClick={toggleSidebar}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Main Content Area for Routed Pages */}
-        <main className="page-content-area"> {/* Was "main-content bg-white" in original */}
-          <Outlet /> {/* Renders the matched child route component */}
-        </main>
-      </div>
+      {/* Bottom AI Suggestions (Optional) */}
+      {/* <motion.div
+        initial={{ y: 100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 1, duration: 0.6 }}
+        style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(20px)',
+          borderRadius: '16px',
+          padding: '1rem',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          color: 'white',
+          fontSize: '0.875rem',
+          maxWidth: '300px',
+          zIndex: 50
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          marginBottom: '0.5rem'
+        }}>
+          <Zap size={16} style={{ color: 'rgb(251, 191, 36)' }} />
+          <span style={{ fontWeight: '600' }}>Sugestão AI</span>
+        </div>
+        <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.8)' }}>
+          Tem 3 tarefas pendentes para hoje. Quer que organize por prioridade?
+        </p>
+      </motion.div> */}
     </div>
   );
 };

@@ -202,12 +202,12 @@ const DashboardPages = ({ dashboardData }) => {
     };
 
     const pageWrapperStyle = {
-        position: 'absolute',
+        position: 'relative',
         top: 0,
         left: 0,
         width: '100%',
         height: '100%',
-        padding: '2rem',
+        padding: '1.8rem',
         overflowY: 'auto',
         color: 'white',
     };
@@ -320,19 +320,19 @@ const DashboardPages = ({ dashboardData }) => {
             <BackgroundElements businessStatus="optimal" />
             <div style={{ position: 'relative', zIndex: 10 }}>
                 {/* Header */}
-                <header style={{ marginBottom: '2rem' }}>
+                <header style={{ marginBottom: '1.8rem' }}>
                     <h1 style={{
-                        fontSize: '3rem',
+                        fontSize: '1.8rem',
                         fontWeight: '700',
                         color: 'white',
                         marginBottom: '0.5rem',
                         margin: 0
                     }}>
-                        Bom dia! 👋
+                        Bom dia !
                     </h1>
                     <p style={{
                         color: 'rgba(191, 219, 254, 1)',
-                        fontSize: '1.125rem',
+                        fontSize: '1rem',
                         margin: 0
                     }}>
                         Pronto para otimizar o seu escritório?
@@ -340,7 +340,7 @@ const DashboardPages = ({ dashboardData }) => {
                 </header>
 
                 {/* Search Bar */}
-                <div style={{ marginBottom: '2rem' }}>
+                <div style={{ marginBottom: '1rem' }}>
                     <SmartSearchBar
                         dashboardData={dashboardData}
                         placeholder="Pergunte qualquer coisa ou descreva o que fez hoje..."
@@ -351,7 +351,7 @@ const DashboardPages = ({ dashboardData }) => {
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(12, 1fr)',
-                    gap: '1.5rem'
+                    gap: '1rem'
                 }}>
                     <div style={{ gridColumn: 'span 8' }}>
                         <AIInsightsPanel
@@ -365,24 +365,6 @@ const DashboardPages = ({ dashboardData }) => {
                             dashboardData={dashboardData}
                         />
                     </div>
-                </div>
-
-                {/* Hint for next page */}
-                <div style={{
-                    position: 'absolute',
-                    bottom: '20px',
-                    right: '80px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    fontSize: '0.875rem'
-                }}
-                role="complementary"
-                aria-label="Dica de navegação"
-                >
-                    <ArrowBigLeftDash size={16} />
-                    <span>Deslize para ver análises detalhadas</span>
                 </div>
             </div>
         </motion.div>
@@ -403,19 +385,19 @@ const DashboardPages = ({ dashboardData }) => {
             <BackgroundElements businessStatus="optimal" />
             <div style={{ position: 'relative', zIndex: 10 }}>
                 {/* Header para consistência */}
-                <header style={{ marginBottom: '2rem' }}>
+                <header style={{ marginBottom: '1.8rem' }}>
                     <h1 style={{
-                        fontSize: '2.5rem',
+                        fontSize: '2rem',
                         fontWeight: '700',
                         color: 'white',
                         marginBottom: '0.5rem',
                         margin: 0
                     }}>
-                        Análises Detalhadas 📊
+                        Análises Detalhadas
                     </h1>
                     <p style={{
                         color: 'rgba(191, 219, 254, 1)',
-                        fontSize: '1.125rem',
+                        fontSize: '1rem',
                         margin: 0
                     }}>
                         Visão completa do seu escritório
@@ -453,7 +435,7 @@ const DashboardPages = ({ dashboardData }) => {
                                 color: 'white',
                                 fontWeight: '600',
                                 margin: 0,
-                                fontSize: '1.125rem'
+                                fontSize: '1rem'
                             }}>
                                 Ações Rápidas
                             </h3>
@@ -617,7 +599,7 @@ const DashboardPages = ({ dashboardData }) => {
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
                     gap: '1.5rem',
-                    marginBottom: '2rem'
+                    marginBottom: '1.8rem'
                 }}>
                     {/* Receita vs Custos */}
                     <div style={glassCardStyle}>
@@ -657,7 +639,7 @@ const DashboardPages = ({ dashboardData }) => {
                                     Receita:
                                 </span>
                                 <span style={{
-                                    fontSize: '1.125rem',
+                                    fontSize: '1rem',
                                     fontWeight: '700',
                                     color: 'rgb(34, 197, 94)'
                                 }}>
@@ -677,7 +659,7 @@ const DashboardPages = ({ dashboardData }) => {
                                     Custo:
                                 </span>
                                 <span style={{
-                                    fontSize: '1.125rem',
+                                    fontSize: '1rem',
                                     fontWeight: '700',
                                     color: 'rgb(239, 68, 68)'
                                 }}>
@@ -698,7 +680,7 @@ const DashboardPages = ({ dashboardData }) => {
                                         Lucro:
                                     </span>
                                     <span style={{
-                                        fontSize: '1.125rem',
+                                        fontSize: '1rem',
                                         fontWeight: '700',
                                         color: 'white'
                                     }}>
@@ -763,7 +745,7 @@ const DashboardPages = ({ dashboardData }) => {
                                     Eficiência:
                                 </span>
                                 <span style={{
-                                    fontSize: '1.125rem',
+                                    fontSize: '1rem',
                                     fontWeight: '700',
                                     color: 'rgb(147, 51, 234)'
                                 }}>
@@ -846,7 +828,7 @@ const DashboardPages = ({ dashboardData }) => {
                                     Atrasadas:
                                 </span>
                                 <span style={{
-                                    fontSize: '1.125rem',
+                                    fontSize: '1rem',
                                     fontWeight: '700',
                                     color: 'rgb(239, 68, 68)'
                                 }}>
@@ -929,7 +911,7 @@ const DashboardPages = ({ dashboardData }) => {
                                     Margem média:
                                 </span>
                                 <span style={{
-                                    fontSize: '1.125rem',
+                                    fontSize: '1rem',
                                     fontWeight: '700',
                                     color: 'rgb(251, 191, 36)'
                                 }}>
@@ -980,7 +962,7 @@ const DashboardPages = ({ dashboardData }) => {
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
                     gap: '1.5rem',
-                    marginBottom: '2rem'
+                    marginBottom: '1.8rem'
                 }}>
                     {/* Tempo de Hoje */}
                     <div style={glassCardStyle}>
@@ -998,7 +980,7 @@ const DashboardPages = ({ dashboardData }) => {
                                 <Timer size={24} style={{ color: 'rgb(59, 130, 246)' }} />
                             </div>
                             <h3 style={{
-                                fontSize: '1.125rem',
+                                fontSize: '1rem',
                                 fontWeight: '600',
                                 margin: 0,
                                 color: 'white'
@@ -1008,7 +990,7 @@ const DashboardPages = ({ dashboardData }) => {
                         </div>
                         
                         <p style={{
-                            fontSize: '2rem',
+                            fontSize: '1.8rem',
                             fontWeight: '700',
                             color: 'rgb(52, 211, 153)',
                             margin: '0 0 0.5rem 0'
@@ -1064,7 +1046,7 @@ const DashboardPages = ({ dashboardData }) => {
                                 <TrendingUp size={24} style={{ color: 'rgb(147, 51, 234)' }} />
                             </div>
                             <h3 style={{
-                                fontSize: '1.125rem',
+                                fontSize: '1rem',
                                 fontWeight: '600',
                                 margin: 0,
                                 color: 'white'
@@ -1095,7 +1077,7 @@ const DashboardPages = ({ dashboardData }) => {
                         </div>
 
                         <p style={{
-                            fontSize: '2rem',
+                            fontSize: '1.8rem',
                             fontWeight: '700',
                             color: 'rgb(147, 51, 234)',
                             margin: '0 0 0.5rem 0'
@@ -1151,7 +1133,7 @@ const DashboardPages = ({ dashboardData }) => {
                                 <CheckSquare size={24} style={{ color: 'rgb(52, 211, 153)' }} />
                             </div>
                             <h3 style={{
-                                fontSize: '1.125rem',
+                                fontSize: '1rem',
                                 fontWeight: '600',
                                 margin: 0,
                                 color: 'white'
@@ -1161,7 +1143,7 @@ const DashboardPages = ({ dashboardData }) => {
                         </div>
                         
                         <p style={{
-                            fontSize: '2rem',
+                            fontSize: '1.8rem',
                             fontWeight: '700',
                             color: 'rgb(52, 211, 153)',
                             margin: '0 0 0.5rem 0'
@@ -1213,7 +1195,7 @@ const DashboardPages = ({ dashboardData }) => {
                         marginBottom: '1rem'
                     }}>
                         <h2 style={{
-                            fontSize: '1.125rem',
+                            fontSize: '1rem',
                             fontWeight: '600',
                             margin: 0,
                             color: 'white',
@@ -1426,7 +1408,7 @@ const DashboardPages = ({ dashboardData }) => {
                         marginBottom: '1rem'
                     }}>
                         <h2 style={{
-                            fontSize: '1.125rem',
+                            fontSize: '1rem',
                             fontWeight: '600',
                             margin: 0,
                             color: 'white',
@@ -1485,7 +1467,7 @@ const DashboardPages = ({ dashboardData }) => {
                         {mappedStats.recentTimeEntries?.length === 0 && mappedStats.upcomingTasks?.length === 0 && (
                             <div style={{
                                 textAlign: 'center',
-                                padding: '2rem',
+                                padding: '1.8rem',
                                 backgroundColor: 'rgba(255, 255, 255, 0.05)',
                                 borderRadius: '8px',
                                 border: '1px solid rgba(255, 255, 255, 0.1)'

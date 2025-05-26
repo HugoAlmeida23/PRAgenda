@@ -241,7 +241,7 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
     const statsGridStyle = {
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: '1rem'
+        marginTop: '3rem',
     };
 
     const statItemStyle = {
@@ -249,7 +249,8 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
     };
 
     const progressBarContainerStyle = {
-        marginTop: '1rem'
+        marginTop: '1rem',
+        marginBottom: '1rem'
     };
 
     const progressBarStyle = {
@@ -287,8 +288,8 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-            onMouseEnter={() => setIsPaused(true)}
-            onMouseLeave={() => setIsPaused(false)}
+/*             onMouseEnter={() => setIsPaused(true)}
+            onMouseLeave={() => setIsPaused(false)} */
         >
             {/* Header */}
             <div style={headerStyle}>
@@ -324,6 +325,8 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                         </p>
                     </div>
                 </div>
+
+            
 
                 {/* Controls */}
                 <div style={controlsStyle}>
@@ -364,7 +367,28 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                     </motion.button>
                 </div>
             </div>
-
+    {/* Progress Bar for Auto-rotation */}
+            {isAutoRotating && !isPaused && insights.length > 1 && (
+                <div style={progressBarContainerStyle}>
+                    <div style={progressBarStyle}>
+                        <motion.div
+                            style={{
+                                background: 'linear-gradient(to right, rgb(96, 165, 250), rgb(147, 51, 234))',
+                                height: '4px',
+                                borderRadius: '4px',
+                            }}
+                            initial={{ width: "0%" }}
+                            animate={{ width: "100%" }}
+                            transition={{ 
+                                duration: 5,
+                                ease: "linear",
+                                repeat: Infinity
+                            }}
+                            key={currentInsight}
+                        />
+                    </div>
+                </div>
+            )}
             {/* Main Insight Display */}
             <div style={insightContainerStyle}>
                 <AnimatePresence mode="wait">
@@ -554,28 +578,7 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                 </div>
             )}
 
-            {/* Progress Bar for Auto-rotation */}
-            {isAutoRotating && !isPaused && insights.length > 1 && (
-                <div style={progressBarContainerStyle}>
-                    <div style={progressBarStyle}>
-                        <motion.div
-                            style={{
-                                background: 'linear-gradient(to right, rgb(96, 165, 250), rgb(147, 51, 234))',
-                                height: '4px',
-                                borderRadius: '4px'
-                            }}
-                            initial={{ width: "0%" }}
-                            animate={{ width: "100%" }}
-                            transition={{ 
-                                duration: 5,
-                                ease: "linear",
-                                repeat: Infinity
-                            }}
-                            key={currentInsight}
-                        />
-                    </div>
-                </div>
-            )}
+            
         </motion.div>
     );
 };

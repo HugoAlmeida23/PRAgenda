@@ -154,7 +154,7 @@ class TimeEntrySerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'user_name', 'client', 'client_name', 
                   'task', 'task_title', 'category', 'category_name', 
                   'description', 'minutes_spent', 'date', 'start_time', 
-                  'end_time', 'created_at', 'original_text', 'task_status_after']  # ADICIONAR task_status_after
+                  'end_time', 'created_at', 'original_text', 'task_status_after'] 
         read_only_fields = ['id', 'created_at']
         extra_kwargs = {
             'user': {'required': False}

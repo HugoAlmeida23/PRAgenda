@@ -37,31 +37,7 @@ import {
   Trash,
   PlusCircle,
 } from "lucide-react";
-import api from "../api";
 import "../styles/Home.css";
-import InvitationCodeDisplay from "../components/InvitationCodeDisplay";
-import InvitationCodeForm from "../components/InvitationForm";
-import { usePermissions } from "../contexts/PermissionsContext";
-
-// Error view component for displaying errors
-const ErrorView = ({ message, onRetry }) => (
-  <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
-    <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
-    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg" role="alert">
-      <strong className="font-bold block sm:inline">Ocorreu um erro!</strong>
-      <span className="block sm:inline"> {message || 'Falha ao carregar dados.'}</span>
-    </div>
-    {onRetry && (
-      <button
-        onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      >
-        <RotateCcw className="h-4 w-4 mr-2" />
-        Tentar novamente
-      </button>
-    )}
-  </div>
-);
 
 // Member permissions form component
 const MemberPermissionsForm = ({ member, onSave, onCancel, clients = [] }) => {

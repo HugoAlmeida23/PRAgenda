@@ -400,27 +400,6 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
                 ))}
             </motion.div>
 
-            {/* Smart Suggestion Footer */}
-            {actions.length > 0 && ( // Only show footer if there are actions
-                <motion.div
-                    style={suggestionFooterStyle}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: actions.length * 0.1 + 0.2 }} // Delay based on number of actions
-                >
-                    <div style={suggestionContentStyle}>
-                        <div style={pulseStyle} />
-                        <p style={{
-                            color: 'rgb(191, 219, 254)',
-                            fontSize: '0.75rem',
-                            margin: 0
-                        }}>
-                            Sugestões baseadas no seu padrão de trabalho
-                            {/* das {new Date().getHours()}h - this might not always be relevant */}
-                        </p>
-                    </div>
-                </motion.div>
-            )}
 
 
             {/* Priority Indicator (Optional, if you have 'urgent' actions) */}
