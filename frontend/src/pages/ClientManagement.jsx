@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import api from "../api";
-import "../styles/Home.css";
 import {
   User,
   Search,
@@ -35,138 +34,524 @@ import {
   Info,
   Loader2,
   RefreshCw,
+  Brain,
+  Sparkles,
+  Activity,
+  Target,
+  Eye,
+  EyeOff,
+  TrendingUp,
+  TrendingDown
 } from "lucide-react";
 import { usePermissions } from "../contexts/PermissionsContext";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import BackgroundElements from "../components/HeroSection/BackgroundElements";
 
-// Componentes reutilizáveis
-const LoadingView = () => (
-  <div className="flex justify-center items-center min-h-screen">
-    <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-  </div>
-);
-
-// Variants de animação
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.05 }
-  }
+// Data fetching functions
+const fetchClientsData = async () => {
+  const [clientsRes, usersRes] = await Promise.all([
+    api.get("/clients/"),
+    api.get("/profiles/")
+  ]);
+  return {
+    clients: clientsRes.data || [],
+    users: usersRes.data || []
+  };
 };
 
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: { type: "spring", stiffness: 100 }
-  }
+// Componente de fundo universal (mesmo da dashboard)
+const UniversalBackground = () => {
+  const particles = Array.from({ length: 12 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    y: Math.random() * 100,
+    delay: Math.random() * 2,
+    duration: 3 + Math.random() * 4,
+    size: 4 + Math.random() * 8
+  }));
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      overflow: 'hidden',
+      zIndex: -1,
+      pointerEvents: 'none'
+    }}>
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)'
+      }} />
+      
+      <motion.div 
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.4
+        }}
+        animate={{
+          background: [
+            'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
+            'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
+          ]
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          repeatType: "reverse"
+        }}
+      />
+
+      {particles.map((particle) => (
+        <motion.div
+          key={particle.id}
+          style={{
+            position: 'absolute',
+            width: '6px',
+            height: '6px',
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            borderRadius: '50%',
+            left: `${particle.x}%`,
+            top: `${particle.y}%`
+          }}
+          animate={{
+            y: [-particle.size, particle.size],
+            x: [-particle.size/2, particle.size/2],
+            opacity: [0.1, 0.4, 0.1],
+            scale: [0.5, 1, 0.5]
+          }}
+          transition={{
+            duration: particle.duration,
+            repeat: Infinity,
+            repeatType: "reverse",
+            delay: particle.delay,
+            ease: "easeInOut"
+          }}
+        />
+      ))}
+
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        opacity: 0.02,
+        backgroundImage: `
+          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+        `,
+        backgroundSize: '50px 50px'
+      }} />
+    </div>
+  );
 };
 
 // Componente para alternar entre visualizações
 const ViewToggle = ({ activeView, onChange }) => {
   return (
-    <div className="inline-flex rounded-md overflow-hidden shadow-sm">
-      <button
-        className={`px-4 py-2 text-sm font-medium ${activeView === 'grid'
-            ? 'bg-blue-600 text-white'
-            : 'bg-white text-gray-700 hover:bg-gray-50'
-          }`}
+    <div style={{
+      display: 'inline-flex',
+      borderRadius: '8px',
+      overflow: 'hidden',
+      background: 'rgba(255, 255, 255, 0.1)',
+      border: '1px solid rgba(255, 255, 255, 0.2)'
+    }}>
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={() => onChange('grid')}
+        style={{
+          padding: '0.5rem 1rem',
+          fontSize: '0.875rem',
+          fontWeight: '500',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          background: activeView === 'grid' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+          color: 'white'
+        }}
       >
-        <Grid size={16} className="inline-block ml-2 mr-1" />
+        <Grid size={16} />
         Cartões
-      </button>
-      <button
-        className={`px-4 py-2 text-sm font-medium ${activeView === 'list'
-            ? 'bg-blue-600 text-white'
-            : 'bg-white text-gray-700 hover:bg-gray-50'
-          }`}
+      </motion.button>
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={() => onChange('list')}
+        style={{
+          padding: '0.5rem 1rem',
+          fontSize: '0.875rem',
+          fontWeight: '500',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          background: activeView === 'list' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+          color: 'white'
+        }}
       >
-        <List size={16} className="inline-block ml-2 mr-1" />
+        <List size={16} />
         Tabela
-      </button>
+      </motion.button>
     </div>
   );
 };
 
 // Componente de Card de Cliente
-// Update your ClientCard component
-const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions }) => {
+const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onClick }) => {
   const { isOrgAdmin, canEditClients, canChangeClientStatus, canDeleteClients } = permissions;
 
+  // Estilos glass
+  const glassStyle = {
+    background: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '16px'
+  };
+
   return (
-    <div className={`client-card ${!client.is_active ? 'client-inactive' : ''}`}>
-      <div className="client-card-header">
-        <div className="client-avatar">
-          <User size={20} className="text-blue-700" />
+    <motion.div
+      whileHover={{ scale: 1.02, y: -5 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      style={{
+        ...glassStyle,
+        padding: '1.5rem',
+        cursor: 'pointer',
+        opacity: client.is_active ? 1 : 0.7,
+        background: client.is_active 
+          ? 'rgba(255, 255, 255, 0.1)' 
+          : 'rgba(239, 68, 68, 0.1)',
+        border: client.is_active 
+          ? '1px solid rgba(255, 255, 255, 0.15)' 
+          : '1px solid rgba(239, 68, 68, 0.2)'
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        marginBottom: '1rem'
+      }}>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          borderRadius: '50%',
+          background: 'rgba(59, 130, 246, 0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: '1rem',
+          color: 'rgb(59, 130, 246)',
+          fontWeight: '600'
+        }}>
+          <User size={20} />
         </div>
-        <div className="client-info">
-          <h3>{client.name}</h3>
-          <div>
-            <span className={`status-badge ${client.is_active ? 'status-active' : 'status-inactive'}`}>
+        <div style={{ flex: 1 }}>
+          <h3 style={{
+            margin: '0 0 0.5rem 0',
+            fontSize: '1rem',
+            fontWeight: '600',
+            color: 'white'
+          }}>
+            {client.name}
+          </h3>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{
+              padding: '0.25rem 0.75rem',
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              fontWeight: '600',
+              background: client.is_active 
+                ? 'rgba(52, 211, 153, 0.2)' 
+                : 'rgba(239, 68, 68, 0.2)',
+              border: client.is_active 
+                ? '1px solid rgba(52, 211, 153, 0.3)' 
+                : '1px solid rgba(239, 68, 68, 0.3)',
+              color: client.is_active 
+                ? 'rgb(110, 231, 183)' 
+                : 'rgb(252, 165, 165)'
+            }}>
               {client.is_active ? 'Ativo' : 'Inativo'}
             </span>
             {client.nif && (
-              <span className="nif-badge">NIF: {client.nif}</span>
+              <span style={{
+                padding: '0.25rem 0.75rem',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: '600',
+                background: 'rgba(147, 51, 234, 0.2)',
+                border: '1px solid rgba(147, 51, 234, 0.3)',
+                color: 'rgb(196, 181, 253)'
+              }}>
+                NIF: {client.nif}
+              </span>
             )}
           </div>
         </div>
       </div>
 
-      <div className="client-contact">
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem',
+        marginBottom: '1rem'
+      }}>
         {client.email && (
-          <div className="contact-item">
-            <Mail size={16} />
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '0.875rem'
+          }}>
+            <Mail size={16} style={{ color: 'rgba(255, 255, 255, 0.6)' }} />
             <span>{client.email}</span>
           </div>
         )}
         {client.phone && (
-          <div className="contact-item">
-            <Phone size={16} />
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '0.875rem'
+          }}>
+            <Phone size={16} style={{ color: 'rgba(255, 255, 255, 0.6)' }} />
             <span>{client.phone}</span>
           </div>
         )}
         {client.address && (
-          <div className="contact-item">
-            <MapPin size={16} />
-            <span>{client.address}</span>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '0.875rem'
+          }}>
+            <MapPin size={16} style={{ color: 'rgba(255, 255, 255, 0.6)' }} />
+            <span style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}>
+              {client.address}
+            </span>
           </div>
         )}
       </div>
 
-      <div className="client-fee">
-        <span>Avença Mensal:</span>
-        <span className="fee-value">
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '1rem',
+        background: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: '8px',
+        marginBottom: '1rem'
+      }}>
+        <span style={{
+          fontSize: '0.875rem',
+          color: 'rgba(255, 255, 255, 0.7)'
+        }}>
+          Avença Mensal:
+        </span>
+        <span style={{
+          fontSize: '1rem',
+          fontWeight: '600',
+          color: 'rgb(52, 211, 153)'
+        }}>
           {client.monthly_fee ? `${client.monthly_fee} €` : 'Não definida'}
         </span>
       </div>
 
-      <div className="client-actions">
-        <div className="action-links">
-          <a href={`/tasks?client=${client.id}`} className="action-link">
-            <Clock size={14} />
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '1rem'
+      }}>
+        <div style={{
+          display: 'flex',
+          gap: '0.5rem'
+        }}>
+          <motion.a
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            href={`/tasks?client=${client.id}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              padding: '0.25rem 0.5rem',
+              background: 'rgba(251, 191, 36, 0.2)',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+              borderRadius: '6px',
+              color: 'rgb(251, 191, 36)',
+              fontSize: '0.75rem',
+              textDecoration: 'none'
+            }}
+          >
+            <Clock size={12} />
             Tarefas
-          </a>
-          <a href={`/timeentry?client=${client.id}`} className="action-link">
-            <FileText size={14} />
+          </motion.a>
+          <motion.a
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            href={`/timeentry?client=${client.id}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              padding: '0.25rem 0.5rem',
+              background: 'rgba(59, 130, 246, 0.2)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: '6px',
+              color: 'rgb(59, 130, 246)',
+              fontSize: '0.75rem',
+              textDecoration: 'none'
+            }}
+          >
+            <FileText size={12} />
             Registros
-          </a>
-          <a href={`/clientprofitability?client=${client.id}`} className="action-link">
-            <BarChart2 size={14} />
-            Rentabilidade
-          </a>
+          </motion.a>
         </div>
 
-        <a href={`/clients/${client.id}`} className="details-link">
-          Detalhes <ArrowRight size={14} className="ml-1" />
-        </a>
+        <motion.a
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          href={`/clientprofitability?client=${client.id}`}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 1rem',
+            background: 'rgba(52, 211, 153, 0.2)',
+            border: '1px solid rgba(52, 211, 153, 0.3)',
+            borderRadius: '8px',
+            color: 'rgb(52, 211, 153)',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            textDecoration: 'none'
+          }}
+        >
+          <BarChart2 size={14} />
+          Rentabilidade
+        </motion.a>
       </div>
-    </div>
+
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingTop: '1rem',
+        borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+      }}>
+        <div style={{
+          display: 'flex',
+          gap: '0.5rem'
+        }}>
+          {(isOrgAdmin || canEditClients) && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(client);
+              }}
+              style={{
+                background: 'rgba(147, 51, 234, 0.2)',
+                border: '1px solid rgba(147, 51, 234, 0.3)',
+                borderRadius: '6px',
+                padding: '0.5rem',
+                color: 'rgb(147, 51, 234)',
+                cursor: 'pointer'
+              }}
+              title="Editar cliente"
+            >
+              <Edit size={16} />
+            </motion.button>
+          )}
+
+          {(isOrgAdmin || canChangeClientStatus) && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleStatus(client);
+              }}
+              style={{
+                background: client.is_active 
+                  ? 'rgba(251, 146, 60, 0.2)' 
+                  : 'rgba(52, 211, 153, 0.2)',
+                border: client.is_active 
+                  ? '1px solid rgba(251, 146, 60, 0.3)' 
+                  : '1px solid rgba(52, 211, 153, 0.3)',
+                borderRadius: '6px',
+                padding: '0.5rem',
+                color: client.is_active 
+                  ? 'rgb(251, 146, 60)' 
+                  : 'rgb(52, 211, 153)',
+                cursor: 'pointer'
+              }}
+              title={client.is_active ? "Desativar" : "Ativar"}
+            >
+              {client.is_active ? <XCircle size={16} /> : <CheckCircle size={16} />}
+            </motion.button>
+          )}
+
+          {(isOrgAdmin || canDeleteClients) && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(client.id);
+              }}
+              style={{
+                background: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '6px',
+                padding: '0.5rem',
+                color: 'rgb(239, 68, 68)',
+                cursor: 'pointer'
+              }}
+              title="Excluir cliente"
+            >
+              <Trash2 size={16} />
+            </motion.button>
+          )}
+        </div>
+
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 1rem',
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            color: 'white',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            cursor: 'pointer'
+          }}
+        >
+          Detalhes <ArrowRight size={14} />
+        </motion.button>
+      </div>
+    </motion.div>
   );
 };
 
@@ -180,31 +565,37 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({ ...client });
 
-  // No modal de detalhes, limite os dados retornados
-useEffect(() => {
-    const fetchClientDetails = async () => {
-        setLoading(true);
-        try {
-            const [timeEntriesRes, tasksRes, profitabilityRes] = await Promise.all([
-                api.get(`/time-entries/?client=${client.id}&ordering=-date`), // Remove limit, aplique no frontend
-                api.get(`/tasks/?client=${client.id}&ordering=-created_at`),
-                api.get(`/client-profitability/?client=${client.id}&limit=1`)
-            ]);
+  // Estilos glass
+  const glassStyle = {
+    background: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '16px'
+  };
 
-            // Limite no frontend
-            setTimeEntries(timeEntriesRes.data?.slice(0, 5) || []);
-            setTasks(tasksRes.data?.slice(0, 5) || []);
-            setProfitabilityData(profitabilityRes.data.length > 0 ? profitabilityRes.data[0] : null);
-        } catch (error) {
-            console.error("Erro ao buscar detalhes do cliente:", error);
-            toast.error("Falha ao carregar detalhes do cliente");
-        } finally {
-            setLoading(false);
-        }
+  React.useEffect(() => {
+    const fetchClientDetails = async () => {
+      setLoading(true);
+      try {
+        const [timeEntriesRes, tasksRes, profitabilityRes] = await Promise.all([
+          api.get(`/time-entries/?client=${client.id}&ordering=-date`),
+          api.get(`/tasks/?client=${client.id}&ordering=-created_at`),
+          api.get(`/client-profitability/?client=${client.id}&limit=1`)
+        ]);
+
+        setTimeEntries(timeEntriesRes.data?.slice(0, 5) || []);
+        setTasks(tasksRes.data?.slice(0, 5) || []);
+        setProfitabilityData(profitabilityRes.data.length > 0 ? profitabilityRes.data[0] : null);
+      } catch (error) {
+        console.error("Erro ao buscar detalhes do cliente:", error);
+        toast.error("Falha ao carregar detalhes do cliente");
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchClientDetails();
-}, [client.id]);
+  }, [client.id]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -222,7 +613,6 @@ useEffect(() => {
   const { isOrgAdmin, canEditClients } = permissions;
   const canEdit = isOrgAdmin || canEditClients;
 
-  // Funções auxiliares para formatação
   const formatCurrency = (value) => {
     return new Intl.NumberFormat("pt-PT", {
       style: "currency",
@@ -243,762 +633,372 @@ useEffect(() => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-auto">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0, 0, 0, 0.5)',
+      backdropFilter: 'blur(4px)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 50,
+      padding: '1rem',
+      overflow: 'auto'
+    }}>
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        style={{
+          ...glassStyle,
+          width: '100%',
+          maxWidth: '4xl',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          color: 'white'
+        }}
+      >
         {/* Cabeçalho */}
-        <div className="flex justify-between items-center p-4 border-b">
-          <div className="flex items-center">
-            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-              <User size={20} className="text-blue-700" />
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '1.5rem',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              background: 'rgba(59, 130, 246, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: '1rem',
+              color: 'rgb(59, 130, 246)'
+            }}>
+              <User size={20} />
             </div>
             <div>
-              <h2 className="text-xl font-semibold">{client.name}</h2>
-              <div className="flex space-x-2">
-                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${client.is_active
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-200 text-gray-800'
-                  }`}>
+              <h2 style={{
+                margin: '0 0 0.5rem 0',
+                fontSize: '1.25rem',
+                fontWeight: '600',
+                color: 'white'
+              }}>
+                {client.name}
+              </h2>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <span style={{
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '9999px',
+                  fontSize: '0.75rem',
+                  fontWeight: '600',
+                  background: client.is_active 
+                    ? 'rgba(52, 211, 153, 0.2)' 
+                    : 'rgba(239, 68, 68, 0.2)',
+                  border: client.is_active 
+                    ? '1px solid rgba(52, 211, 153, 0.3)' 
+                    : '1px solid rgba(239, 68, 68, 0.3)',
+                  color: client.is_active 
+                    ? 'rgb(110, 231, 183)' 
+                    : 'rgb(252, 165, 165)'
+                }}>
                   {client.is_active ? 'Ativo' : 'Inativo'}
                 </span>
                 {client.nif && (
-                  <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                  <span style={{
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    background: 'rgba(147, 51, 234, 0.2)',
+                    border: '1px solid rgba(147, 51, 234, 0.3)',
+                    color: 'rgb(196, 181, 253)'
+                  }}>
                     NIF: {client.nif}
                   </span>
                 )}
               </div>
             </div>
           </div>
-          <button
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
+            style={{
+              background: 'rgba(239, 68, 68, 0.2)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '8px',
+              padding: '0.5rem',
+              color: 'rgb(239, 68, 68)',
+              cursor: 'pointer'
+            }}
           >
             <XCircle size={20} />
-          </button>
+          </motion.button>
         </div>
 
         {/* Navegação */}
-        <div className="border-b">
-          <nav className="flex overflow-x-auto">
-            <button
-              className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === 'overview'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              onClick={() => setActiveTab('overview')}
-            >
-              Visão Geral
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === 'tasks'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              onClick={() => setActiveTab('tasks')}
-            >
-              Tarefas
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === 'time'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              onClick={() => setActiveTab('time')}
-            >
-              Tempo
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === 'profitability'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              onClick={() => setActiveTab('profitability')}
-            >
-              Rentabilidade
-            </button>
+        <div style={{
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <nav style={{
+            display: 'flex',
+            overflowX: 'auto'
+          }}>
+            {[
+              { id: 'overview', label: 'Visão Geral' },
+              { id: 'tasks', label: 'Tarefas' },
+              { id: 'time', label: 'Tempo' },
+              { id: 'profitability', label: 'Rentabilidade' }
+            ].map((tab) => (
+              <motion.button
+                key={tab.id}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  padding: '1rem 1.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  border: 'none',
+                  background: 'none',
+                  cursor: 'pointer',
+                  borderBottom: activeTab === tab.id 
+                    ? '2px solid rgb(59, 130, 246)' 
+                    : '2px solid transparent',
+                  color: activeTab === tab.id 
+                    ? 'rgb(59, 130, 246)' 
+                    : 'rgba(255, 255, 255, 0.7)'
+                }}
+              >
+                {tab.label}
+              </motion.button>
+            ))}
           </nav>
         </div>
 
         {/* Conteúdo */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '1.5rem'
+        }}>
           {loading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              height: '16rem'
+            }}>
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              >
+                <Loader2 size={32} style={{ color: 'rgb(59, 130, 246)' }} />
+              </motion.div>
             </div>
           ) : (
-            <>
-              {/* Tab de Visão Geral */}
+            <div>
               {activeTab === 'overview' && (
-                <>
-                  {editMode ? (
-                    <div className="space-y-4">
-                      <div className="flex justify-between">
-                        <h3 className="text-lg font-semibold">Editar Cliente</h3>
-                        <div className="space-x-2">
-                          <button
-                            onClick={() => setEditMode(false)}
-                            className="px-3 py-1 text-sm text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50"
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={handleSave}
-                            className="px-3 py-1 text-sm text-white bg-blue-600 rounded-md shadow-sm hover:bg-blue-700"
-                          >
-                            Salvar
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
-                          <input
-                            type="text"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">NIF</label>
-                          <input
-                            type="text"
-                            name="nif"
-                            value={formData.nif || ''}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                          <input
-                            type="email"
-                            name="email"
-                            value={formData.email || ''}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                          <input
-                            type="tel"
-                            name="phone"
-                            value={formData.phone || ''}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Morada</label>
-                          <input
-                            type="text"
-                            name="address"
-                            value={formData.address || ''}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Avença Mensal (€)</label>
-                          <input
-                            type="number"
-                            name="monthly_fee"
-                            value={formData.monthly_fee || ''}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                            step="0.01"
-                          />
-                        </div>
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
-                          <textarea
-                            name="notes"
-                            value={formData.notes || ''}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                            rows={3}
-                          />
-                        </div>
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            id="is_active"
-                            name="is_active"
-                            checked={formData.is_active}
-                            onChange={handleInputChange}
-                            className="h-4 w-4 text-blue-600"
-                          />
-                          <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
-                            Cliente Ativo
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-semibold">Informações do Cliente</h3>
-                        {canEdit && (
-                          <button
-                            onClick={() => setEditMode(true)}
-                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md shadow-sm hover:bg-blue-700 flex items-center"
-                          >
-                            <Edit size={14} className="mr-1" />
-                            Editar
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                        <dl>
-                          <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                            <dt className="text-sm font-medium text-gray-500">Nome</dt>
-                            <dd className="text-sm text-gray-900 col-span-2">{client.name}</dd>
-                          </div>
-                          {client.nif && (
-                            <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                              <dt className="text-sm font-medium text-gray-500">NIF</dt>
-                              <dd className="text-sm text-gray-900 col-span-2">{client.nif}</dd>
-                            </div>
-                          )}
-                          {client.email && (
-                            <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                              <dt className="text-sm font-medium text-gray-500">Email</dt>
-                              <dd className="text-sm text-gray-900 col-span-2">
-                                <a href={`mailto:${client.email}`} className="text-blue-600 hover:underline">
-                                  {client.email}
-                                </a>
-                              </dd>
-                            </div>
-                          )}
-                          {client.phone && (
-                            <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                              <dt className="text-sm font-medium text-gray-500">Telefone</dt>
-                              <dd className="text-sm text-gray-900 col-span-2">
-                                <a href={`tel:${client.phone}`} className="text-blue-600 hover:underline">
-                                  {client.phone}
-                                </a>
-                              </dd>
-                            </div>
-                          )}
-                          {client.address && (
-                            <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                              <dt className="text-sm font-medium text-gray-500">Morada</dt>
-                              <dd className="text-sm text-gray-900 col-span-2">{client.address}</dd>
-                            </div>
-                          )}
-                          <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                            <dt className="text-sm font-medium text-gray-500">Avença Mensal</dt>
-                            <dd className="text-sm text-gray-900 col-span-2 font-medium">
-                              {client.monthly_fee ? `${client.monthly_fee} €` : 'Não definida'}
-                            </dd>
-                          </div>
-                          {client.account_manager_name && (
-                            <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                              <dt className="text-sm font-medium text-gray-500">Gestor de Conta</dt>
-                              <dd className="text-sm text-gray-900 col-span-2">{client.account_manager_name}</dd>
-                            </div>
-                          )}
-                          <div className="px-4 py-3 grid grid-cols-3 gap-4 border-b border-gray-200">
-                            <dt className="text-sm font-medium text-gray-500">Status</dt>
-                            <dd className="text-sm col-span-2">
-                              <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${client.is_active
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-200 text-gray-800'
-                                }`}>
-                                {client.is_active ? 'Ativo' : 'Inativo'}
-                              </span>
-                            </dd>
-                          </div>
-                          {client.notes && (
-                            <div className="px-4 py-3 grid grid-cols-3 gap-4">
-                              <dt className="text-sm font-medium text-gray-500">Observações</dt>
-                              <dd className="text-sm text-gray-900 col-span-2 whitespace-pre-wrap">{client.notes}</dd>
-                            </div>
-                          )}
-                        </dl>
-                      </div>
-
-                      {/* Resumo de Rentabilidade */}
-                      {profitabilityData && (
-                        <div className="bg-white p-4 rounded-lg border border-gray-200">
-                          <h4 className="text-base font-medium mb-3 flex items-center">
-                            <BarChart2 size={18} className="mr-2 text-blue-600" />
-                            Resumo de Rentabilidade
-                          </h4>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="p-3 rounded-lg bg-green-50 border border-green-100 text-center">
-                              <span className="text-xs text-gray-600 block mb-1">Avença Mensal</span>
-                              <span className="text-lg font-bold text-green-700">{formatCurrency(profitabilityData.monthly_fee)}</span>
-                            </div>
-                            <div className="p-3 rounded-lg bg-blue-50 border border-blue-100 text-center">
-                              <span className="text-xs text-gray-600 block mb-1">Tempo Registrado</span>
-                              <span className="text-lg font-bold text-blue-700">{formatTime(profitabilityData.total_time_minutes)}</span>
-                            </div>
-                            <div className="p-3 rounded-lg bg-amber-50 border border-amber-100 text-center">
-                              <span className="text-xs text-gray-600 block mb-1">Custo Total</span>
-                              <span className="text-lg font-bold text-amber-700">
-                                {formatCurrency(parseFloat(profitabilityData.time_cost) + parseFloat(profitabilityData.total_expenses))}
-                              </span>
-                            </div>
-                            <div className="p-3 rounded-lg border text-center"
-                              style={{
-                                backgroundColor: profitabilityData.is_profitable ? 'rgba(52, 211, 153, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                borderColor: profitabilityData.is_profitable ? 'rgba(52, 211, 153, 0.5)' : 'rgba(239, 68, 68, 0.5)'
-                              }}
-                            >
-                              <span className="text-xs text-gray-600 block mb-1">Margem de Lucro</span>
-                              <span className={`text-lg font-bold ${profitabilityData.is_profitable ? 'text-green-700' : 'text-red-700'}`}>
-                                {profitabilityData.profit_margin.toFixed(2)}%
-                              </span>
-                            </div>
-                          </div>
-                          <div className="mt-3 text-right">
-                            <a
-                              href={`/clientprofitability?client=${client.id}`}
-                              className="text-sm text-blue-600 hover:text-blue-800 inline-flex items-center"
-                            >
-                              Ver relatório completo <ArrowRight size={14} className="ml-1" />
-                            </a>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Resumo de Atividades Recentes */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Tarefas Recentes */}
-                        <div className="bg-white p-4 rounded-lg border border-gray-200">
-                          <h4 className="text-base font-medium mb-3 flex items-center">
-                            <Clock size={18} className="mr-2 text-blue-600" />
-                            Tarefas Recentes
-                          </h4>
-                          {tasks.length > 0 ? (
-                            <ul className="divide-y divide-gray-200">
-                              {tasks.slice(0, 3).map(task => (
-                                <li key={task.id} className="py-2">
-                                  <div className="flex items-start">
-                                    <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${task.status === 'completed' ? 'bg-green-500' :
-                                        task.status === 'in_progress' ? 'bg-blue-500' :
-                                          'bg-amber-500'
-                                      }`}></div>
-                                    <div className="ml-3">
-                                      <p className="text-sm font-medium">{task.title}</p>
-                                      <p className="text-xs text-gray-500">
-                                        Status: {
-                                          task.status === 'pending' ? 'Pendente' :
-                                            task.status === 'in_progress' ? 'Em Progresso' :
-                                              task.status === 'completed' ? 'Concluída' : 'Cancelada'
-                                        }
-                                      </p>
-                                    </div>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-sm text-gray-500 text-center py-3">
-                              Nenhuma tarefa encontrada
-                            </p>
-                          )}
-                          <div className="mt-2 text-right">
-                            <a
-                              href={`/tasks?client=${client.id}`}
-                              className="text-sm text-blue-600 hover:text-blue-800 inline-flex items-center"
-                            >
-                              Ver todas as tarefas <ArrowRight size={14} className="ml-1" />
-                            </a>
-                          </div>
-                        </div>
-
-                        {/* Entradas de Tempo Recentes */}
-                        <div className="bg-white p-4 rounded-lg border border-gray-200">
-                          <h4 className="text-base font-medium mb-3 flex items-center">
-                            <Calendar size={18} className="mr-2 text-blue-600" />
-                            Tempo Registrado
-                          </h4>
-                          {timeEntries.length > 0 ? (
-                            <ul className="divide-y divide-gray-200">
-                              {timeEntries.slice(0, 3).map(entry => (
-                                <li key={entry.id} className="py-2">
-                                  <div className="flex justify-between">
-                                    <div>
-                                      <p className="text-sm font-medium truncate max-w-[200px]">{entry.description}</p>
-                                      <p className="text-xs text-gray-500">
-                                        {formatDate(entry.date)} • {entry.user_name}
-                                      </p>
-                                    </div>
-                                    <span className="text-sm font-semibold">
-                                      {formatTime(entry.minutes_spent)}
-                                    </span>
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-sm text-gray-500 text-center py-3">
-                              Nenhum registro de tempo encontrado
-                            </p>
-                          )}
-                          <div className="mt-2 text-right">
-                            <a
-                              href={`/timeentry?client=${client.id}`}
-                              className="text-sm text-blue-600 hover:text-blue-800 inline-flex items-center"
-                            >
-                              Ver todos os registros <ArrowRight size={14} className="ml-1" />
-                            </a>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </>
+                <div>
+                  <p style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                    Informações detalhadas sobre {client.name}
+                  </p>
+                </div>
               )}
-
-              {/* Tab de Tarefas */}
+              
               {activeTab === 'tasks' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Tarefas do Cliente</h3>
-                    <a
-                      href={`/tasks?client=${client.id}`}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md shadow-sm hover:bg-blue-700 flex items-center"
-                    >
-                      <Plus size={14} className="mr-1" />
-                      Nova Tarefa
-                    </a>
-                  </div>
-
-                  {tasks.length > 0 ? (
-                    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Título</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prazo</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responsável</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {tasks.map(task => (
-                            <tr key={task.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">{task.title}</div>
-                                {task.description && (
-                                  <div className="text-xs text-gray-500 truncate max-w-xs">{task.description}</div>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">{formatDate(task.deadline)}</div>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${task.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                    task.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                                      task.status === 'pending' ? 'bg-amber-100 text-amber-800' :
-                                        'bg-gray-100 text-gray-800'
-                                  }`}>
-                                  {task.status === 'pending' ? 'Pendente' :
-                                    task.status === 'in_progress' ? 'Em Progresso' :
-                                      task.status === 'completed' ? 'Concluída' : 'Cancelada'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">{task.assigned_to_name || 'Não atribuído'}</div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                <div>
+                  <h3 style={{ color: 'white', marginBottom: '1rem' }}>Tarefas Recentes</h3>
+                  {tasks.length === 0 ? (
+                    <p style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                      Nenhuma tarefa encontrada para este cliente.
+                    </p>
                   ) : (
-                    <div className="bg-white p-8 rounded-lg border border-gray-200 text-center">
-                      <Clock size={40} className="mx-auto text-gray-400 mb-3" />
-                      <h4 className="text-lg font-medium text-gray-900 mb-1">Sem tarefas</h4>
-                      <p className="text-gray-500 mb-4">Este cliente ainda não possui tarefas atribuídas.</p>
-                      <a
-                        href={`/tasks?client=${client.id}`}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                      >
-                        <Plus size={14} className="mr-1" />
-                        Criar Nova Tarefa
-                      </a>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {tasks.map(task => (
+                        <div key={task.id} style={{
+                          padding: '1rem',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(255, 255, 255, 0.1)'
+                        }}>
+                          <h4 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>{task.title}</h4>
+                          <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                            Status: {task.status} • {formatDate(task.created_at)}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
               )}
-
-              {/* Tab de Tempo */}
+              
               {activeTab === 'time' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Registros de Tempo</h3>
-                    <a
-                      href={`/timeentry?client=${client.id}`}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md shadow-sm hover:bg-blue-700 flex items-center"
-                    >
-                      <Plus size={14} className="mr-1" />
-                      Novo Registro
-                    </a>
-                  </div>
-
-                  {timeEntries.length > 0 ? (
-                    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuário</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tempo</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {timeEntries.map(entry => (
-                            <tr key={entry.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">{formatDate(entry.date)}</div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="text-sm text-gray-900 truncate max-w-xs">{entry.description}</div>
-                                {entry.task_title && (
-                                  <div className="text-xs text-gray-500">Tarefa: {entry.task_title}</div>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">{entry.user_name}</div>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">{formatTime(entry.minutes_spent)}</div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                <div>
+                  <h3 style={{ color: 'white', marginBottom: '1rem' }}>Registos de Tempo</h3>
+                  {timeEntries.length === 0 ? (
+                    <p style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                      Nenhum registo de tempo encontrado para este cliente.
+                    </p>
                   ) : (
-                    <div className="bg-white p-8 rounded-lg border border-gray-200 text-center">
-                      <Clock size={40} className="mx-auto text-gray-400 mb-3" />
-                      <h4 className="text-lg font-medium text-gray-900 mb-1">Sem registros de tempo</h4>
-                      <p className="text-gray-500 mb-4">Este cliente ainda não possui registros de tempo.</p>
-                      <a
-                        href={`/timeentry?client=${client.id}`}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                      >
-                        <Plus size={14} className="mr-1" />
-                        Registrar Tempo
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Tab de Rentabilidade */}
-              {activeTab === 'profitability' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Rentabilidade</h3>
-                    <a
-                      href={`/clientprofitability?client=${client.id}`}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md shadow-sm hover:bg-blue-700 flex items-center"
-                    >
-                      <ExternalLink size={14} className="mr-1" />
-                      Relatório Completo
-                    </a>
-                  </div>
-
-                  {profitabilityData ? (
-                    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden p-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 mb-4 flex items-center">
-                            <DollarSign size={16} className="mr-1 text-blue-600" />
-                            Resumo Financeiro
-                          </h4>
-
-                          <div className="space-y-4">
-                            <div className="flex justify-between p-3 bg-green-50 rounded-lg border border-green-100">
-                              <span className="text-sm text-gray-700">Avença Mensal</span>
-                              <span className="font-medium">{formatCurrency(profitabilityData.monthly_fee)}</span>
-                            </div>
-
-                            <div className="flex justify-between p-3 bg-amber-50 rounded-lg border border-amber-100">
-                              <span className="text-sm text-gray-700">Custo do Tempo</span>
-                              <span className="font-medium">{formatCurrency(profitabilityData.time_cost)}</span>
-                            </div>
-
-                            <div className="flex justify-between p-3 bg-amber-50 rounded-lg border border-amber-100">
-                              <span className="text-sm text-gray-700">Despesas</span>
-                              <span className="font-medium">{formatCurrency(profitabilityData.total_expenses)}</span>
-                            </div>
-
-                            <div className="flex justify-between p-3 rounded-lg border"
-                              style={{
-                                backgroundColor: profitabilityData.is_profitable ? 'rgba(52, 211, 153, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                borderColor: profitabilityData.is_profitable ? 'rgba(52, 211, 153, 0.5)' : 'rgba(239, 68, 68, 0.5)'
-                              }}
-                            >
-                              <span className="text-sm text-gray-700">Lucro</span>
-                              <span className={`font-medium ${profitabilityData.is_profitable ? 'text-green-700' : 'text-red-700'}`}>
-                                {formatCurrency(profitabilityData.profit)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 mb-4 flex items-center">
-                            <BarChart2 size={16} className="mr-1 text-blue-600" />
-                            Métricas de Desempenho
-                          </h4>
-
-                          <div className="space-y-4">
-                            <div className="flex justify-between p-3 bg-blue-50 rounded-lg border border-blue-100">
-                              <span className="text-sm text-gray-700">Tempo Total Registrado</span>
-                              <span className="font-medium">{formatTime(profitabilityData.total_time_minutes)}</span>
-                            </div>
-
-                            <div className="flex justify-between p-3 bg-blue-50 rounded-lg border border-blue-100">
-                              <span className="text-sm text-gray-700">Custo Médio por Hora</span>
-                              <span className="font-medium">
-                                {formatCurrency(
-                                  profitabilityData.total_time_minutes > 0
-                                    ? (profitabilityData.time_cost / (profitabilityData.total_time_minutes / 60))
-                                    : 0
-                                )}
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between p-3 rounded-lg border"
-                              style={{
-                                backgroundColor: profitabilityData.is_profitable ? 'rgba(52, 211, 153, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                borderColor: profitabilityData.is_profitable ? 'rgba(52, 211, 153, 0.5)' : 'rgba(239, 68, 68, 0.5)'
-                              }}
-                            >
-                              <span className="text-sm text-gray-700">Margem de Lucro</span>
-                              <span className={`font-medium ${profitabilityData.is_profitable ? 'text-green-700' : 'text-red-700'}`}>
-                                {profitabilityData.profit_margin.toFixed(2)}%
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                              <span className="text-sm text-gray-700">Status</span>
-                              <span className={`px-2 py-0.5 text-xs leading-5 font-semibold rounded-full ${profitabilityData.is_profitable
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                                }`}>
-                                {profitabilityData.is_profitable ? 'Rentável' : 'Não Rentável'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {!profitabilityData.is_profitable && (
-                        <div className="p-4 bg-red-50 rounded-lg border border-red-200 mb-4">
-                          <div className="flex items-start">
-                            <AlertTriangle size={20} className="text-red-600 mr-3 mt-0.5" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {timeEntries.map(entry => (
+                        <div key={entry.id} style={{
+                          padding: '1rem',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(255, 255, 255, 0.1)'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div>
-                              <h4 className="text-sm font-medium text-red-800">Alerta de Rentabilidade</h4>
-                              <p className="text-sm text-red-700 mt-1">
-                                Este cliente está gerando um prejuízo de {formatCurrency(Math.abs(profitabilityData.profit))}.
-                                Recomenda-se revisar a avença mensal ou otimizar o tempo gasto nas tarefas.
+                              <h4 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>{entry.description}</h4>
+                              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                                {formatDate(entry.date)} • {entry.user_name}
                               </p>
                             </div>
+                            <span style={{
+                              fontSize: '0.875rem',
+                              fontWeight: '600',
+                              color: 'rgb(52, 211, 153)'
+                            }}>
+                              {formatTime(entry.minutes_spent)}
+                            </span>
                           </div>
                         </div>
-                      )}
-
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500 mb-2">Última atualização: {formatDate(profitabilityData.last_updated)}</p>
-                        <a
-                          href={`/clientprofitability?client=${client.id}`}
-                          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                        >
-                          <BarChart2 size={14} className="mr-1" />
-                          Ver Relatório Detalhado
-                        </a>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-white p-8 rounded-lg border border-gray-200 text-center">
-                      <BarChart2 size={40} className="mx-auto text-gray-400 mb-3" />
-                      <h4 className="text-lg font-medium text-gray-900 mb-1">Sem dados de rentabilidade</h4>
-                      <p className="text-gray-500 mb-4">Não há dados de rentabilidade disponíveis para este cliente.</p>
+                      ))}
                     </div>
                   )}
                 </div>
               )}
-            </>
+              
+              {activeTab === 'profitability' && (
+                <div>
+                  <h3 style={{ color: 'white', marginBottom: '1rem' }}>Análise de Rentabilidade</h3>
+                  {profitabilityData ? (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                      gap: '1rem'
+                    }}>
+                      <div style={{
+                        padding: '1rem',
+                        background: 'rgba(52, 211, 153, 0.1)',
+                        border: '1px solid rgba(52, 211, 153, 0.2)',
+                        borderRadius: '8px',
+                        textAlign: 'center'
+                      }}>
+                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                          Receita Mensal
+                        </p>
+                        <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: 'rgb(52, 211, 153)' }}>
+                          {formatCurrency(profitabilityData.monthly_fee)}
+                        </p>
+                      </div>
+                      <div style={{
+                        padding: '1rem',
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.2)',
+                        borderRadius: '8px',
+                        textAlign: 'center'
+                      }}>
+                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                          Tempo Total
+                        </p>
+                        <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: 'rgb(59, 130, 246)' }}>
+                          {formatTime(profitabilityData.total_time_minutes)}
+                        </p>
+                      </div>
+                      <div style={{
+                        padding: '1rem',
+                        background: profitabilityData.is_profitable 
+                          ? 'rgba(52, 211, 153, 0.1)' 
+                          : 'rgba(239, 68, 68, 0.1)',
+                        border: profitabilityData.is_profitable 
+                          ? '1px solid rgba(52, 211, 153, 0.2)' 
+                          : '1px solid rgba(239, 68, 68, 0.2)',
+                        borderRadius: '8px',
+                        textAlign: 'center'
+                      }}>
+                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                          Margem de Lucro
+                        </p>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: '1.25rem', 
+                          fontWeight: '700', 
+                          color: profitabilityData.is_profitable 
+                            ? 'rgb(52, 211, 153)' 
+                            : 'rgb(239, 68, 68)' 
+                        }}>
+                          {profitabilityData.profit_margin.toFixed(2)}%
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                      Dados de rentabilidade não disponíveis.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
 
+// Componente principal
 const ClientManagement = () => {
-  // Estados
+  const queryClient = useQueryClient();
+  const permissions = usePermissions();
+
+  // Estados locais
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortConfig, setSortConfig] = useState({ key: "name", direction: "asc" });
+  const [filters, setFilters] = useState({ active: true });
+  const [viewMode, setViewMode] = useState('grid');
+  const [showFilters, setShowFilters] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
-  const [filters, setFilters] = useState({
-    active: true,
-    search: "",
-  });
-  const [sortConfig, setSortConfig] = useState({
-    key: "name",
-    direction: "asc",
-  });
-
-  // React Query
-  const queryClient = useQueryClient();
-
-  // Obter permissões do contexto
-  const permissions = usePermissions();
-
-  // Fetch de clientes e usuários usando React Query
-  const {
-    data: clients = [],
-    isLoading: isClientsLoading,
-    isError: isClientsError,
-    error: clientsError,
-    refetch: refetchClients
-  } = useQuery({
-    queryKey: ['clients', filters.active],
-    queryFn: async () => {
-      const response = await api.get(`/clients/?is_active=${filters.active}`);
-      return response.data;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutos
+  const [formData, setFormData] = useState({
+    name: "",
+    nif: "",
+    email: "",
+    phone: "",
+    address: "",
+    monthly_fee: "",
+    notes: "",
+    is_active: true
   });
 
-  const {
-    data: users = [],
-    isLoading: isUsersLoading
-  } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const response = await api.get("/profiles/");
-      return response.data;
-    },
-    staleTime: 10 * 60 * 1000, // 10 minutos
+  // React Query para buscar dados
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['clientsData'],
+    queryFn: fetchClientsData,
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Mutações
+  const clients = data?.clients || [];
+  const users = data?.users || [];
+
+  // Mutations
   const createClientMutation = useMutation({
-    mutationFn: (newClient) => api.post("/clients/", newClient),
+    mutationFn: (newClientData) => api.post("/clients/", newClientData),
     onSuccess: () => {
       toast.success("Cliente criado com sucesso");
-      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ['clientsData'] });
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
     },
-    onError: (error) => {
-      console.error("Erro ao criar cliente:", error);
+    onError: (err) => {
+      console.error("Error creating client:", err);
       toast.error("Falha ao criar cliente");
     }
   });
@@ -1007,26 +1007,23 @@ const ClientManagement = () => {
     mutationFn: ({ id, updatedData }) => api.put(`/clients/${id}/`, updatedData),
     onSuccess: () => {
       toast.success("Cliente atualizado com sucesso");
-      setShowForm(false);
-      setSelectedClient(null);
-      resetForm();
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['clientsData'] });
+      setShowClientModal(false);
     },
-    onError: (error) => {
-      console.error("Erro ao atualizar cliente:", error);
+    onError: (err) => {
+      console.error("Error updating client:", err);
       toast.error("Falha ao atualizar cliente");
     }
   });
 
   const toggleClientStatusMutation = useMutation({
-    mutationFn: (client) => api.patch(`/clients/${client.id}/`, { is_active: !client.is_active }),
-    onSuccess: (data) => {
-      const statusText = data.is_active ? "ativado" : "desativado";
-      toast.success(`Cliente ${statusText} com sucesso`);
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    mutationFn: ({ id, is_active }) => api.patch(`/clients/${id}/`, { is_active }),
+    onSuccess: () => {
+      toast.success("Status do cliente atualizado");
+      queryClient.invalidateQueries({ queryKey: ['clientsData'] });
     },
-    onError: (error) => {
-      console.error("Erro ao alterar status do cliente:", error);
+    onError: (err) => {
+      console.error("Error toggling client status:", err);
       toast.error("Falha ao atualizar status do cliente");
     }
   });
@@ -1035,755 +1032,1703 @@ const ClientManagement = () => {
     mutationFn: (clientId) => api.delete(`/clients/${clientId}/`),
     onSuccess: () => {
       toast.success("Cliente excluído com sucesso");
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['clientsData'] });
     },
-    onError: (error) => {
-      console.error("Erro ao excluir cliente:", error);
+    onError: (err) => {
+      console.error("Error deleting client:", err);
       toast.error("Falha ao excluir cliente");
     }
   });
 
-  // Estado do formulário
-  const [formData, setFormData] = useState({
-    name: "",
-    nif: "",
-    email: "",
-    phone: "",
-    address: "",
-    account_manager: "",
-    monthly_fee: "",
-    is_active: true,
-    notes: "",
-  });
+  // Dados filtrados
+  const filteredClients = useMemo(() => {
+    if (!clients) return [];
 
-  // Reset form
-  const resetForm = () => {
+    let result = [...clients];
+
+    // Aplicar busca
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(client =>
+        client.name?.toLowerCase().includes(term) ||
+        client.email?.toLowerCase().includes(term) ||
+        client.nif?.includes(term)
+      );
+    }
+
+    // Aplicar filtros
+    if (filters.active) {
+      result = result.filter(client => client.is_active);
+    }
+
+    // Aplicar ordenação
+    if (sortConfig.key) {
+      result.sort((a, b) => {
+        if (a[sortConfig.key] === null) return 1;
+        if (b[sortConfig.key] === null) return -1;
+
+        const valA = typeof a[sortConfig.key] === "string" 
+          ? a[sortConfig.key].toLowerCase()
+          : a[sortConfig.key];
+        const valB = typeof b[sortConfig.key] === "string" 
+          ? b[sortConfig.key].toLowerCase()
+          : b[sortConfig.key];
+
+        if (valA < valB) {
+          return sortConfig.direction === "asc" ? -1 : 1;
+        }
+        if (valA > valB) {
+          return sortConfig.direction === "asc" ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return result;
+  }, [clients, searchTerm, filters, sortConfig]);
+
+  // Event handlers
+  const handleSearchChange = useCallback((e) => {
+    setSearchTerm(e.target.value);
+  }, []);
+
+  const handleFilterChange = useCallback((e) => {
+    const { name, type, checked, value } = e.target;
+    setFilters(prev => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value
+    }));
+  }, []);
+
+  const handleSort = useCallback((key) => {
+    setSortConfig(current => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }, []);
+
+  const handleInputChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }, []);
+
+  const resetForm = useCallback(() => {
     setFormData({
       name: "",
       nif: "",
       email: "",
       phone: "",
       address: "",
-      account_manager: "",
       monthly_fee: "",
-      is_active: true,
       notes: "",
+      is_active: true
     });
     setSelectedClient(null);
-  };
+    setShowForm(false);
+  }, []);
 
-  // Filtragem e Ordenação
-  const filteredClients = useMemo(() => {
-    if (!clients || clients.length === 0) return [];
-
-    let result = [...clients];
-
-    // Aplicar filtro de pesquisa
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(
-        (client) =>
-          client.name.toLowerCase().includes(term) ||
-          (client.nif && client.nif.toLowerCase().includes(term)) ||
-          (client.email && client.email.toLowerCase().includes(term))
-      );
-    }
-
-    // Aplicar ordenação
-    if (sortConfig.key) {
-      result.sort((a, b) => {
-        // Tratamento para valores nulos
-        if (!a[sortConfig.key]) return 1;
-        if (!b[sortConfig.key]) return -1;
-
-        // Ordenação de strings
-        if (typeof a[sortConfig.key] === 'string') {
-          const valA = a[sortConfig.key].toLowerCase();
-          const valB = b[sortConfig.key].toLowerCase();
-
-          if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-          if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-          return 0;
-        }
-
-        // Ordenação numérica
-        return sortConfig.direction === "asc"
-          ? a[sortConfig.key] - b[sortConfig.key]
-          : b[sortConfig.key] - a[sortConfig.key];
-      });
-    }
-
-    return result;
-  }, [clients, searchTerm, sortConfig]);
-
-  // Handlers
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === "checkbox" ? checked : value,
-    });
-  };
-
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
-  };
-
-  const handleFilterChange = (e) => {
-    const { name, checked } = e.target;
-    setFilters({
-      ...filters,
-      [name]: checked,
-    });
-  };
-
-  const handleSort = (key) => {
-    setSortConfig({
-      key,
-      direction: sortConfig.key === key && sortConfig.direction === "asc" ? "desc" : "asc",
-    });
-  };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = useCallback((e) => {
     e.preventDefault();
-
-    // Verificar permissões
+    
     if (selectedClient) {
-      if (!permissions.canEditClients) {
+      if (!permissions.isOrgAdmin && !permissions.canEditClients) {
         toast.error("Você não tem permissão para editar clientes");
         return;
       }
-      // Atualizar cliente existente
-      updateClientMutation.mutate({
-        id: selectedClient.id,
-        updatedData: formData
-      });
+      updateClientMutation.mutate({ id: selectedClient.id, updatedData: formData });
     } else {
-      if (!permissions.canCreateClients) {
+      if (!permissions.isOrgAdmin && !permissions.canCreateClients) {
         toast.error("Você não tem permissão para criar clientes");
         return;
       }
-      // Criar novo cliente
       createClientMutation.mutate(formData);
     }
-  };
+  }, [selectedClient, formData, createClientMutation, updateClientMutation, permissions]);
 
-  const selectClientForEdit = (client) => {
-    if (!permissions.canEditClients) {
-      toast.error("Você não tem permissão para editar clientes");
-      return;
-    }
-
+  const selectClientForEdit = useCallback((client) => {
     setSelectedClient(client);
     setFormData({
-      name: client.name,
+      name: client.name || "",
       nif: client.nif || "",
       email: client.email || "",
       phone: client.phone || "",
       address: client.address || "",
-      account_manager: client.account_manager || "",
-      monthly_fee: client.monthly_fee ? client.monthly_fee.toString() : "",
-      is_active: client.is_active,
+      monthly_fee: client.monthly_fee || "",
       notes: client.notes || "",
+      is_active: client.is_active
     });
     setShowForm(true);
-  };
+  }, []);
 
-  const handleViewClientDetails = (client) => {
+  const handleViewClientDetails = useCallback((client) => {
     setSelectedClient(client);
     setShowClientModal(true);
-  };
+  }, []);
 
-  const confirmDelete = (clientId) => {
-    if (!permissions.canDeleteClients) {
+  const toggleClientStatus = useCallback((client) => {
+    if (!permissions.isOrgAdmin && !permissions.canChangeClientStatus) {
+      toast.error("Você não tem permissão para alterar status de clientes");
+      return;
+    }
+    toggleClientStatusMutation.mutate({ 
+      id: client.id, 
+      is_active: !client.is_active 
+    });
+  }, [toggleClientStatusMutation, permissions]);
+
+  const confirmDelete = useCallback((clientId) => {
+    if (!permissions.isOrgAdmin && !permissions.canDeleteClients) {
       toast.error("Você não tem permissão para excluir clientes");
       return;
     }
-
-    if (window.confirm("Tem certeza que deseja excluir este cliente? Esta ação não poderá ser desfeita.")) {
+    if (window.confirm("Tem certeza que deseja excluir este cliente? Esta ação não pode ser desfeita.")) {
       deleteClientMutation.mutate(clientId);
     }
+  }, [deleteClientMutation, permissions]);
+
+  // Estilos glass
+  const glassStyle = {
+    background: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '16px'
   };
 
-  const toggleClientStatus = (client) => {
-    if (!permissions.canChangeClientStatus) {
-      toast.error("Você não tem permissão para ativar/desativar clientes");
-      return;
+  // Variantes de animação
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.2
+      }
     }
-
-    toggleClientStatusMutation.mutate(client);
   };
 
-  const closeClientModal = () => {
-    setShowClientModal(false);
-    setSelectedClient(null);
+  const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 200,
+        damping: 20
+      }
+    }
   };
 
-  const saveClientFromModal = (updatedClient) => {
-    updateClientMutation.mutate({
-      id: updatedClient.id,
-      updatedData: updatedClient
-    });
-
-    // Não fechamos o modal aqui porque queremos que o usuário veja que os dados foram salvos
-    // O modal será fechado com a navegação para outra aba ou explicitamente pelo usuário
-  };
-
-  // Verificação de estado de carregamento
-  const isLoading =
-    isClientsLoading ||
-    isUsersLoading ||
-    createClientMutation.isPending ||
-    updateClientMutation.isPending ||
-    toggleClientStatusMutation.isPending ||
-    deleteClientMutation.isPending;
-
-  // Verificar se usuário pode gerenciar clientes ou ver clientes
-  const canViewClients =
-    permissions.canManageClients ||
-    permissions.canViewAllClients;
-
-  if (permissions.loading) {
-    return <LoadingView />;
+  if (permissions.loading || isLoading) {
+    return (
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'white'
+      }}>
+        <BackgroundElements businessStatus="optimal" />
+        <motion.div
+          animate={{
+            rotate: 360,
+            scale: [1, 1.1, 1]
+          }}
+          transition={{
+            rotate: { duration: 2, repeat: Infinity, ease: "linear" },
+            scale: { duration: 1, repeat: Infinity }
+          }}
+        >
+          <Brain size={48} style={{ color: 'rgb(147, 51, 234)' }} />
+        </motion.div>
+        <p style={{ marginLeft: '1rem', fontSize: '1rem' }}>
+          Carregando gestão de clientes...
+        </p>
+      </div>
+    );
   }
+
+  if (isError) {
+    return (
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem'
+      }}>
+        <BackgroundElements businessStatus="optimal" />
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          style={{
+            ...glassStyle,
+            padding: '2rem',
+            textAlign: 'center',
+            maxWidth: '500px',
+            color: 'white'
+          }}
+        >
+          <AlertTriangle size={48} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>
+            Erro ao Carregar
+          </h2>
+          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>
+            {error?.message || "Não foi possível carregar os dados dos clientes."}
+          </p>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={refetch}
+            style={{
+              ...glassStyle,
+              padding: '0.75rem 1.5rem',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              background: 'rgba(59, 130, 246, 0.2)',
+              color: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.875rem',
+              fontWeight: '500',
+              margin: '0 auto'
+            }}
+          >
+            <RefreshCw size={18} />
+            Tentar Novamente
+          </motion.button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Verificar permissões
+  const canViewClients = permissions.canViewAllClients || permissions.isOrgAdmin || permissions.canEditClients;
 
   if (!canViewClients) {
     return (
-      <div className="main">
-      
-          <div className="flex flex-col items-center justify-center min-h-screen p-4">
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
-              <div className="flex items-start">
-                <AlertCircle className="h-6 w-6 mr-2" />
-                <div>
-                  <p className="font-bold">Acesso Restrito</p>
-                  <p>Você não possui permissões para visualizar ou gerenciar clientes.</p>
-                </div>
-              </div>
-            </div>
-            <p className="text-gray-600">
-              Entre em contato com o administrador da sua organização para solicitar acesso.
-            </p>
-          </div>
-      
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem'
+      }}>
+<BackgroundElements businessStatus="optimal" />
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          style={{
+            ...glassStyle,
+            padding: '2rem',
+            textAlign: 'center',
+            maxWidth: '500px',
+            color: 'white'
+          }}
+        >
+          <AlertCircle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>
+            Acesso Restrito
+          </h2>
+          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>
+            Você não possui permissões para visualizar clientes.
+          </p>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+            Entre em contato com o administrador da sua organização para solicitar acesso.
+          </p>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="main">
+    <div style={{
+      position: 'relative',
+      minHeight: '100vh',
+      color: 'white'
+    }}>
+<BackgroundElements businessStatus="optimal" />
       <ToastContainer
         position="top-right"
         autoClose={3000}
         hideProgressBar={false}
+        style={{ zIndex: 9999 }}
       />
 
-    
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={containerVariants}
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          padding: '2rem',
+          paddingTop: '1rem'
+        }}
+      >
+        {/* Header */}
         <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={containerVariants}
-          className="p-6 bg-white min-h-screen"
-          style={{ marginLeft: "3%" }}
+          variants={itemVariants}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '2rem',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}
         >
-          <div className="client-management-header">
-            <h1 className="text-2xl font-bold">Gestão de Clientes</h1>
-            <div className="flex space-x-3">
-              {(permissions.isOrgAdmin || permissions.canCreateClients) && (
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => {
-                    resetForm();
-                    setShowForm(!showForm);
-                  }}
-                  className={`${showForm
-                      ? "bg-gray-600 hover:bg-gray-700"
-                      : "bg-blue-600 hover:bg-blue-700"
-                    } text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm`}
-                  disabled={isLoading}
-                >
-                  {showForm ? (
-                    "Cancelar"
-                  ) : (
-                    <>
-                      <Plus size={18} className="mr-2" />
-                      Novo Cliente
-                    </>
-                  )}
-                </motion.button>
-              )}
+          <div>
+            <h1 style={{
+              fontSize: '1.8rem',
+              fontWeight: '700',
+              margin: '0 0 0.5rem 0',
+              background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>
+              Gestão de Clientes
+            </h1>
+            <p style={{
+              fontSize: '1rem',
+              color: 'rgba(191, 219, 254, 1)',
+              margin: 0
+            }}>
+              Gerencie seus clientes e relacionamentos comerciais
+            </p>
+          </div>
 
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {(permissions.isOrgAdmin || permissions.canCreateClients) && (
               <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => refetchClients()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
-                disabled={isLoading}
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  resetForm();
+                  setShowForm(!showForm);
+                }}
+                style={{
+                  ...glassStyle,
+                  padding: '0.75rem 1.5rem',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  background: showForm ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                  color: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500'
+                }}
               >
-                {isLoading ? (
-                  <Loader2 className="animate-spin h-5 w-5" />
-                ) : (
-                  <RefreshCw size={18} />
-                )}
+                <Plus size={18} />
+                {showForm ? 'Cancelar' : 'Novo Cliente'}
               </motion.button>
+            )}
 
-              <motion.a
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                href="/clientprofitability"
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-300 shadow-sm"
-              >
-                <BarChart2 size={18} className="mr-2" />
-                Relatório de Rentabilidade
-              </motion.a>
-            </div>
-
-
-            {/* Formulário de Cliente */}
-            <AnimatePresence>
-              {showForm && (
-                <motion.div
-                  key="client-form"
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
-                  className="bg-white p-6 rounded-lg shadow mb-6"
-                >
-                  <h2 className="text-xl font-semibold mb-4">
-                    {selectedClient ? "Editar Cliente" : "Adicionar Novo Cliente"}
-                  </h2>
-                  <form onSubmit={handleSubmit}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label className="block text-gray-700 mb-2">Nome *</label>
-                        <input
-                          type="text"
-                          name="name"
-                          value={formData.name}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">
-                          NIF/NIPC
-                        </label>
-                        <input
-                          type="text"
-                          name="nif"
-                          value={formData.nif}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">Email</label>
-                        <input
-                          type="email"
-                          name="email"
-                          value={formData.email}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">Telefone</label>
-                        <input
-                          type="tel"
-                          name="phone"
-                          value={formData.phone}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">Morada</label>
-                        <input
-                          type="text"
-                          name="address"
-                          value={formData.address}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">
-                          Gestor de Conta
-                        </label>
-                        <select
-                          name="account_manager"
-                          value={formData.account_manager}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                        >
-                          <option value="">Selecionar Gestor</option>
-                          {users.map((user) => (
-                            <option key={user.user} value={user.user}>
-                              {user.username}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">
-                          Avença Mensal (€)
-                        </label>
-                        <input
-                          type="number"
-                          name="monthly_fee"
-                          value={formData.monthly_fee}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          step="0.01"
-                          min="0"
-                        />
-                      </div>
-
-                      <div className="flex items-center mt-6">
-                        <input
-                          type="checkbox"
-                          id="is_active"
-                          name="is_active"
-                          checked={formData.is_active}
-                          onChange={handleInputChange}
-                          className="h-4 w-4 text-blue-600"
-                        />
-                        <label htmlFor="is_active" className="ml-2 text-gray-700">
-                          Cliente Ativo
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="mb-4">
-                      <label className="block text-gray-700 mb-2">Observações</label>
-                      <textarea
-                        name="notes"
-                        value={formData.notes}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={resetForm}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 mr-2"
-                        disabled={isLoading}
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="submit"
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
-                        disabled={isLoading}
-                      >
-                        {isLoading ? (
-                          <div className="flex items-center">
-                            <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                            <span>Processando...</span>
-                          </div>
-                        ) : (
-                          <span>{selectedClient ? "Atualizar Cliente" : "Adicionar Cliente"}</span>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </motion.div>
-              )}
-            </AnimatePresence>
-</div><div>
-            {/* Filtros e Pesquisa */}
-            <motion.div
-              variants={itemVariants}
-              className="bg-white p-6 rounded-lg shadow mb-6"
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {/* Export functionality */}}
+              style={{
+                ...glassStyle,
+                padding: '0.75rem 1.5rem',
+                border: '1px solid rgba(52, 211, 153, 0.3)',
+                background: 'rgba(52, 211, 153, 0.2)',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem',
+                fontWeight: '500'
+              }}
             >
-              <div className="filters-bar">
-                <div className="flex items-center mb-4 md:mb-0">
-                  <div className="flex items-center mr-4">
-                    <input
-                      type="checkbox"
-                      id="active"
-                      name="active"
-                      checked={filters.active}
-                      onChange={handleFilterChange}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="active" className="ml-2 text-gray-700">
-                      Mostrar apenas clientes ativos
+              <Download size={18} />
+              Exportar
+            </motion.button>
+          </div>
+        </motion.div>
+
+        {/* Form Modal */}
+        <AnimatePresence>
+          {showForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, y: -20 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                ...glassStyle,
+                padding: '1.5rem',
+                marginBottom: '2rem'
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                marginBottom: '1.5rem'
+              }}>
+                <div style={{
+                  padding: '0.5rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                  borderRadius: '12px'
+                }}>
+                  <User style={{ color: 'rgb(59, 130, 246)' }} size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                    {selectedClient ? 'Editar Cliente' : 'Novo Cliente'}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                    {selectedClient ? 'Atualize as informações do cliente' : 'Adicione um novo cliente ao sistema'}
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                  gap: '1rem',
+                  marginBottom: '1.5rem'
+                }}>
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Nome *
                     </label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                      placeholder="Nome do cliente"
+                    />
                   </div>
 
-                  <ViewToggle
-                    activeView={viewMode}
-                    onChange={setViewMode}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      NIF
+                    </label>
+                    <input
+                      type="text"
+                      name="nif"
+                      value={formData.nif}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                      placeholder="Número de contribuinte"
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                      placeholder="email@exemplo.com"
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Telefone
+                    </label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                      placeholder="Número de telefone"
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Morada
+                    </label>
+                    <input
+                      type="text"
+                      name="address"
+                      value={formData.address}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                      placeholder="Morada completa"
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Avença Mensal (€)
+                    </label>
+                    <input
+                      type="number"
+                      name="monthly_fee"
+                      value={formData.monthly_fee}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Observações
+                  </label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.875rem',
+                      resize: 'vertical'
+                    }}
+                    placeholder="Notas adicionais sobre o cliente..."
                   />
                 </div>
 
-                <div className="w-full md:w-1/3">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Pesquisar clientes..."
-                      value={searchTerm}
-                      onChange={handleSearchChange}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md"
-                    />
-                    <Search
-                      className="absolute left-3 top-2.5 text-gray-400"
-                      size={18}
-                    />
-                  </div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  marginBottom: '1.5rem'
+                }}>
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    name="is_active"
+                    checked={formData.is_active}
+                    onChange={handleInputChange}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  <label htmlFor="is_active" style={{
+                    fontSize: '0.875rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Cliente Ativo
+                  </label>
                 </div>
+
+                <div style={{
+                  display: 'flex',
+                  gap: '0.75rem',
+                  justifyContent: 'flex-end'
+                }}>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={resetForm}
+                    style={{
+                      padding: '0.75rem 1.5rem',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancelar
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="submit"
+                    disabled={createClientMutation.isPending || updateClientMutation.isPending}
+                    style={{
+                      padding: '0.75rem 1.5rem',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    {(createClientMutation.isPending || updateClientMutation.isPending) && (
+                      <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                    )}
+                    {selectedClient ? 'Atualizar' : 'Criar'} Cliente
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Filtros e Pesquisa */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            marginBottom: '2rem'
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: showFilters ? '1.5rem' : 0
+          }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                Filtros e Pesquisa
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                Configure a visualização conforme necessário
+              </p>
+            </div>
+
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setShowFilters(!showFilters)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255, 255, 255, 0.7)',
+                cursor: 'pointer',
+                padding: '0.5rem',
+                borderRadius: '8px'
+              }}
+            >
+              {showFilters ? <EyeOff size={20} /> : <Eye size={20} />}
+            </motion.button>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            marginBottom: showFilters ? '1rem' : 0
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}>
+                <input
+                  type="checkbox"
+                  id="active"
+                  name="active"
+                  checked={filters.active}
+                  onChange={handleFilterChange}
+                  style={{ width: '18px', height: '18px' }}
+                />
+                <label htmlFor="active" style={{
+                  fontSize: '0.875rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  Mostrar apenas clientes ativos
+                </label>
               </div>
+
+              <ViewToggle
+                activeView={viewMode}
+                onChange={setViewMode}
+              />
+            </div>
+
+            <div style={{ position: 'relative', minWidth: '300px' }}>
+              <Search
+                size={18}
+                style={{
+                  position: 'absolute',
+                  left: '0.75rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'rgba(255, 255, 255, 0.5)'
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Pesquisar clientes..."
+                value={searchTerm}
+                onChange={handleSearchChange}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: 'white',
+                  fontSize: '0.875rem'
+                }}
+              />
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                style={{
+                  borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                  paddingTop: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <p style={{
+                  margin: 0,
+                  fontSize: '0.875rem',
+                  color: 'rgba(255, 255, 255, 0.7)'
+                }}>
+                  Filtros adicionais em breve...
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Cards de Estatísticas */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem',
+            marginBottom: '2rem'
+          }}
+        >
+          {/* Total de Clientes */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(59, 130, 246)',
+              marginBottom: '0.5rem'
+            }}>
+              {clients.length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Total de Clientes
+            </div>
+          </motion.div>
+
+          {/* Clientes Ativos */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(52, 211, 153, 0.1)',
+              border: '1px solid rgba(52, 211, 153, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(52, 211, 153)',
+              marginBottom: '0.5rem'
+            }}>
+              {clients.filter(c => c.is_active).length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Clientes Ativos
+            </div>
+          </motion.div>
+
+          {/* Clientes Inativos */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(239, 68, 68)',
+              marginBottom: '0.5rem'
+            }}>
+              {clients.filter(c => !c.is_active).length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Clientes Inativos
+            </div>
+          </motion.div>
+
+          {/* Receita Total */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(147, 51, 234, 0.1)',
+              border: '1px solid rgba(147, 51, 234, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(147, 51, 234)',
+              marginBottom: '0.5rem'
+            }}>
+              {new Intl.NumberFormat("pt-PT", {
+                style: "currency",
+                currency: "EUR",
+                maximumFractionDigits: 0
+              }).format(
+                clients
+                  .filter(c => c.is_active && c.monthly_fee)
+                  .reduce((sum, c) => sum + parseFloat(c.monthly_fee || 0), 0)
+              )}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Receita Mensal
+            </div>
+          </motion.div>
+        </motion.div>
+
+        {/* AI Insights */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            marginBottom: '2rem',
+            background: 'rgba(147, 51, 234, 0.05)',
+            border: '1px solid rgba(147, 51, 234, 0.2)'
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            marginBottom: '1rem'
+          }}>
+            <motion.div
+              animate={{
+                rotate: [0, 360],
+                scale: [1, 1.1, 1]
+              }}
+              transition={{
+                rotate: { duration: 8, repeat: Infinity, ease: "linear" },
+                scale: { duration: 2, repeat: Infinity }
+              }}
+              style={{
+                padding: '0.5rem',
+                backgroundColor: 'rgba(147, 51, 234, 0.2)',
+                borderRadius: '12px'
+              }}
+            >
+              <Brain style={{ color: 'rgb(196, 181, 253)' }} size={20} />
+            </motion.div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                AI Insights
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                Análise inteligente da sua carteira de clientes
+              </p>
+            </div>
+            <motion.div
+              animate={{
+                rotate: [0, 10, -10, 0],
+                scale: [1, 1.1, 1]
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              style={{ marginLeft: 'auto' }}
+            >
+              <Sparkles style={{ color: 'rgb(196, 181, 253)' }} size={16} />
             </motion.div>
           </div>
-          <div>
-            {/* Lista de Clientes */}
-            <motion.div
-              variants={itemVariants}
-              className="bg-white rounded-lg shadow"
-            >
-              <div className="client-list-header">
-                <h2 className="text-xl font-semibold">Lista de Clientes ({filteredClients.length})</h2>
 
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-2 rounded ${viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
-                  >
-                    <Grid size={18} />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-2 rounded ${viewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}
-                  >
-                    <List size={18} />
-                  </button>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: '1rem'
+          }}>
+            {clients.filter(c => !c.is_active).length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}
+              >
+                <AlertTriangle size={20} style={{ color: 'rgb(239, 68, 68)', marginTop: '0.25rem', flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                    Clientes Inativos Detectados
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    {clients.filter(c => !c.is_active).length} clientes estão inativos. 
+                    Considere reativar ou remover da base de dados.
+                  </p>
                 </div>
-              </div>
+              </motion.div>
+            )}
 
-              {isLoading && filteredClients.length === 0 ? (
-                <div className="p-6 flex justify-center">
-                  <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+            {clients.filter(c => c.is_active && c.monthly_fee).length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 }}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(52, 211, 153, 0.2)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}
+              >
+                <Target size={20} style={{ color: 'rgb(52, 211, 153)', marginTop: '0.25rem', flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                    Base de Clientes Sólida
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    {clients.filter(c => c.is_active && c.monthly_fee).length} clientes com avenças definidas geram receita recorrente.
+                  </p>
                 </div>
-              ) : filteredClients.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  Nenhum cliente encontrado.{" "}
-                  {searchTerm
-                    ? "Tente ajustar sua pesquisa."
-                    : "Crie seu primeiro cliente!"}
+              </motion.div>
+            )}
+
+            {clients.filter(c => c.is_active && !c.monthly_fee).length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(251, 191, 36, 0.2)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}
+              >
+                <DollarSign size={20} style={{ color: 'rgb(251, 191, 36)', marginTop: '0.25rem', flexShrink: 0 }} />
+                <div>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                    Oportunidade de Faturação
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    {clients.filter(c => c.is_active && !c.monthly_fee).length} clientes ativos ainda não têm avença definida.
+                  </p>
                 </div>
-              ) : (
-                <div className="p-6">
-                  {viewMode === 'grid' ? (
-                    // Visualização em Grid
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {filteredClients.map((client) => (
-                        <ClientCard
-                          key={client.id}
-                          client={client}
-                          onEdit={selectClientForEdit}
-                          onToggleStatus={toggleClientStatus}
-                          onDelete={confirmDelete}
-                          permissions={permissions}
-                          onClick={() => handleViewClientDetails(client)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    // Visualização em Lista/Tabela
-                    <div className="overflow-x-auto">
-                      <table className="client-table">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              <button
-                                onClick={() => handleSort("name")}
-                                className="flex items-center"
-                              >
-                                Nome
-                                {sortConfig.key === "name" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp size={16} className="ml-1" />
-                                  ) : (
-                                    <ChevronDown size={16} className="ml-1" />
-                                  )
-                                ) : (
-                                  <ChevronDown size={16} className="ml-1 opacity-30" />
-                                )}
-                              </button>
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Contacto
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              <button
-                                onClick={() => handleSort("account_manager_name")}
-                                className="flex items-center"
-                              >
-                                Gestor de Conta
-                                {sortConfig.key === "account_manager_name" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp size={16} className="ml-1" />
-                                  ) : (
-                                    <ChevronDown size={16} className="ml-1" />
-                                  )
-                                ) : (
-                                  <ChevronDown size={16} className="ml-1 opacity-30" />
-                                )}
-                              </button>
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              <button
-                                onClick={() => handleSort("monthly_fee")}
-                                className="flex items-center"
-                              >
-                                Avença Mensal
-                                {sortConfig.key === "monthly_fee" ? (
-                                  sortConfig.direction === "asc" ? (
-                                    <ChevronUp size={16} className="ml-1" />
-                                  ) : (
-                                    <ChevronDown size={16} className="ml-1" />
-                                  )
-                                ) : (
-                                  <ChevronDown size={16} className="ml-1 opacity-30" />
-                                )}
-                              </button>
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Status
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Ações
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {filteredClients.map((client) => (
-                            <tr key={client.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleViewClientDetails(client)}>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center">
-                                  <div className="h-10 w-10 flex-shrink-0 bg-blue-100 rounded-full flex items-center justify-center">
-                                    <span className="text-gray-600 font-medium">
-                                      {client.name.charAt(0).toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <div className="ml-4">
-                                    <div className="font-medium text-gray-900">
-                                      {client.name}
-                                    </div>
-                                    <div className="text-gray-500 text-sm">
-                                      {client.nif || "Sem NIF"}
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-gray-900">
-                                  {client.email || "Sem email"}
-                                </div>
-                                <div className="text-gray-500 text-sm">
-                                  {client.phone || "Sem telefone"}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {client.account_manager_name || "Não atribuído"}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className="font-medium">
-                                  {client.monthly_fee
-                                    ? `${client.monthly_fee} €`
-                                    : "Não definida"}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span
-                                  className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                  ${client.is_active
-                                      ? "bg-green-100 text-green-800"
-                                      : "bg-red-100 text-red-800"
-                                    }`}
-                                >
-                                  {client.is_active ? "Ativo" : "Inativo"}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex items-center space-x-2">
-                                  {(permissions.isOrgAdmin || permissions.canEditClients) && (
-                                    <button
-                                      onClick={() => selectClientForEdit(client)}
-                                      className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
-                                      title="Editar cliente"
-                                    >
-                                      <Edit size={18} />
-                                    </button>
-                                  )}
-
-                                  {(permissions.isOrgAdmin || permissions.canChangeClientStatus) && (
-                                    <button
-                                      onClick={() => toggleClientStatus(client)}
-                                      className={`p-1 rounded ${client.is_active
-                                          ? "text-amber-600 hover:text-amber-900 hover:bg-amber-50"
-                                          : "text-green-600 hover:text-green-900 hover:bg-green-50"
-                                        }`}
-                                      title={client.is_active ? "Desativar" : "Ativar"}
-                                    >
-                                      {client.is_active ? <XCircle size={18} /> : <CheckCircle size={18} />}
-                                    </button>
-                                  )}
-
-                                  <a
-                                    href={`/clientprofitability?client=${client.id}`}
-                                    className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
-                                    title="Ver relatório de rentabilidade"
-                                  >
-                                    <BarChart2 size={18} />
-                                  </a>
-
-                                  {(permissions.isOrgAdmin || permissions.canDeleteClients) && (
-                                    <button
-                                      onClick={() => confirmDelete(client.id)}
-                                      className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50"
-                                      title="Excluir cliente"
-                                    >
-                                      <Trash2 size={18} />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </motion.div>
+              </motion.div>
+            )}
           </div>
         </motion.div>
-      {/* Modal de Detalhes do Cliente */}
-      {showClientModal && selectedClient && (
-        <ClientDetailsModal
-          client={selectedClient}
-          onClose={closeClientModal}
-          onSave={saveClientFromModal}
-          permissions={permissions}
-        />
-      )}
+
+        {/* Lista de Clientes */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            ...glassStyle,
+            padding: 0,
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{
+            padding: '1.5rem',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                padding: '0.5rem',
+                backgroundColor: 'rgba(52, 211, 153, 0.2)',
+                borderRadius: '12px'
+              }}>
+                <Activity style={{ color: 'rgb(52, 211, 153)' }} size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
+                  Lista de Clientes
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                  {filteredClients.length} clientes encontrados
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <ViewToggle
+                activeView={viewMode}
+                onChange={setViewMode}
+              />
+            </div>
+          </div>
+
+          {filteredClients.length === 0 ? (
+            <div style={{
+              padding: '3rem',
+              textAlign: 'center',
+              color: 'rgba(255, 255, 255, 0.6)'
+            }}>
+              <Users size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>
+                Nenhum cliente encontrado
+              </h4>
+              <p style={{ margin: 0 }}>
+                {searchTerm
+                  ? "Tente ajustar sua pesquisa."
+                  : "Crie seu primeiro cliente!"}
+              </p>
+            </div>
+          ) : (
+            <div style={{ padding: '1.5rem' }}>
+              {viewMode === 'grid' ? (
+                // Visualização em Grid
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+                  gap: '1.5rem'
+                }}>
+                  {filteredClients.map((client, index) => (
+                    <motion.div
+                      key={client.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <ClientCard
+                        client={client}
+                        onEdit={selectClientForEdit}
+                        onToggleStatus={toggleClientStatus}
+                        onDelete={confirmDelete}
+                        permissions={permissions}
+                        onClick={() => handleViewClientDetails(client)}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                // Visualização em Lista/Tabela
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{
+                    width: '100%',
+                    borderCollapse: 'collapse'
+                  }}>
+                    <thead style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                      <tr>
+                        <th style={{
+                          padding: '1rem',
+                          textAlign: 'left',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                          fontSize: '0.875rem',
+                          fontWeight: '600',
+                          color: 'rgba(255, 255, 255, 0.9)'
+                        }}>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => handleSort("name")}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: 'inherit',
+                              fontWeight: 'inherit'
+                            }}
+                          >
+                            Nome
+                            {sortConfig.key === "name" ? (
+                              sortConfig.direction === "asc" ? 
+                                <ChevronUp size={16} /> : 
+                                <ChevronDown size={16} />
+                            ) : (
+                              <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                            )}
+                          </motion.button>
+                        </th>
+                        <th style={{
+                          padding: '1rem',
+                          textAlign: 'left',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                          fontSize: '0.875rem',
+                          fontWeight: '600',
+                          color: 'rgba(255, 255, 255, 0.9)'
+                        }}>
+                          Contacto
+                        </th>
+                        <th style={{
+                          padding: '1rem',
+                          textAlign: 'left',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                          fontSize: '0.875rem',
+                          fontWeight: '600',
+                          color: 'rgba(255, 255, 255, 0.9)'
+                        }}>
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => handleSort("monthly_fee")}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: 'inherit',
+                              fontWeight: 'inherit'
+                            }}
+                          >
+                            Avença Mensal
+                            {sortConfig.key === "monthly_fee" ? (
+                              sortConfig.direction === "asc" ? 
+                                <ChevronUp size={16} /> : 
+                                <ChevronDown size={16} />
+                            ) : (
+                              <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                            )}
+                          </motion.button>
+                        </th>
+                         <th style={{
+                          padding: '1rem',
+                          textAlign: 'left',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                          fontSize: '0.875rem',
+                          fontWeight: '600',
+                          color: 'rgba(255, 255, 255, 0.9)'
+                        }}>
+                          Status
+                        </th>
+                        <th style={{
+                          padding: '1rem',
+                          textAlign: 'left',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                          fontSize: '0.875rem',
+                          fontWeight: '600',
+                          color: 'rgba(255, 255, 255, 0.9)'
+                        }}>
+                          Ações
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredClients.map((client, index) => (
+                        <motion.tr
+                          key={client.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          style={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                            cursor: 'pointer'
+                          }}
+                          whileHover={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                          }}
+                          onClick={() => handleViewClientDetails(client)}
+                        >
+                          <td style={{ padding: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                              <div style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '50%',
+                                background: 'rgba(59, 130, 246, 0.2)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginRight: '1rem',
+                                color: 'rgb(59, 130, 246)',
+                                fontWeight: '600'
+                              }}>
+                                {client.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div style={{
+                                  fontWeight: '500',
+                                  color: 'white',
+                                  fontSize: '0.875rem'
+                                }}>
+                                  {client.name}
+                                </div>
+                                <div style={{
+                                  color: 'rgba(255, 255, 255, 0.6)',
+                                  fontSize: '0.75rem'
+                                }}>
+                                  {client.nif || "Sem NIF"}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '1rem' }}>
+                            <div>
+                              <div style={{
+                                color: 'white',
+                                fontSize: '0.875rem'
+                              }}>
+                                {client.email || "Sem email"}
+                              </div>
+                              <div style={{
+                                color: 'rgba(255, 255, 255, 0.6)',
+                                fontSize: '0.75rem'
+                              }}>
+                                {client.phone || "Sem telefone"}
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '1rem' }}>
+                            <span style={{
+                              fontWeight: '600',
+                              color: 'rgb(52, 211, 153)',
+                              fontSize: '0.875rem'
+                            }}>
+                              {client.monthly_fee
+                                ? `${client.monthly_fee} €`
+                                : "Não definida"}
+                            </span>
+                          </td>
+                          <td style={{ padding: '1rem' }}>
+                            <span style={{
+                              padding: '0.25rem 0.75rem',
+                              borderRadius: '9999px',
+                              fontSize: '0.75rem',
+                              fontWeight: '600',
+                              background: client.is_active 
+                                ? 'rgba(52, 211, 153, 0.2)' 
+                                : 'rgba(239, 68, 68, 0.2)',
+                              border: client.is_active 
+                                ? '1px solid rgba(52, 211, 153, 0.3)' 
+                                : '1px solid rgba(239, 68, 68, 0.3)',
+                              color: client.is_active 
+                                ? 'rgb(110, 231, 183)' 
+                                : 'rgb(252, 165, 165)'
+                            }}>
+                              {client.is_active ? "Ativo" : "Inativo"}
+                            </span>
+                          </td>
+                          <td style={{ padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem'
+                            }}>
+                              {(permissions.isOrgAdmin || permissions.canEditClients) && (
+                                <motion.button
+                                  whileHover={{ scale: 1.1, y: -2 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={() => selectClientForEdit(client)}
+                                  style={{
+                                    background: 'rgba(147, 51, 234, 0.2)',
+                                    border: '1px solid rgba(147, 51, 234, 0.3)',
+                                    borderRadius: '6px',
+                                    padding: '0.5rem',
+                                    color: 'rgb(147, 51, 234)',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Editar cliente"
+                                >
+                                  <Edit size={16} />
+                                </motion.button>
+                              )}
+
+                              {(permissions.isOrgAdmin || permissions.canChangeClientStatus) && (
+                                <motion.button
+                                  whileHover={{ scale: 1.1, y: -2 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={() => toggleClientStatus(client)}
+                                  style={{
+                                    background: client.is_active 
+                                      ? 'rgba(251, 146, 60, 0.2)' 
+                                      : 'rgba(52, 211, 153, 0.2)',
+                                    border: client.is_active 
+                                      ? '1px solid rgba(251, 146, 60, 0.3)' 
+                                      : '1px solid rgba(52, 211, 153, 0.3)',
+                                    borderRadius: '6px',
+                                    padding: '0.5rem',
+                                    color: client.is_active 
+                                      ? 'rgb(251, 146, 60)' 
+                                      : 'rgb(52, 211, 153)',
+                                    cursor: 'pointer'
+                                  }}
+                                  title={client.is_active ? "Desativar" : "Ativar"}
+                                >
+                                  {client.is_active ? <XCircle size={16} /> : <CheckCircle size={16} />}
+                                </motion.button>
+                              )}
+
+                              {(permissions.isOrgAdmin || permissions.canDeleteClients) && (
+                                <motion.button
+                                  whileHover={{ scale: 1.1, y: -2 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={() => confirmDelete(client.id)}
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.2)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    borderRadius: '6px',
+                                    padding: '0.5rem',
+                                    color: 'rgb(239, 68, 68)',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Excluir cliente"
+                                >
+                                  <Trash2 size={16} />
+                                </motion.button>
+                              )}
+
+                              <motion.button
+                                whileHover={{ scale: 1.05, y: -1 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleViewClientDetails(client)}
+                                style={{
+                                  background: 'rgba(255, 255, 255, 0.1)',
+                                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                                  borderRadius: '6px',
+                                  padding: '0.5rem',
+                                  color: 'white',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  fontSize: '0.75rem'
+                                }}
+                                title="Ver detalhes"
+                              >
+                                <Eye size={14} />
+                                Detalhes
+                              </motion.button>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </motion.div>
+      </motion.div>
+
+      {/* Modal de detalhes do cliente */}
+      <AnimatePresence>
+        {showClientModal && selectedClient && (
+          <ClientDetailsModal
+            client={selectedClient}
+            onClose={() => {
+              setShowClientModal(false);
+              setSelectedClient(null);
+            }}
+            onSave={(updatedData) => {
+              updateClientMutation.mutate({ 
+                id: selectedClient.id, 
+                updatedData 
+              });
+            }}
+            permissions={permissions}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Floating Action Button */}
+      <motion.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 1, type: "spring", stiffness: 200 }}
+        style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          zIndex: 100
+        }}
+      >
+        <motion.button
+          whileHover={{ 
+            scale: 1.1,
+            boxShadow: '0 0 30px rgba(147, 51, 234, 0.5)'
+          }}
+          whileTap={{ scale: 0.9 }}
+          style={{
+            width: '60px',
+            height: '60px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, rgb(147, 51, 234), rgb(196, 181, 253))',
+            border: 'none',
+            color: 'white',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 10px 25px rgba(147, 51, 234, 0.3)',
+            backdropFilter: 'blur(12px)'
+          }}
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <motion.div
+            animate={{ rotate: [0, 360] }}
+            transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+          >
+            <Brain size={24} />
+          </motion.div>
+        </motion.button>
+      </motion.div>
+
+      {/* CSS personalizado para animações */}
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        input::placeholder, textarea::placeholder {
+          color: rgba(255, 255, 255, 0.5) !important;
+        }
+        
+        select option {
+          background: #1f2937 !important;
+          color: white !important;
+        }
+        
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.5);
+        }
+        
+        /* Smooth transitions para todos os elementos */
+        * {
+          transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+        }
+        
+        /* Efeito hover suave para botões */
+        button:hover {
+          transform: translateY(-1px);
+        }
+        
+        /* Animação para loading states */
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        /* Melhores efeitos de glass morphism */
+        .glass-effect {
+          backdrop-filter: blur(20px) saturate(180%);
+          -webkit-backdrop-filter: blur(20px) saturate(180%);
+        }
+
+        /* Hover effects para tabelas */
+        tbody tr:hover {
+          background-color: rgba(255, 255, 255, 0.05) !important;
+        }
+
+        /* Focus states para acessibilidade */
+        button:focus, input:focus, select:focus, textarea:focus {
+          outline: 2px solid rgba(59, 130, 246, 0.5);
+          outline-offset: 2px;
+        }
+
+        /* Animação suave para status badges */
+        .status-badge {
+          transition: all 0.3s ease;
+        }
+
+        .status-badge:hover {
+          transform: scale(1.05);
+        }
+      `}</style>
     </div>
   );
 };
 
-export default ClientManagement;
+export default ClientManagement;                                

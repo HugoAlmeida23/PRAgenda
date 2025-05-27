@@ -31,10 +31,8 @@ const ModernForm = ({ route, method }) => {
       if (method === "login") {
         localStorage.setItem(ACCESS_TOKEN, res.data.access);
         localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
-        notifySuccess("Login feito com sucesso! Bem-Vindo.");
         navigate("/");
       } else {
-        notifySuccess("Registro feito com sucesso! Por favor faça o login.");
         navigate("/login");
       }
     } catch (error) {

@@ -195,12 +195,6 @@ const DashboardPages = ({ dashboardData }) => {
         overflow: 'hidden'
     };
 
-    const dashboardContainerStyle = {
-        position: 'relative',
-        width: '100%',
-        height: '100%',
-    };
-
     const pageWrapperStyle = {
         position: 'relative',
         top: 0,
@@ -1577,26 +1571,6 @@ const DashboardPages = ({ dashboardData }) => {
                 }}
             >
                 {currentPage === 0 ? 'Dashboard principal carregado' : 'Análises detalhadas carregadas'}
-            </div>
-
-            {/* Keyboard shortcuts hint */}
-            <div
-                style={{
-                    position: 'fixed',
-                    bottom: '10px',
-                    left: '10px',
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    color: 'white',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    opacity: 0.7,
-                    pointerEvents: 'none',
-                    zIndex: 50
-                }}
-                aria-hidden="true"
-            >
-                Teclas: ← → para navegar | ESC para início
             </div>
         </div>
     );

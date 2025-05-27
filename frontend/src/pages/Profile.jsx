@@ -119,7 +119,6 @@ const Profile = () => {
 
   return (
     <div className="main">
-      <Header>
       <div
         className="p-6 bg-white-100 min-h-screen"
         style={{ marginLeft: "3%" }}
@@ -264,7 +263,6 @@ const Profile = () => {
           )}
         </div>
       </div>
-      </Header>
     </div>
   );
 };

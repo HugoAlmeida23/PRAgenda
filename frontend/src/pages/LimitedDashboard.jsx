@@ -98,7 +98,6 @@ console.log("stats", stats);
 
   return (
     <div className="bg-white main">
-      <Header className="bg-white">
         <motion.div
           className="bg-white p-6 min-h-screen"
           style={{ marginLeft: "3%" }}
@@ -753,7 +752,6 @@ console.log("stats", stats);
             {/* )} */}
           </div>
         </motion.div>
-      </Header>
     </div>
   );
 };

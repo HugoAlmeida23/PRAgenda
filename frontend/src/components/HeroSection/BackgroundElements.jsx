@@ -19,36 +19,10 @@ const BackgroundElements = ({ businessStatus }) => {
 
     const getGradientColors = () => {
         return {
-                    from: 'linear-gradient(135deg, rgb(30, 67, 128) 0%, rgb(35, 13, 56) 50%, rgb(7, 92, 107) 100%)',
+                    from: 'linear-gradient(135deg, rgb(19, 41, 77) 0%, rgb(18, 7, 29) 50%, rgb(3, 53, 61) 100%)',
                     accent: 'rgb(255, 255, 255)'
                 };
     };
-    // Status-based gradient colors
-    /* const getGradientColors = () => {
-        switch (businessStatus) {
-            case 'optimal':
-                return {
-                    from: 'linear-gradient(135deg, rgb(59, 130, 246) 0%, rgb(147, 51, 234) 50%, rgb(6, 182, 212) 100%)',
-                    accent: 'rgb(52, 211, 153)'
-                };
-            case 'warning':
-                return {
-                    from: 'linear-gradient(135deg, rgb(249, 115, 22) 0%, rgb(239, 68, 68) 50%, rgb(147, 51, 234) 100%)',
-                    accent: 'rgb(251, 191, 36)'
-                };
-            case 'critical':
-                return {
-                    from: 'linear-gradient(135deg, rgb(239, 68, 68) 0%, rgb(236, 72, 153) 50%, rgb(147, 51, 234) 100%)',
-                    accent: 'rgb(248, 113, 113)'
-                };
-            default:
-                return {
-                    from: 'linear-gradient(135deg, rgb(59, 130, 246) 0%, rgb(147, 51, 234) 50%, rgb(79, 70, 229) 100%)',
-                    accent: 'rgb(96, 165, 250)'
-                };
-        }
-    }; */
-
     const colors = getGradientColors();
 
     const floatingVariants = {

@@ -5,7 +5,7 @@ import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
   Bell, Search, Menu, X, LogOut, User,
   Briefcase, GitPullRequest, Sparkles, Zap, Brain,
-  BarChart3, TrendingUp, Calendar, FileText, HelpCircle
+  BarChart3, TrendingUp, Calendar, FileText, HelpCircle,User2
 } from 'lucide-react';
 import api from '../../api'; // Adjust the import based on your API setup
 
@@ -31,7 +31,7 @@ const UnifiedBackground = () => {
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: 'linear-gradient(135deg, rgb(30, 67, 128) 0%, rgb(35, 13, 56) 50%, rgb(7, 92, 107) 100%)',
+        background: 'linear-gradient(135deg, rgb(19, 41, 77) 0%, rgb(18, 7, 29) 50%, rgb(3, 53, 61) 100%)',
 
       }} />
 
@@ -42,11 +42,12 @@ const UnifiedBackground = () => {
           inset: 0,
           opacity: 0.4
         }}
+        
         animate={{
           background: [
-            'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
-            'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
-            'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
+            'radial-gradient(circle at 20% 80%, rgb(19, 41, 77) 50%, transparent 50%)',
+            'radial-gradient(circle at 80% 20%, rgb(18, 7, 29) 50%, transparent 50%)',
+            'radial-gradient(circle at 40% 40%, rgb(3, 53, 61) 100%, transparent 50%)'
           ]
         }}
         transition={{
@@ -105,6 +106,7 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   const navigate = useNavigate();
 
   const menuItems = [
+    
     { path: "/", icon: Home, label: "Dashboard", category: "main" },
     { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade", category: "analytics" },
     { path: "/tasks", icon: CheckSquare, label: "Tarefas", category: "main" },
@@ -112,7 +114,8 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
     { path: "/clients", icon: Users, label: "Clientes", category: "main" },
     { path: "/organization", icon: Briefcase, label: "Organização", category: "settings" },
     { path: "/workflow-designer", icon: GitPullRequest, label: "Workflow Designer", category: "advanced" },
-    { path: "/workflow-management", icon: Settings, label: "Gerir Workflows", category: "advanced" }
+    { path: "/workflow-management", icon: Settings, label: "Gerir Workflows", category: "advanced" },
+    { path: "/profile", icon: User2, label: "Perfil", category: "main" }
   ];
 
   const handleMenuClick = (path) => {
@@ -252,7 +255,8 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
                 </div>
               </div>
             </div>
-
+            
+            
             {/* Menu Items */}
             <div style={{
               flex: 1,
@@ -363,14 +367,39 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   );
 };
 
+const fetchDashboardData = async () => {
+  try {
+    const response = await api.get("/profiles/");
+    console.log("Dashboard data fetched:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    return null;
+  }
+};
+
+
 // Main Layout Component
 const Layout = () => {
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState({
-    username: 'João Silva',
-    organization_name: 'Contabilidade Silva'
-  });
+  const [userProfile, setUserProfile] = useState(null);
+  
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const profileData = await fetchDashboardData();
+        if (profileData && profileData.length > 0) {
+          // Since the API returns an array, take the first item
+          setUserProfile(profileData[0]);
+        }
+      } catch (error) {
+        console.error("Failed to load user profile:", error);
+      }
+    };
+
+    loadUserProfile();
+  }, []);
 
   // Mock notifications
   const [notifications] = useState(2);

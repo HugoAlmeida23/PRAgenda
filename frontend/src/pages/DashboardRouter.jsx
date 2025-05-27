@@ -129,7 +129,7 @@ const DashboardRouter = () => {
   
   return data?.has_full_access 
     ? <HomePage dashboardData={data} /> 
-    : <LimitedDashboard dashboardData={data} />;
+    : <HomePage dashboardData={data} />;
 };
 
 export default DashboardRouter;

@@ -20,148 +20,44 @@ import {
   ChevronUp,
   RotateCcw,
   Settings,
+  Sparkles,
+  Brain,
+  Target,
+  Activity,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  Loader2
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import TaskWorkflowView from './TaskOverflowView';
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
-import { Loader2 } from 'lucide-react';
+import BackgroundElements from "../components/HeroSection/BackgroundElements";
 
-const UniversalBackground = () => {
-  const particles = Array.from({ length: 12 }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    delay: Math.random() * 2,
-    duration: 3 + Math.random() * 4,
-    size: 4 + Math.random() * 8
-  }));
-
-  return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      overflow: 'hidden',
-      zIndex: -1,
-      pointerEvents: 'none'
-    }}>
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)'
-      }} />
-      
-      <motion.div 
-        style={{
-          position: 'absolute',
-          inset: 0,
-          opacity: 0.4
-        }}
-        animate={{
-          background: [
-            'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
-            'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
-            'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
-          ]
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          repeatType: "reverse"
-        }}
-      />
-
-      {particles.map((particle) => (
-        <motion.div
-          key={particle.id}
-          style={{
-            position: 'absolute',
-            width: '6px',
-            height: '6px',
-            backgroundColor: 'rgba(255, 255, 255, 0.2)',
-            borderRadius: '50%',
-            left: `${particle.x}%`,
-            top: `${particle.y}%`
-          }}
-          animate={{
-            y: [-particle.size, particle.size],
-            x: [-particle.size/2, particle.size/2],
-            opacity: [0.1, 0.4, 0.1],
-            scale: [0.5, 1, 0.5]
-          }}
-          transition={{
-            duration: particle.duration,
-            repeat: Infinity,
-            repeatType: "reverse",
-            delay: particle.delay,
-            ease: "easeInOut"
-          }}
-        />
-      ))}
-
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        opacity: 0.02,
-        backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-        `,
-        backgroundSize: '50px 50px'
-      }} />
-    </div>
-  );
-};
 
 const STATUS_OPTIONS = [
-  { value: "pending", label: "Pending" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "pending", label: "Pendente", color: "rgb(251, 191, 36)" },
+  { value: "in_progress", label: "Em Progresso", color: "rgb(59, 130, 246)" },
+  { value: "completed", label: "Concluída", color: "rgb(52, 211, 153)" },
+  { value: "cancelled", label: "Cancelada", color: "rgb(239, 68, 68)" },
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: 1, label: "Urgent", color: "text-red-600" }, // Simplified color for example
-  { value: 2, label: "High", color: "text-orange-600" },
-  { value: 3, label: "Medium", color: "text-yellow-600" },
-  { value: 4, label: "Low", color: "text-blue-600" },
-  { value: 5, label: "Can Wait", color: "text-gray-500" },
+  { value: 1, label: "Urgente", color: "rgb(239, 68, 68)" },
+  { value: 2, label: "Alta", color: "rgb(251, 146, 60)" },
+  { value: 3, label: "Média", color: "rgb(251, 191, 36)" },
+  { value: 4, label: "Baixa", color: "rgb(59, 130, 246)" },
+  { value: 5, label: "Pode Esperar", color: "rgba(255, 255, 255, 0.6)" },
 ];
-
-// --- Helper Components (Simplified Loading/Error for Tailwind) ---
-const LoadingView = () => (
-  <div className="flex justify-center items-center min-h-screen">
-    <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-  </div>
-);
-
-const ErrorView = ({ message, onRetry }) => (
-  <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
-    <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
-    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg" role="alert">
-      <strong className="font-bold block sm:inline">Oops! Something went wrong.</strong>
-      <span className="block sm:inline"> {message || 'Failed to load data.'}</span>
-    </div>
-    {onRetry && (
-      <button
-        onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      >
-        <RotateCcw className="h-4 w-4 mr-2" />
-        Retry
-      </button>
-    )}
-  </div>
-);
-
 
 // --- Data Fetching Function (Outside Component) ---
 const fetchTaskManagementData = async () => {
   console.log("Fetching task management data...");
   const [tasksRes, clientsRes, usersRes, categoriesRes] = await Promise.all([
     api.get("/tasks/"),
-    api.get("/clients/?is_active=true"), // Fetch only active clients for dropdowns
-    api.get("/profiles/"), // Assuming profiles are users
+    api.get("/clients/?is_active=true"),
+    api.get("/profiles/"),
     api.get("/task-categories/")
   ]);
   console.log("Data fetched:", { tasks: tasksRes.data.length, clients: clientsRes.data.length, users: usersRes.data.length, categories: categoriesRes.data.length });
@@ -175,7 +71,7 @@ const fetchTaskManagementData = async () => {
 
 // --- Main Component ---
 const TaskManagement = () => {
-  const permissions = usePermissions(); // AQUI!
+  const permissions = usePermissions();
 
   // Function to initialize or reset form data
   const getInitialFormData = () => ({
@@ -196,14 +92,13 @@ const TaskManagement = () => {
   const [filters, setFilters] = useState({ status: "", client: "", priority: "", assignedTo: "", category: "" });
   const [selectedTaskForWorkflow, setSelectedTaskForWorkflow] = useState(null);
   const [formData, setFormData] = useState(getInitialFormData());
+  const [showFilters, setShowFilters] = useState(false);
 
   // --- Data Fetching using React Query ---
   const { data, isLoading: isLoadingData, isError, error, refetch } = useQuery({
-    queryKey: ['taskManagementData'], // Unique key for this data set
+    queryKey: ['taskManagementData'],
     queryFn: fetchTaskManagementData,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    // Keep previous data while refetching for smoother UX
-    // keepPreviousData: true, // Consider enabling if pagination/infinite scroll is added
+    staleTime: 5 * 60 * 1000,
   });
 
   // Extracted data lists (provide defaults)
@@ -212,20 +107,17 @@ const TaskManagement = () => {
   const users = data?.users ?? [];
   const categories = data?.categories ?? [];
 
-
   // --- Mutations using React Query ---
-
-  // Base mutation options for invalidation
   const mutationOptions = {
     onSuccess: () => {
       console.log("Mutation successful, invalidating taskManagementData query");
       queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
-      resetForm(); // Close form and reset fields after success
+      resetForm();
     },
     onError: (err, variables, context) => {
       console.error("Mutation failed:", err);
       const errorMessage = err.response?.data?.detail || err.message || "An error occurred";
-      toast.error(`Failed: ${errorMessage}`);
+      toast.error(`Falha: ${errorMessage}`);
     },
   };
 
@@ -234,8 +126,8 @@ const TaskManagement = () => {
     mutationFn: (newTaskData) => api.post("/tasks/", newTaskData),
     ...mutationOptions,
     onSuccess: () => {
-      toast.success("Task created successfully");
-      mutationOptions.onSuccess(); // Call base onSuccess
+      toast.success("Tarefa criada com sucesso");
+      mutationOptions.onSuccess();
     }
   });
 
@@ -244,7 +136,7 @@ const TaskManagement = () => {
     mutationFn: ({ id, updatedData }) => api.put(`/tasks/${id}/`, updatedData),
     ...mutationOptions,
     onSuccess: () => {
-      toast.success("Task updated successfully");
+      toast.success("Tarefa atualizada com sucesso");
       mutationOptions.onSuccess();
     }
   });
@@ -252,50 +144,48 @@ const TaskManagement = () => {
   // Update Task Status Mutation (using PATCH)
   const updateTaskStatusMutation = useMutation({
     mutationFn: ({ id, status }) => api.patch(`/tasks/${id}/`, { status }),
-    onSuccess: (data, variables) => { // variables contains { id, status }
-      toast.success(`Task marked as ${variables.status}`);
-      queryClient.invalidateQueries({ queryKey: ['taskManagementData'] }); // Only invalidate, don't reset form
+    onSuccess: (data, variables) => {
+      toast.success(`Tarefa marcada como ${STATUS_OPTIONS.find(s => s.value === variables.status)?.label.toLowerCase()}`);
+      queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
     },
     onError: (err) => {
       console.error("Error updating task status:", err);
-      toast.error("Failed to update task status");
+      toast.error("Falha ao atualizar status da tarefa");
     }
   });
-
 
   // Delete Task Mutation
   const deleteTaskMutation = useMutation({
     mutationFn: (taskId) => api.delete(`/tasks/${taskId}/`),
     onSuccess: () => {
-      toast.success("Task deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ['taskManagementData'] }); // Only invalidate
+      toast.success("Tarefa excluída com sucesso");
+      queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
     },
     onError: (err) => {
       console.error("Error deleting task:", err);
-      toast.error("Failed to delete task");
+      toast.error("Falha ao excluir tarefa");
     }
   });
 
-  // Natural Language Task Creation Mutation (Example)
+  // Natural Language Task Creation Mutation
   const createNlpTaskMutation = useMutation({
-    mutationFn: (nlpData) => api.post("/tasks/", nlpData), // Assuming same endpoint
-    ...mutationOptions, // Use base options
+    mutationFn: (nlpData) => api.post("/tasks/", nlpData),
+    ...mutationOptions,
     onSuccess: () => {
-      toast.success("Task created from text");
-      setNaturalLanguageInput(""); // Clear input
-      setShowNaturalLanguageForm(false); // Close NL form
-      mutationOptions.onSuccess(); // Invalidate and reset main form (if open)
+      toast.success("Tarefa criada a partir do texto");
+      setNaturalLanguageInput("");
+      setShowNaturalLanguageForm(false);
+      mutationOptions.onSuccess();
     },
     onError: (err) => {
       console.error("Error creating NLP task:", err);
-      toast.error("Failed to create task from text");
+      toast.error("Falha ao criar tarefa a partir do texto");
     }
   });
 
-
   // --- Client-Side Filtering and Sorting using useMemo ---
   const filteredAndSortedTasks = useMemo(() => {
-    if (!tasks) return []; // Guard against initial undefined state
+    if (!tasks) return [];
     console.log(`Memo: Filtering/Sorting ${tasks.length} tasks. Filters:`, filters, `Search:`, searchTerm, `Sort:`, sortConfig);
 
     let result = [...tasks];
@@ -306,8 +196,8 @@ const TaskManagement = () => {
       result = result.filter(task =>
         task.title?.toLowerCase().includes(term) ||
         task.description?.toLowerCase().includes(term) ||
-        clients.find(c => c.id === task.client)?.name.toLowerCase().includes(term) || // Search client name
-        users.find(u => u.id === task.assigned_to)?.username.toLowerCase().includes(term) // Search assignee username
+        clients.find(c => c.id === task.client)?.name.toLowerCase().includes(term) ||
+        users.find(u => u.id === task.assigned_to)?.username.toLowerCase().includes(term)
       );
     }
 
@@ -324,18 +214,15 @@ const TaskManagement = () => {
         let valA = a[sortConfig.key];
         let valB = b[sortConfig.key];
 
-        // Handle nulls consistently (e.g., nulls last)
         if (valA === null || valA === undefined) return 1;
         if (valB === null || valB === undefined) return -1;
 
-        // Specific handling for dates
         if (sortConfig.key === "deadline") {
           valA = new Date(valA);
           valB = new Date(valB);
           return sortConfig.direction === "asc" ? valA - valB : valB - valA;
         }
 
-        // Specific handling for related fields (client name, assignee username) - requires lookup
         if (sortConfig.key === "client") {
           valA = clients.find(c => c.id === valA)?.name?.toLowerCase() || '';
           valB = clients.find(c => c.id === valB)?.name?.toLowerCase() || '';
@@ -343,12 +230,10 @@ const TaskManagement = () => {
           valA = users.find(u => u.id === valA)?.username?.toLowerCase() || '';
           valB = users.find(u => u.id === valB)?.username?.toLowerCase() || '';
         } else if (typeof valA === 'string') {
-          // Default string comparison (case-insensitive)
           valA = valA.toLowerCase();
           valB = valB.toLowerCase();
         }
 
-        // General comparison
         if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
         if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
         return 0;
@@ -356,18 +241,15 @@ const TaskManagement = () => {
     }
     console.log(`Memo Result: ${result.length} tasks`);
     return result;
-  }, [tasks, clients, users, searchTerm, filters, sortConfig]); // Dependencies for re-calculation
-
+  }, [tasks, clients, users, searchTerm, filters, sortConfig]);
 
   // --- Event Handlers ---
-
-  // useCallback for stable function references where needed (e.g., passed as props)
   const handleSort = useCallback((key) => {
     setSortConfig(current => ({
       key,
       direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
     }));
-  }, []); // Empty dependency array as it doesn't depend on component state/props
+  }, []);
 
   const handleInputChange = useCallback((e) => {
     const { name, value, type } = e.target;
@@ -389,9 +271,8 @@ const TaskManagement = () => {
   const resetFilters = useCallback(() => {
     setFilters({ status: "", client: "", priority: "", assignedTo: "", category: "" });
     setSearchTerm("");
-    setSortConfig({ key: "deadline", direction: "asc" }); // Optionally reset sort
+    setSortConfig({ key: "deadline", direction: "asc" });
   }, []);
-
 
   const handleNaturalLanguageInputChange = useCallback((e) => {
     setNaturalLanguageInput(e.target.value);
@@ -410,7 +291,6 @@ const TaskManagement = () => {
   // Handle submission from the main form
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    const permissions = usePermissions();
     
     if (selectedTask) {
       const canEdit = permissions.isOrgAdmin ||
@@ -421,63 +301,53 @@ const TaskManagement = () => {
         toast.error("Você não tem permissão para editar esta tarefa");
         return;
       }
-      // Update
       updateTaskMutation.mutate({ id: selectedTask.id, updatedData: formData });
     } else {
       if (!permissions.isOrgAdmin && !permissions.canCreateTasks) {
         toast.error("Você não tem permissão para criar tarefas");
         return;
       }
-      // Create
       createTaskMutation.mutate(formData);
     }
-  }, [selectedTask, formData, createTaskMutation, updateTaskMutation]); 
+  }, [selectedTask, formData, createTaskMutation, updateTaskMutation, permissions]); 
 
   // Handle NLP form submission
   const handleNaturalLanguageSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!naturalLanguageInput.trim()) {
-      toast.error("Please enter some text to create a task.");
+      toast.error("Por favor, insira algum texto para criar uma tarefa.");
       return;
     }
 
-    // --- Basic NLP Placeholder ---
-    // This section should ideally call a dedicated backend NLP service
-    // Extract dates (very basic regex, needs improvement or library like 'chrono-node')
-    const deadlineMatch = naturalLanguageInput.match(/by (\d{4}-\d{2}-\d{2})/i); // Simple YYYY-MM-DD match
+    // Basic NLP Placeholder
+    const deadlineMatch = naturalLanguageInput.match(/até (\d{4}-\d{2}-\d{2})/i);
     let deadline = deadlineMatch ? deadlineMatch[1] : null;
 
-    // Extract priority
-    let priority = 3; // Default Medium
-    if (/urgent/i.test(naturalLanguageInput)) priority = 1;
-    else if (/high priority/i.test(naturalLanguageInput)) priority = 2;
-    else if (/low priority/i.test(naturalLanguageInput)) priority = 4;
+    let priority = 3;
+    if (/urgente/i.test(naturalLanguageInput)) priority = 1;
+    else if (/alta prioridade/i.test(naturalLanguageInput)) priority = 2;
+    else if (/baixa prioridade/i.test(naturalLanguageInput)) priority = 4;
 
-    // Extract client (very basic)
     let clientId = null;
     for (const client of clients) {
-      // Use word boundaries for better matching
       const clientRegex = new RegExp(`\\b${client.name}\\b`, 'i');
       if (clientRegex.test(naturalLanguageInput)) {
         clientId = client.id;
         break;
       }
     }
-    // --- End Basic NLP Placeholder ---
 
     const nlpTaskData = {
-      title: naturalLanguageInput.substring(0, 100), // Use first 100 chars as title example
+      title: naturalLanguageInput.substring(0, 100),
       description: naturalLanguageInput,
-      client: clientId, // Use matched client if found
+      client: clientId,
       status: "pending",
       priority: priority,
       deadline: deadline,
     };
 
     createNlpTaskMutation.mutate(nlpTaskData);
-
   }, [naturalLanguageInput, clients, createNlpTaskMutation]);
-
 
   // Prepare a task for editing
   const selectTaskForEdit = useCallback((task) => {
@@ -490,14 +360,14 @@ const TaskManagement = () => {
       assigned_to: task.assigned_to || "",
       status: task.status || "pending",
       priority: task.priority || 3,
-      deadline: task.deadline ? task.deadline.split("T")[0] : "", // Format for date input
+      deadline: task.deadline ? task.deadline.split("T")[0] : "",
       estimated_time_minutes: task.estimated_time_minutes || "",
     });
     setShowForm(true);
-    setShowNaturalLanguageForm(false); // Close NLP form if open
+    setShowNaturalLanguageForm(false);
   }, []);
 
-  // Handle view workflow
+  // Handle view workflow  
   const handleViewWorkflow = useCallback((task) => {
     setSelectedTaskForWorkflow(task);
   }, []);
@@ -508,15 +378,13 @@ const TaskManagement = () => {
       toast.error("Você não tem permissão para excluir tarefas");
       return;
     }
-    // Could use a modal here instead of window.confirm
-    if (window.confirm("Are you sure you want to delete this task? This action cannot be undone.")) {
+    if (window.confirm("Tem certeza que deseja excluir esta tarefa? Esta ação não pode ser desfeita.")) {
       deleteTaskMutation.mutate(taskId);
     }
   }, [deleteTaskMutation, permissions]);
 
   // Trigger status update
   const updateTaskStatusHandler = useCallback((task, newStatus) => {
-    const permissions = usePermissions();
     const canUpdate = permissions.isOrgAdmin ||
       permissions.canEditAllTasks ||
       (permissions.canEditAssignedTasks && task.assigned_to === permissions.userId);
@@ -526,26 +394,26 @@ const TaskManagement = () => {
       return;
     }
     updateTaskStatusMutation.mutate({ id: task.id, status: newStatus });
-  }, [updateTaskStatusMutation]);
+  }, [updateTaskStatusMutation, permissions]);
 
-  // --- Helper Functions (can be moved outside if not using component state) ---
+  // --- Helper Functions ---
   const formatDate = (dateString) => {
-    if (!dateString) return "No deadline";
+    if (!dateString) return "Sem prazo";
     const date = new Date(dateString);
-    return date.toLocaleDateString();
+    return date.toLocaleDateString('pt-PT');
   };
 
   const isOverdue = (deadline) => {
     if (!deadline) return false;
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to beginning of day for fair comparison
+    today.setHours(0, 0, 0, 0);
     const deadlineDate = new Date(deadline);
     deadlineDate.setHours(0, 0, 0, 0);
     return deadlineDate < today;
   };
 
   const getPriorityInfo = (priorityValue) => {
-    const priority = PRIORITY_OPTIONS.find(p => p.value === priorityValue) || PRIORITY_OPTIONS[2]; // Default to Medium if not found
+    const priority = PRIORITY_OPTIONS.find(p => p.value === priorityValue) || PRIORITY_OPTIONS[2];
     return {
       label: priority.label,
       color: priority.color
@@ -569,49 +437,163 @@ const TaskManagement = () => {
     staleTime: 5 * 60 * 1000
   });
 
+  // Estilos glass
+  const glassStyle = {
+    background: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '16px'
+  };
+
+  // Variantes de animação
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.2
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 200,
+        damping: 20
+      }
+    }
+  };
+
   // --- Render Logic ---
-
-  // Show loading indicator while initial data is loading
-  if (isLoadingData) {
-    return <LoadingView />;
-  }
-
-  // Show error message if initial data fetching failed
-  if (isError) {
-    return <ErrorView message={error?.message || "Could not load task data."} onRetry={refetch} />;
-  }
-
-
-  // Verificar permissões para mostrar mensagem de acesso restrito
-  if (permissions.loading) {
-    return <LoadingView />;
-  }
-
-  // Verificar se usuário pode ver tarefas
-  const canViewTasks = permissions.canViewAllTasks || permissions.isOrgAdmin;
-
-  // Se não tiver permissões, mostrar mensagem de acesso restrito
-  if (!canViewTasks && !permissions.canEditAssignedTasks) {
+  if (permissions.loading || isLoadingData) {
     return (
-      
-        <div className="flex flex-col items-center justify-center min-h-screen p-4">
-          <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
-            <div className="flex items-start">
-              <AlertCircle className="h-6 w-6 mr-2" />
-              <div>
-                <p className="font-bold">Acesso Restrito</p>
-                <p>Você não possui permissões para visualizar ou gerenciar tarefas.</p>
-              </div>
-            </div>
-          </div>
-          <p className="text-gray-600">
-            Entre em contato com o administrador da sua organização para solicitar acesso.
-          </p>
-        </div>
-      
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'white'
+      }}>
+        <BackgroundElements businessStatus="optimal" />
+        <motion.div
+          animate={{
+            rotate: 360,
+            scale: [1, 1.1, 1]
+          }}
+          transition={{
+            rotate: { duration: 2, repeat: Infinity, ease: "linear" },
+            scale: { duration: 1, repeat: Infinity }
+          }}
+        >
+          <Brain size={48} style={{ color: 'rgb(147, 51, 234)' }} />
+        </motion.div>
+        <p style={{ marginLeft: '1rem', fontSize: '1rem' }}>
+          Carregando gestão de tarefas...
+        </p>
+      </div>
     );
   }
 
+  if (isError) {
+    return (
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem'
+      }}>
+<BackgroundElements businessStatus="optimal" />        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          style={{
+            ...glassStyle,
+            padding: '2rem',
+            textAlign: 'center',
+            maxWidth: '500px',
+            color: 'white'
+          }}
+        >
+          <AlertTriangle size={48} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>
+            Erro ao Carregar
+          </h2>
+          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>
+            {error?.message || "Não foi possível carregar os dados das tarefas."}
+          </p>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={refetch}
+            style={{
+              ...glassStyle,
+              padding: '0.75rem 1.5rem',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              background: 'rgba(59, 130, 246, 0.2)',
+              color: 'white',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.875rem',
+              fontWeight: '500',
+              margin: '0 auto'
+            }}
+          >
+            <RotateCcw size={18} />
+            Tentar Novamente
+          </motion.button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Verificar permissões para mostrar mensagem de acesso restrito
+  const canViewTasks = permissions.canViewAllTasks || permissions.isOrgAdmin;
+
+  if (!canViewTasks && !permissions.canEditAssignedTasks) {
+    return (
+      <div style={{
+        position: 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem'
+      }}>
+<BackgroundElements businessStatus="optimal" />        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          style={{
+            ...glassStyle,
+            padding: '2rem',
+            textAlign: 'center',
+            maxWidth: '500px',
+            color: 'white'
+          }}
+        >
+          <AlertCircle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>
+            Acesso Restrito
+          </h2>
+          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>
+            Você não possui permissões para visualizar ou gerenciar tarefas.
+          </p>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+            Entre em contato com o administrador da sua organização para solicitar acesso.
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -619,351 +601,225 @@ const TaskManagement = () => {
       minHeight: '100vh',
       color: 'white'
     }}>
-<UniversalBackground />
-<ToastContainer
+<BackgroundElements businessStatus="optimal" />      <ToastContainer
         position="top-right"
         autoClose={3000}
         hideProgressBar={false}
         style={{ zIndex: 9999 }}
       />
 
-            <div className="flex justify-between items-center mb-6">
-              <h1 className="text-2xl font-bold">Task Management</h1>
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => {
-                    setShowNaturalLanguageForm(!showNaturalLanguageForm);
-                    if (showForm) setShowForm(false);
-                    if (showNaturalLanguageForm) setNaturalLanguageInput("");
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={containerVariants}
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          padding: '2rem',
+          paddingTop: '1rem'
+        }}
+      >
+        {/* Header */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '2rem',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}
+        >
+          <div>
+            <h1 style={{
+              fontSize: '1.8rem',
+              fontWeight: '700',
+              margin: '0 0 0.5rem 0',
+              background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>
+              Gestão de Tarefas
+            </h1>
+            <p style={{
+              fontSize: '1rem',
+              color: 'rgba(191, 219, 254, 1)',
+              margin: 0
+            }}>
+              Organize e acompanhe todas as suas tarefas
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                setShowNaturalLanguageForm(!showNaturalLanguageForm);
+                if (showForm) setShowForm(false);
+                if (showNaturalLanguageForm) setNaturalLanguageInput("");
+              }}
+              style={{
+                ...glassStyle,
+                padding: '0.75rem 1.5rem',
+                border: '1px solid rgba(147, 51, 234, 0.3)',
+                background: showNaturalLanguageForm ? 'rgba(239, 68, 68, 0.2)' : 'rgba(147, 51, 234, 0.2)',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem',
+                fontWeight: '500'
+              }}
+            >
+              <FileText size={18} />
+              {showNaturalLanguageForm ? 'Cancelar' : 'Entrada Natural'}
+            </motion.button>
+
+            {(permissions.isOrgAdmin || permissions.canCreateTasks) && (
+              <motion.button
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  resetForm();
+                  setShowForm(!showForm);
+                  if (showNaturalLanguageForm) setShowNaturalLanguageForm(false);
+                }}
+                style={{
+                  ...glassStyle,
+                  padding: '0.75rem 1.5rem',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  background: showForm ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                  color: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500'
+                }}
+              >
+                <Plus size={18} />
+                {showForm ? 'Cancelar' : 'Nova Tarefa'}
+              </motion.button>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Natural Language Form */}
+        <AnimatePresence>
+          {showNaturalLanguageForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, y: -20 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                ...glassStyle,
+                padding: '1.5rem',
+                marginBottom: '2rem'
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                marginBottom: '1.5rem'
+              }}>
+                <motion.div
+                  animate={{
+                    rotate: [0, 360],
+                    scale: [1, 1.1, 1]
                   }}
-                  className={`${showNaturalLanguageForm
-                    ? "bg-white-600"
-                    : "bg-purple-600 hover:bg-purple-700"
-                    } text-white px-4 py-2 rounded-md flex items-center`}
-                >
-                  <FileText size={18} className="mr-2" />
-                  {showNaturalLanguageForm ? "Cancel" : "Natural Language Input"}
-                </button>
-                {/* Botão de Nova Tarefa */}
-                {(permissions.isOrgAdmin || permissions.canCreateTasks) && (
-                  <button
-                    onClick={() => {
-                      resetForm();
-                      setShowForm(!showForm);
-                      if (showNaturalLanguageForm)
-                        setShowNaturalLanguageForm(false);
-                    }}
-                    className={`${showForm ? "bg-white-600" : "bg-blue-600 hover:bg-blue-700"
-                      } text-white px-4 py-2 rounded-md flex items-center`}
-                  >
-                    <Plus size={18} className="mr-2" />
-                    {showForm ? "Cancel" : "New Task"}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Natural Language Form */}
-            {showNaturalLanguageForm && (
-              <div className="bg-white p-6 rounded-lg shadow mb-6">
-                <h2 className="text-xl font-semibold mb-4">
-                  Create Tasks Using Natural Language
-                </h2>
-                <form onSubmit={handleNaturalLanguageSubmit}>
-                  <div className="mb-4">
-                    <label className="block text-gray-700 mb-2">
-                      Describe Your Tasks
-                    </label>
-                    <textarea
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                      value={naturalLanguageInput}
-                      onChange={handleNaturalLanguageInputChange}
-                      placeholder="Example: Deliver the IVA declaration for client ABC by Friday, review bank statements for XYZ with medium priority, and prepare payroll for DEF by the 10th."
-                      rows={4}
-                      required
-                    />
-                    <p className="text-sm text-gray-500 mt-1">
-                      The system will extract clients, deadlines, and priorities
-                      from your text.
-                    </p>
-                  </div>
-
-                  <div className="mb-4">
-                    <label className="block text-gray-700 mb-2">
-                      Default Client (if not specified in text)
-                    </label>
-                    <select
-                      name="client"
-                      value={formData.client}
-                      onChange={handleInputChange}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="">Select Default Client</option>
-                      {clients.map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md"
-                    >
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {selectedTaskForWorkflow && (
-              <div className="bg-white p-6 rounded-lg shadow mb-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold">Workflow da Tarefa: {selectedTaskForWorkflow.title}</h2>
-                  <button
-                    onClick={() => setSelectedTaskForWorkflow(null)}
-                    className="text-gray-500 hover:text-gray-700"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-                <TaskWorkflowView
-                  taskId={selectedTaskForWorkflow.id}
-                  onWorkflowUpdate={() => {
-                    // Recarregar a lista de tarefas após atualização do workflow
-                    refetch();
+                  transition={{
+                    rotate: { duration: 8, repeat: Infinity, ease: "linear" },
+                    scale: { duration: 2, repeat: Infinity }
                   }}
-                />
-              </div>
-            )}
-
-            {/* Task Form */}
-            {showForm && (
-              <div className="bg-white p-6 rounded-lg shadow mb-6">
-                <h2 className="text-xl font-semibold mb-4">
-                  {selectedTask ? "Edit Task" : "Create New Task"}
-                </h2>
-                <form onSubmit={handleSubmit}>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-gray-700 mb-2">Title *</label>
-                      <input
-                        type="text"
-                        name="title"
-                        value={formData.title}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-2">Client *</label>
-                      <select
-                        name="client"
-                        value={formData.client}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        required
-                      >
-                        <option value="">Select Client</option>
-                        {clients.map((client) => (
-                          <option key={client.id} value={client.id}>
-                            {client.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-2">Category</label>
-                      <select
-                        name="category"
-                        value={formData.category}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      >
-                        <option value="">Select Category</option>
-                        {categories.map((category) => (
-                          <option key={category.id} value={category.id}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-2">
-                        Assigned To
-                      </label>
-                      <select
-                        name="assigned_to"
-                        value={formData.assigned_to}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      >
-                        <option value="">Select Assignee</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.user}>
-                            {user.username}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-2">Status</label>
-                      <select
-                        name="status"
-                        value={formData.status}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      >
-                        {STATUS_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-2">Priority</label>
-                      <select
-                        name="priority"
-                        value={formData.priority}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      >
-                        {PRIORITY_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-2">Deadline</label>
-                      <input
-                        type="date"
-                        name="deadline"
-                        value={formData.deadline}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-2">
-                        Estimated Time (minutes)
-                      </label>
-                      <input
-                        type="number"
-                        name="estimated_time_minutes"
-                        value={formData.estimated_time_minutes}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        min="1"
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-gray-700 mb-2">
-                        Description
-                      </label>
-                      <textarea
-                        name="description"
-                        value={formData.description}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        rows={3}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-700 mb-2">Workflow</label>
-                    <select
-                      name="workflow"
-                      value={formData.workflow || ""}
-                      onChange={handleInputChange}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="">Selecionar Workflow (Opcional)</option>
-                      {workflowDefinitions?.map((workflow) => (
-                        <option key={workflow.id} value={workflow.id}>
-                          {workflow.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      className="bg-white-500 hover:bg-white-600 text-white px-4 py-2 rounded-md mr-2"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
-
-                    >
-
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-
-            {/* Filters */}
-            <div className="bg-white p-6 rounded-lg shadow mb-6">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
-                <h2 className="text-lg font-semibold mb-4 md:mb-0">Filters</h2>
-                <div className="w-full md:w-1/3 mb-4 md:mb-0">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search tasks..."
-                      value={searchTerm}
-                      onChange={handleSearchChange}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md"
-                    />
-                    <Search
-                      className="absolute left-3 top-2.5 text-gray-400"
-                      size={18}
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={resetFilters}
-                  className="bg-white-500 hover:bg-white-600 text-white px-4 py-2 rounded-md"
+                  style={{
+                    padding: '0.5rem',
+                    backgroundColor: 'rgba(147, 51, 234, 0.2)',
+                    borderRadius: '12px'
+                  }}
                 >
-                  Reset Filters
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <Brain style={{ color: 'rgb(196, 181, 253)' }} size={20} />
+                </motion.div>
                 <div>
-                  <label className="block text-gray-700 mb-2 text-sm">
-                    Status
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                    Criar Tarefas com Linguagem Natural
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                    Descreva suas tarefas naturalmente e deixe a IA organizá-las
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleNaturalLanguageSubmit}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Descreva suas Tarefas
+                  </label>
+                  <textarea
+                    value={naturalLanguageInput}
+                    onChange={handleNaturalLanguageInputChange}
+                    placeholder="Exemplo: Entregar a declaração de IVA para o cliente ABC até sexta-feira, revisar extratos bancários para XYZ com média prioridade..."
+                    rows={4}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.875rem',
+                      resize: 'vertical'
+                    }}
+                  />
+                  <p style={{
+                    fontSize: '0.75rem',
+                    color: 'rgba(255, 255, 255, 0.6)',
+                    margin: '0.5rem 0 0 0'
+                  }}>
+                    O sistema irá extrair clientes, prazos e prioridades do seu texto.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Cliente Padrão (se não especificado no texto)
                   </label>
                   <select
-                    name="status"
-                    value={filters.status}
-                    onChange={handleFilterChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
+                    name="client"
+                    value={formData.client}
+                    onChange={handleInputChange}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.875rem'
+                    }}
                   >
-                    <option value="">All Status</option>
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Status</option>
                     {STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
+                      <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
                         {option.label}
                       </option>
                     ))}
@@ -971,18 +827,32 @@ const TaskManagement = () => {
                 </div>
 
                 <div>
-                  <label className="block text-gray-700 mb-2 text-sm">
-                    Client
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Cliente
                   </label>
                   <select
                     name="client"
                     value={filters.client}
                     onChange={handleFilterChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '0.875rem'
+                    }}
                   >
-                    <option value="">All Clients</option>
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Clientes</option>
                     {clients.map((client) => (
-                      <option key={client.id} value={client.id}>
+                      <option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>
                         {client.name}
                       </option>
                     ))}
@@ -990,18 +860,32 @@ const TaskManagement = () => {
                 </div>
 
                 <div>
-                  <label className="block text-gray-700 mb-2 text-sm">
-                    Priority
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Prioridade
                   </label>
                   <select
                     name="priority"
                     value={filters.priority}
                     onChange={handleFilterChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '0.875rem'
+                    }}
                   >
-                    <option value="">All Priorities</option>
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todas as Prioridades</option>
                     {PRIORITY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
+                      <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
                         {option.label}
                       </option>
                     ))}
@@ -1009,18 +893,32 @@ const TaskManagement = () => {
                 </div>
 
                 <div>
-                  <label className="block text-gray-700 mb-2 text-sm">
-                    Assigned To
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Atribuída a
                   </label>
                   <select
                     name="assignedTo"
                     value={filters.assignedTo}
                     onChange={handleFilterChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '0.875rem'
+                    }}
                   >
-                    <option value="">All Assignees</option>
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Responsáveis</option>
                     {users.map((user) => (
-                      <option key={user.id} value={user.user}>
+                      <option key={user.id} value={user.user} style={{ background: '#1f2937', color: 'white' }}>
                         {user.username}
                       </option>
                     ))}
@@ -1028,259 +926,730 @@ const TaskManagement = () => {
                 </div>
 
                 <div>
-                  <label className="block text-gray-700 mb-2 text-sm">
-                    Category
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Categoria
                   </label>
                   <select
                     name="category"
                     value={filters.category}
                     onChange={handleFilterChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '0.875rem'
+                    }}
                   >
-                    <option value="">All Categories</option>
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todas as Categorias</option>
                     {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
+                      <option key={category.id} value={category.id} style={{ background: '#1f2937', color: 'white' }}>
                         {category.name}
                       </option>
                     ))}
                   </select>
                 </div>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+{/* Task Summary Stats */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem',
+            marginBottom: '2rem'
+          }}
+        >
+          {/* Total Tasks */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(59, 130, 246)',
+              marginBottom: '0.5rem'
+            }}>
+              {tasks.length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Total de Tarefas
+            </div>
+          </motion.div>
+
+          {/* Pending Tasks */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid rgba(251, 191, 36, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(251, 191, 36)',
+              marginBottom: '0.5rem'
+            }}>
+              {tasks.filter(t => t.status === 'pending').length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Pendentes
+            </div>
+          </motion.div>
+
+          {/* In Progress Tasks */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(59, 130, 246)',
+              marginBottom: '0.5rem'
+            }}>
+              {tasks.filter(t => t.status === 'in_progress').length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Em Progresso
+            </div>
+          </motion.div>
+
+          {/* Completed Tasks */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(52, 211, 153, 0.1)',
+              border: '1px solid rgba(52, 211, 153, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(52, 211, 153)',
+              marginBottom: '0.5rem'
+            }}>
+              {tasks.filter(t => t.status === 'completed').length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Concluídas
+            </div>
+          </motion.div>
+
+          {/* Overdue Tasks */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -5 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              textAlign: 'center',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.2)'
+            }}
+          >
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: 'rgb(239, 68, 68)',
+              marginBottom: '0.5rem'
+            }}>
+              {tasks.filter(t => isOverdue(t.deadline) && t.status !== 'completed').length}
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: 'rgba(255, 255, 255, 0.8)'
+            }}>
+              Atrasadas
+            </div>
+          </motion.div>
+        </motion.div>
+
+        {/* Task List */}
+        <motion.div
+          variants={itemVariants}
+          style={{
+            ...glassStyle,
+            padding: 0,
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{
+            padding: '1.5rem',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                padding: '0.5rem',
+                backgroundColor: 'rgba(52, 211, 153, 0.2)',
+                borderRadius: '12px'
+              }}>
+                <Activity style={{ color: 'rgb(52, 211, 153)' }} size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
+                  Lista de Tarefas
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                  {filteredAndSortedTasks.length} tarefas encontradas
+                </p>
               </div>
             </div>
-
-            {/* Task List */}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <h2 className="text-xl font-semibold p-6 border-b">
-                Tasks ({filteredAndSortedTasks.length})
-              </h2>
-
-              {filteredAndSortedTasks.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  No tasks found. {searchTerm || Object.values(filters).some(val => val)
-                    ? "Try adjusting your filters."
-                    : "Create your first task!"}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-white-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <button
-                            className="flex items-center"
-                            onClick={() => handleSort("title")}
-                          >
-                            Title
-                            {sortConfig.key === "title" ? (
-                              sortConfig.direction === "asc" ? (
-                                <ChevronUp size={16} className="ml-1" />
-                              ) : (
-                                <ChevronDown size={16} className="ml-1" />
-                              )
-                            ) : (
-                              <ChevronDown size={16} className="ml-1 opacity-30" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <button
-                            className="flex items-center"
-                            onClick={() => handleSort("client_name")}
-                          >
-                            Client
-                            {sortConfig.key === "client_name" ? (
-                              sortConfig.direction === "asc" ? (
-                                <ChevronUp size={16} className="ml-1" />
-                              ) : (
-                                <ChevronDown size={16} className="ml-1" />
-                              )
-                            ) : (
-                              <ChevronDown size={16} className="ml-1 opacity-30" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <button
-                            className="flex items-center"
-                            onClick={() => handleSort("priority")}
-                          >
-                            Priority
-                            {sortConfig.key === "priority" ? (
-                              sortConfig.direction === "asc" ? (
-                                <ChevronUp size={16} className="ml-1" />
-                              ) : (
-                                <ChevronDown size={16} className="ml-1" />
-                              )
-                            ) : (
-                              <ChevronDown size={16} className="ml-1 opacity-30" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <button
-                            className="flex items-center"
-                            onClick={() => handleSort("deadline")}
-                          >
-                            Deadline
-                            {sortConfig.key === "deadline" ? (
-                              sortConfig.direction === "asc" ? (
-                                <ChevronUp size={16} className="ml-1" />
-                              ) : (
-                                <ChevronDown size={16} className="ml-1" />
-                              )
-                            ) : (
-                              <ChevronDown size={16} className="ml-1 opacity-30" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          <button
-                            className="flex items-center"
-                            onClick={() => handleSort("status")}
-                          >
-                            Status
-                            {sortConfig.key === "status" ? (
-                              sortConfig.direction === "asc" ? (
-                                <ChevronUp size={16} className="ml-1" />
-                              ) : (
-                                <ChevronDown size={16} className="ml-1" />
-                              )
-                            ) : (
-                              <ChevronDown size={16} className="ml-1 opacity-30" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Assigned To
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredAndSortedTasks.map((task) => (
-                        <tr key={task.id} className="hover:bg-white-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="font-medium text-gray-900">
-                              {task.title}
-                            </div>
-                            {task.description && (
-                              <div className="text-gray-500 text-sm truncate max-w-xs">
-                                {task.description}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {task.client_name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getPriorityInfo(task.priority).color
-                                }`}
-                            >
-                              {getPriorityInfo(task.priority).label}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div
-                              className={`flex items-center ${isOverdue(task.deadline) && task.status !== 'completed'
-                                ? "text-red-600"
-                                : ""
-                                }`}
-                            >
-                              <Calendar
-                                size={16}
-                                className={`mr-2 ${isOverdue(task.deadline) && task.status !== 'completed'
-                                  ? "text-red-600"
-                                  : "text-gray-400"
-                                  }`}
-                              />
-                              {formatDate(task.deadline)}
-                              {isOverdue(task.deadline) && task.status !== 'completed' && (
-                                <span className="ml-2 text-red-600">
-                                  <AlertTriangle size={16} />
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${task.status === "completed"
-                                ? "bg-green-100 text-green-800"
-                                : task.status === "in_progress"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : task.status === "pending"
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-white-100 text-gray-800"
-                                }`}
-                            >
-                              {
-                                STATUS_OPTIONS.find(
-                                  (option) => option.value === task.status
-                                )?.label
-                              }
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <User
-                                size={16}
-                                className="mr-2 text-gray-400"
-                              />
-                              {task.assigned_to_name || "Unassigned"}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                            <div className="flex items-center space-x-2">
-                              {task.status !== "completed" && (
-                                <button
-                                  onClick={() => updateTaskStatusHandler(task, "completed")}
-                                  className="text-green-600 hover:text-green-900"
-                                  title="Mark as completed"
-                                >
-                                  <CheckCircle size={18} />
-                                </button>
-                              )}
-                              {task.status === "pending" && (
-                                <button
-                                  onClick={() => updateTaskStatusHandler(task, "in_progress")}
-                                  className="text-blue-600 hover:text-blue-900"
-                                  title="Mark as in progress"
-                                >
-                                  <Clock size={18} />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => selectTaskForEdit(task)}
-                                className="text-indigo-600 hover:text-indigo-900"
-                              >
-                                <Edit size={18} />
-                              </button>
-                              <button
-                                onClick={() => handleViewWorkflow(task)}
-                                className="text-purple-600 hover:text-purple-900 mr-2"
-                                title="Ver workflow"
-                              >
-                                <Settings size={18} />
-                              </button>
-                              <button
-                                onClick={() => confirmDelete(task.id)}
-                                className="text-red-600 hover:text-red-900"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
           </div>
+
+          {filteredAndSortedTasks.length === 0 ? (
+            <div style={{
+              padding: '3rem',
+              textAlign: 'center',
+              color: 'rgba(255, 255, 255, 0.6)'
+            }}>
+              <Target size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>
+                Nenhuma tarefa encontrada
+              </h4>
+              <p style={{ margin: 0 }}>
+                {searchTerm || Object.values(filters).some(val => val)
+                  ? "Tente ajustar os filtros para ver mais resultados."
+                  : "Crie sua primeira tarefa para começar!"}
+              </p>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse'
+              }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("title")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Título
+                        {sortConfig.key === "title" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("client_name")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Cliente
+                        {sortConfig.key === "client_name" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("priority")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Prioridade
+                        {sortConfig.key === "priority" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("deadline")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Prazo
+                        {sortConfig.key === "deadline" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleSort("status")}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: 'inherit',
+                          fontWeight: 'inherit'
+                        }}
+                      >
+                        Status
+                        {sortConfig.key === "status" ? (
+                          sortConfig.direction === "asc" ? 
+                            <ChevronUp size={16} /> : 
+                            <ChevronDown size={16} />
+                        ) : (
+                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                        )}
+                      </motion.button>
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'left',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      Responsável
+                    </th>
+                    <th style={{
+                      padding: '1rem',
+                      textAlign: 'center',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAndSortedTasks.map((task, index) => (
+                    <motion.tr
+                      key={task.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                      }}
+                      whileHover={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                      }}
+                    >
+                      <td style={{ padding: '1rem' }}>
+                        <div>
+                          <div style={{
+                            fontWeight: '600',
+                            color: 'white',
+                            fontSize: '0.875rem',
+                            marginBottom: '0.25rem'
+                          }}>
+                            {task.title}
+                          </div>
+                          {task.description && (
+                            <div style={{
+                              color: 'rgba(255, 255, 255, 0.6)',
+                              fontSize: '0.75rem',
+                              maxWidth: '300px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {task.description}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <span style={{
+                          color: 'rgba(255, 255, 255, 0.8)',
+                          fontSize: '0.875rem'
+                        }}>
+                          {task.client_name || 'N/A'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          padding: '0.25rem 0.75rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          backgroundColor: `${getPriorityInfo(task.priority).color}20`,
+                          border: `1px solid ${getPriorityInfo(task.priority).color}30`,
+                          color: getPriorityInfo(task.priority).color
+                        }}>
+                          {getPriorityInfo(task.priority).label}
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          color: isOverdue(task.deadline) && task.status !== 'completed'
+                            ? 'rgb(239, 68, 68)'
+                            : 'rgba(255, 255, 255, 0.8)',
+                          fontSize: '0.875rem'
+                        }}>
+                          <Calendar
+                            size={16}
+                            style={{
+                              marginRight: '0.5rem',
+                              color: isOverdue(task.deadline) && task.status !== 'completed'
+                                ? 'rgb(239, 68, 68)'
+                                : 'rgba(255, 255, 255, 0.6)'
+                            }}
+                          />
+                          {formatDate(task.deadline)}
+                          {isOverdue(task.deadline) && task.status !== 'completed' && (
+                            <AlertTriangle size={16} style={{ marginLeft: '0.5rem', color: 'rgb(239, 68, 68)' }} />
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          backgroundColor: `${STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'}20`,
+                          border: `1px solid ${STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'}30`,
+                          color: STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'
+                        }}>
+                          {STATUS_OPTIONS.find(option => option.value === task.status)?.label || task.status}
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          color: 'rgba(255, 255, 255, 0.8)',
+                          fontSize: '0.875rem'
+                        }}>
+                          <User size={16} style={{ marginRight: '0.5rem', color: 'rgba(255, 255, 255, 0.6)' }} />
+                          {task.assigned_to_name || "Não atribuída"}
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem', textAlign: 'center' }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.5rem'
+                        }}>
+                          {task.status !== "completed" && (
+                            <motion.button
+                              whileHover={{ scale: 1.1, y: -2 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => updateTaskStatusHandler(task, "completed")}
+                              title="Marcar como concluída"
+                              style={{
+                                background: 'rgba(52, 211, 153, 0.2)',
+                                border: '1px solid rgba(52, 211, 153, 0.3)',
+                                borderRadius: '6px',
+                                padding: '0.5rem',
+                                color: 'rgb(52, 211, 153)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <CheckCircle size={16} />
+                            </motion.button>
+                          )}
+                          {task.status === "pending" && (
+                            <motion.button
+                              whileHover={{ scale: 1.1, y: -2 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => updateTaskStatusHandler(task, "in_progress")}
+                              title="Marcar como em progresso"
+                              style={{
+                                background: 'rgba(59, 130, 246, 0.2)',
+                                border: '1px solid rgba(59, 130, 246, 0.3)',
+                                borderRadius: '6px',
+                                padding: '0.5rem',
+                                color: 'rgb(59, 130, 246)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Clock size={16} />
+                            </motion.button>
+                          )}
+                          <motion.button
+                            whileHover={{ scale: 1.1, y: -2 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => selectTaskForEdit(task)}
+                            title="Editar tarefa"
+                            style={{
+                              background: 'rgba(147, 51, 234, 0.2)',
+                              border: '1px solid rgba(147, 51, 234, 0.3)',
+                              borderRadius: '6px',
+                              padding: '0.5rem',
+                              color: 'rgb(147, 51, 234)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Edit size={16} />
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.1, y: -2 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => handleViewWorkflow(task)}
+                            title="Ver workflow"
+                            style={{
+                              background: 'rgba(251, 146, 60, 0.2)',
+                              border: '1px solid rgba(251, 146, 60, 0.3)',
+                              borderRadius: '6px',
+                              padding: '0.5rem',
+                              color: 'rgb(251, 146, 60)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Settings size={16} />
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.1, y: -2 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => confirmDelete(task.id)}
+                            title="Excluir tarefa"
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.2)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              borderRadius: '6px',
+                              padding: '0.5rem',
+                              color: 'rgb(239, 68, 68)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </motion.button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        input::placeholder, textarea::placeholder {
+          color: rgba(255, 255, 255, 0.5) !important;
+        }
+        
+        select option {
+          background: #1f2937 !important;
+          color: white !important;
+        }
+        
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.5);
+        }
+        
+        /* Smooth transitions para todos os elementos */
+        * {
+          transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+        }
+        
+        /* Efeito hover suave para botões */
+        button:hover {
+          transform: translateY(-1px);
+        }
+        
+        /* Animação para loading states */
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        /* Melhores efeitos de glass morphism */
+        .glass-effect {
+          backdrop-filter: blur(20px) saturate(180%);
+          -webkit-backdrop-filter: blur(20px) saturate(180%);
+        }
+
+        /* Hover effects para tabelas */
+        tbody tr:hover {
+          background-color: rgba(255, 255, 255, 0.05) !important;
+        }
+
+        /* Focus states para acessibilidade */
+        button:focus, input:focus, select:focus, textarea:focus {
+          outline: 2px solid rgba(59, 130, 246, 0.5);
+          outline-offset: 2px;
+        }
+
+        /* Animação suave para status badges */
+        .status-badge {
+          transition: all 0.3s ease;
+        }
+
+        .status-badge:hover {
+          transform: scale(1.05);
+        }
+      `}</style>
+    </div>
   );
 };
 
 export default TaskManagement;
+        

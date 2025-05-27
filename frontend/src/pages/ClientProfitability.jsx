@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
+import BackgroundElements from "../components/HeroSection/BackgroundElements";
 
 
 // Data fetching functions
@@ -43,93 +44,6 @@ const fetchProfitabilityData = async (year, month) => {
 const fetchClients = async () => {
   const response = await api.get("/clients/");
   return response.data;
-};
-
-// Componente de fundo universal (mesmo da dashboard)
-const UniversalBackground = () => {
-  const particles = Array.from({ length: 12 }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    delay: Math.random() * 2,
-    duration: 3 + Math.random() * 4,
-    size: 4 + Math.random() * 8
-  }));
-
-  return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      overflow: 'hidden',
-      zIndex: -1,
-      pointerEvents: 'none'
-    }}>
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)'
-      }} />
-      
-      <motion.div 
-        style={{
-          position: 'absolute',
-          inset: 0,
-          opacity: 0.4
-        }}
-        animate={{
-          background: [
-            'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
-            'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
-            'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
-          ]
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          repeatType: "reverse"
-        }}
-      />
-
-      {particles.map((particle) => (
-        <motion.div
-          key={particle.id}
-          style={{
-            position: 'absolute',
-            width: '6px',
-            height: '6px',
-            backgroundColor: 'rgba(255, 255, 255, 0.2)',
-            borderRadius: '50%',
-            left: `${particle.x}%`,
-            top: `${particle.y}%`
-          }}
-          animate={{
-            y: [-particle.size, particle.size],
-            x: [-particle.size/2, particle.size/2],
-            opacity: [0.1, 0.4, 0.1],
-            scale: [0.5, 1, 0.5]
-          }}
-          transition={{
-            duration: particle.duration,
-            repeat: Infinity,
-            repeatType: "reverse",
-            delay: particle.delay,
-            ease: "easeInOut"
-          }}
-        />
-      ))}
-
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        opacity: 0.02,
-        backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-        `,
-        backgroundSize: '50px 50px'
-      }} />
-    </div>
-  );
 };
 
 // Dados mock para demonstração
@@ -429,7 +343,7 @@ const handlePeriodChange = () => {
         justifyContent: 'center',
         color: 'white'
       }}>
-        <UniversalBackground />
+        <BackgroundElements businessStatus="optimal" />
         <motion.div
           animate={{
             rotate: 360,
@@ -459,7 +373,7 @@ const handlePeriodChange = () => {
         justifyContent: 'center',
         padding: '2rem'
       }}>
-        <UniversalBackground />
+        <BackgroundElements businessStatus="optimal" />
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -492,7 +406,7 @@ const handlePeriodChange = () => {
       minHeight: '100vh',
       color: 'white'
     }}>
-      <UniversalBackground />
+      <BackgroundElements businessStatus="optimal" />
       <ToastContainer
         position="top-right"
         autoClose={3000}

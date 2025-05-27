@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import api from "../api";
-import "../styles/Home.css";
+// Removed "../styles/Home.css"; as styles will be inline or via <style jsx>
 import {
   Clock,
   Calendar,
@@ -12,20 +12,44 @@ import {
   AlertTriangle,
   RotateCcw,
   Grid,
-  List
+  List,
+  Copy,
+  Download,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  FileText,
+  Brain,
+  Sparkles,
+  Activity,
+  Target,
+  Settings,
+  User, // Added for consistency if needed later
 } from "lucide-react";
-import AutoTimeTracking from "../components/AutoTimeTracking";
+import AutoTimeTracking from "../components/AutoTimeTracking"; // Assuming this component exists
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Copy, Download, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
+import BackgroundElements from "../components/HeroSection/BackgroundElements";
 
+// Estilos glass
+const glassStyle = {
+  background: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(12px)',
+  border: '1px solid rgba(255, 255, 255, 0.15)',
+  borderRadius: '16px'
+};
+
+// Variantes de animação
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.05 }
+    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
   }
 };
 
@@ -34,50 +58,83 @@ const itemVariants = {
   visible: {
     y: 0,
     opacity: 1,
-    transition: { type: "spring", stiffness: 100 }
+    transition: { type: "spring", stiffness: 200, damping: 20 }
   }
 };
 
 const ErrorView = ({ message, onRetry }) => (
-  <div className="flex flex-col justify-center items-center min-h-[300px] p-4 text-center">
-    <AlertTriangle className="h-10 w-10 text-red-500 mb-3" />
-    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative max-w-lg" role="alert">
-      <strong className="font-bold block sm:inline">Ocorreu um erro!</strong>
-      <span className="block sm:inline"> {message || 'Falha ao carregar dados.'}</span>
-    </div>
-    {onRetry && (
-      <button
-        onClick={onRetry}
-        className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-white-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      >
-        <RotateCcw className="h-4 w-4 mr-2" />
-        Tentar novamente
-      </button>
-    )}
+  <div style={{
+    position: 'relative',
+    minHeight: '300px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '1rem',
+    textAlign: 'center',
+    color: 'white'
+  }}>
+            <BackgroundElements businessStatus="optimal" />
+
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      style={{
+        ...glassStyle,
+        padding: '2rem',
+        maxWidth: '500px',
+      }}
+    >
+      <AlertTriangle size={48} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
+      <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>
+        Ocorreu um erro!
+      </h2>
+      <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>
+        {message || 'Falha ao carregar dados.'}
+      </p>
+      {onRetry && (
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onRetry}
+          style={{
+            ...glassStyle,
+            padding: '0.75rem 1.5rem',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            background: 'rgba(59, 130, 246, 0.2)',
+            color: 'white',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            marginTop: '1rem'
+          }}
+        >
+          <RotateCcw size={18} />
+          Tentar novamente
+        </motion.button>
+      )}
+    </motion.div>
   </div>
 );
+
 
 // Funções de obtenção de dados (fora do componente)
 const fetchTimeEntries = async (filters = {}) => {
   let url = "/time-entries/?";
+  const params = new URLSearchParams();
 
-  if (filters.startDate && filters.endDate) {
-    url += `start_date=${filters.startDate}&end_date=${filters.endDate}`;
-  }
-
-  if (filters.client) {
-    url += `&client=${filters.client}`;
-  }
-
-  if (filters.searchQuery) {
-    url += `&search=${encodeURIComponent(filters.searchQuery)}`;
-  }
-
-  // Adicionando suporte para ordenação
+  if (filters.startDate) params.append('start_date', filters.startDate);
+  if (filters.endDate) params.append('end_date', filters.endDate);
+  if (filters.client) params.append('client', filters.client);
+  if (filters.searchQuery) params.append('search', filters.searchQuery);
   if (filters.sortField && filters.sortDirection) {
-    url += `&ordering=${filters.sortDirection === 'desc' ? '-' : ''}${filters.sortField}`;
+    params.append('ordering', `${filters.sortDirection === 'desc' ? '-' : ''}${filters.sortField}`);
   }
-
+  
+  url += params.toString();
   const response = await api.get(url);
   return response.data;
 };
@@ -99,15 +156,12 @@ const fetchTasks = async () => {
 
 const TimeEntry = () => {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [groupBy, setGroupBy] = useState('none'); // 'none', 'date', 'client'
   const [lastSavedEntry, setLastSavedEntry] = useState(null);
-  const [sortConfig, setSortConfig] = useState({
-    field: "date",
-    direction: "desc"
-  });
   const [formErrors, setFormErrors] = useState({});
-  // Estados locais
   const [formData, setFormData] = useState({
     client: "",
     task: "",
@@ -123,17 +177,17 @@ const TimeEntry = () => {
   const [isNaturalLanguageMode, setIsNaturalLanguageMode] = useState(false);
   const [naturalLanguageInput, setNaturalLanguageInput] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [showAutoTracking, setShowAutoTracking] = useState(false);
-  const [viewMode, setViewMode] = useState('list'); // 'list' ou 'grid'
+  const [showAutoTracking, setShowAutoTracking] = useState(false); // Assuming AutoTimeTracking component will be styled similarly
+  const [viewMode, setViewMode] = useState('list'); 
+  const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     startDate: "",
     endDate: "",
     client: "",
-    searchQuery: "",
+    searchQuery: "", // This will be updated from the top-level searchQuery state
     sortField: "date",
     sortDirection: "desc"
   });
-  // Novos estados para o processamento NLP
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedEntries, setExtractedEntries] = useState(null);
   const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
@@ -149,7 +203,7 @@ const TimeEntry = () => {
   } = useQuery({
     queryKey: ['timeEntries', filters],
     queryFn: () => fetchTimeEntries(filters),
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    staleTime: 5 * 60 * 1000,
   });
 
   const {
@@ -158,7 +212,7 @@ const TimeEntry = () => {
   } = useQuery({
     queryKey: ['clients'],
     queryFn: fetchClients,
-    staleTime: 10 * 60 * 1000, // 10 minutos
+    staleTime: 10 * 60 * 1000,
   });
 
   const {
@@ -184,28 +238,20 @@ const TimeEntry = () => {
     mutationFn: (entryData) => api.post("/time-entries/", entryData),
     onSuccess: (data) => {
       toast.success("Registo de tempo criado com sucesso");
-      setLastSavedEntry(data);
+      setLastSavedEntry(data); // Assuming data structure is { client_name: "...", minutes_spent: ... }
       resetForm();
       queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
     },
     onError: (error) => {
       console.error("Erro ao criar registo de tempo:", error);
-
-      if (error.response?.data) {
-        const errorMessages = [];
-
-        for (const field in error.response.data) {
-          const messages = error.response.data[field].join(', ');
-          errorMessages.push(`${field}: ${messages}`);
-        }
-
-        if (errorMessages.length > 0) {
-          toast.error(`Falha ao criar registo: ${errorMessages.join('; ')}`);
-        } else {
-          toast.error("Falha ao criar registo de tempo");
-        }
+      const errorData = error.response?.data;
+      if (errorData && typeof errorData === 'object') {
+        const messages = Object.entries(errorData)
+          .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+          .join('; ');
+        toast.error(`Falha ao criar registo: ${messages || "Erro desconhecido."}`);
       } else {
-        toast.error("Falha ao criar registo de tempo");
+        toast.error("Falha ao criar registo de tempo.");
       }
     }
   });
@@ -223,38 +269,30 @@ const TimeEntry = () => {
   });
 
   // Manipuladores de eventos
-  const handleInputChange = (e) => {
+  const handleInputChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       [name]: type === "checkbox" ? checked : value,
-    });
-  };
+    }));
+  }, []);
 
-  const handleNaturalLanguageInputChange = (e) => {
+  const handleNaturalLanguageInputChange = useCallback((e) => {
     setNaturalLanguageInput(e.target.value);
-  };
+  }, []);
 
-  const handleFilterChange = (e) => {
+  const handleFilterChange = useCallback((e) => {
     const { name, value } = e.target;
-    setFilters(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+    setFilters(prev => ({ ...prev, [name]: value }));
+  }, []);
+  
+  const handleSearchChange = useCallback((e) => {
+    setSearchQuery(e.target.value);
+    setFilters(prev => ({ ...prev, searchQuery: e.target.value }));
+  }, []);
 
-  const applyFilters = () => {
-    // Atualizar filtros com a consulta de pesquisa
-    setFilters(prev => ({
-      ...prev,
-      searchQuery: searchQuery,
-    }));
 
-    // A refetch é automática devido à dependência de filtros na queryKey
-    refetchTimeEntries();
-  };
-
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setFilters({
       startDate: "",
       endDate: "",
@@ -264,43 +302,31 @@ const TimeEntry = () => {
       sortDirection: "desc"
     });
     setSearchQuery("");
-  };
+  }, []);
 
   const handleNaturalLanguageSubmit = async (e) => {
     e.preventDefault();
-
     if (!naturalLanguageInput) {
       toast.error("Por favor insira uma descrição da sua atividade");
       return;
     }
-
-    // Mostrar estado de carregamento
     setIsProcessing(true);
-
     try {
-      // Chamar o endpoint da API para processamento NLP com Gemini
       const response = await api.post("/gemini-nlp/process_text/", {
         text: naturalLanguageInput,
-        client_id: formData.client || null,  // Cliente padrão (opcional)
+        client_id: formData.client || null,
       });
-
       const extractedData = response.data;
-
-      // Verificar se foram encontrados dados suficientes
       if (extractedData.clients.length === 0 && !formData.client) {
         toast.warning("Não consegui identificar nenhum cliente no texto. Por favor selecione um cliente manualmente.");
         setIsProcessing(false);
         return;
       }
-
-      // Verificar se foram extraídos tempos
       if (extractedData.times.length === 0) {
         toast.warning("Não consegui identificar o tempo gasto nas atividades. Por favor verifique ou especifique manualmente.");
         setIsProcessing(false);
         return;
       }
-
-      // Mostrar ao usuário o que foi extraído para confirmação
       setExtractedEntries(extractedData);
       setShowConfirmationDialog(true);
     } catch (error) {
@@ -311,119 +337,92 @@ const TimeEntry = () => {
     }
   };
 
-
-  const confirmAndCreateEntries = async () => {
+  const confirmAndCreateEntries = useCallback(async () => {
+    setIsProcessing(true);
     try {
-      // Preparar dados para envio
       const payload = {
         text: naturalLanguageInput,
-        client_id: formData.client || null,  // Cliente padrão (opcional)
+        client_id: formData.client || (extractedEntries?.clients?.[0]?.id) || null,
         date: formData.date,
-        task_status_after: formData.task_status_after
+        task_status_after: formData.task_status_after,
+        task_id: formData.task || (extractedEntries?.tasks?.[0]?.id) || null,
       };
-
-      // Se uma tarefa foi selecionada no formulário, enviar também o ID da tarefa
-      if (formData.task) {
-        payload.task_id = formData.task;
-      }
-
-      // Verificar se uma tarefa foi identificada no texto e foi selecionada na UI
-      if (extractedEntries && extractedEntries.tasks && extractedEntries.tasks.length > 0) {
-        // Podemos usar a primeira tarefa identificada se não houver uma selecionada
-        if (!payload.task_id) {
-          payload.task_id = extractedEntries.tasks[0].id;
-        }
-      }
-
-      // Chamar o endpoint para criar entradas de tempo
       const response = await api.post("/gemini-nlp/create_time_entries/", payload);
-
-      // Se bem-sucedido, exibir mensagem de sucesso
       toast.success(`${response.data.length} entrada(s) de tempo criada(s) com sucesso!`);
-
-      // Limpar formulário e atualizar lista
       resetForm();
       setShowConfirmationDialog(false);
       setExtractedEntries(null);
-
-      // Invalidar cache de consultas para atualizar a lista
       queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
     } catch (error) {
       console.error("Erro ao criar entradas de tempo:", error);
       toast.error("Ocorreu um erro ao criar as entradas de tempo.");
+    } finally {
+      setIsProcessing(false);
     }
-  };
+  }, [naturalLanguageInput, formData, extractedEntries, queryClient]);
 
-  const handleSort = (field) => {
-    setSortConfig(prevConfig => {
+
+  const handleSort = useCallback((field) => {
+    setFilters(prevFilters => {
       const newDirection =
-        prevConfig.field === field && prevConfig.direction === "asc"
+        prevFilters.sortField === field && prevFilters.sortDirection === "asc"
           ? "desc"
           : "asc";
-
-      // Atualizar filtros com os novos parâmetros de ordenação
-      setFilters(prev => ({
-        ...prev,
-        sortField: field,
-        sortDirection: newDirection
-      }));
-
-      return { field, direction: newDirection };
+      return { ...prevFilters, sortField: field, sortDirection: newDirection };
     });
-  };
+  }, []);
+  
 
   const validateForm = () => {
     const errors = {};
-
-    if (!formData.client) errors.client = "Cliente é obrigatório";
-    if (!formData.description) errors.description = "Descrição é obrigatória";
-    if (!formData.minutes_spent || formData.minutes_spent <= 0) errors.minutes_spent = "Tempo gasto deve ser maior que zero";
-
-    // Validar conflito entre tempo total e horários específicos
-    if (formData.start_time && formData.end_time) {
-      const startMinutes = timeToMinutes(formData.start_time);
-      const endMinutes = timeToMinutes(formData.end_time);
-
-      if (endMinutes <= startMinutes) {
-        errors.end_time = "Horário de término deve ser após o início";
-      }
-
-      // Verifica se os minutos calculados entre horários são consistentes
-      const calculatedMinutes = endMinutes - startMinutes;
-      if (Math.abs(calculatedMinutes - formData.minutes_spent) > 10) {
-        errors.minutes_spent = "Tempo total não corresponde aos horários informados";
-      }
+    if (!isNaturalLanguageMode) {
+        if (!formData.client) errors.client = "Cliente é obrigatório";
+        if (!formData.description) errors.description = "Descrição é obrigatória";
+        if (!formData.minutes_spent || formData.minutes_spent <= 0) errors.minutes_spent = "Tempo gasto deve ser maior que zero";
+    
+        if (formData.start_time && formData.end_time) {
+          const startMinutes = timeToMinutes(formData.start_time);
+          const endMinutes = timeToMinutes(formData.end_time);
+          if (endMinutes <= startMinutes) {
+            errors.end_time = "Horário de término deve ser após o início";
+          }
+          const calculatedMinutes = endMinutes - startMinutes;
+          if (Math.abs(calculatedMinutes - formData.minutes_spent) > 1) { // Allow 1 min diff for rounding
+            errors.minutes_spent = "Tempo total não corresponde aos horários informados. Diferença: " + Math.abs(calculatedMinutes - formData.minutes_spent) + " minutos.";
+          }
+        } else if (formData.start_time && !formData.end_time) {
+            errors.end_time = "Horário de término é obrigatório se o de início for fornecido.";
+        } else if (!formData.start_time && formData.end_time) {
+            errors.start_time = "Horário de início é obrigatório se o de término for fornecido.";
+        }
     }
-
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
-
+  
   const timeToMinutes = (timeString) => {
+    if (!timeString || !timeString.includes(':')) return 0;
     const [hours, minutes] = timeString.split(':').map(num => parseInt(num, 10));
-    return hours * 60 + minutes;
+    return (hours || 0) * 60 + (minutes || 0);
   };
 
-  const duplicateEntry = (entry) => {
-    // Clone a entrada mas com a data atual
-    const newEntry = {
+  const duplicateEntry = useCallback((entry) => {
+    setFormData({
       client: entry.client,
       task: entry.task || "",
       category: entry.category || "",
       description: entry.description,
       minutes_spent: entry.minutes_spent,
-      date: new Date().toISOString().split("T")[0], // Data atual
+      date: new Date().toISOString().split("T")[0],
       start_time: entry.start_time || "",
       end_time: entry.end_time || "",
       task_status_after: entry.task_status_after || "no_change",
-    };
-
-    // Preparar formulário para edição
-    setFormData(newEntry);
+      original_text: entry.original_text || ""
+    });
+    setIsNaturalLanguageMode(false); // Assume duplication goes to manual mode
     setShowForm(true);
-
-    toast.success("Entrada duplicada! Edite se necessário e salve.");
-  };
+    toast.info("Entrada duplicada! Edite se necessário e salve.");
+  }, []);
 
   const getTaskStatusLabel = (status) => {
     switch (status) {
@@ -438,85 +437,43 @@ const TimeEntry = () => {
       toast.warn("Não há registros para gerar relatório");
       return;
     }
-
     try {
       toast.info("Gerando relatório Excel...", { autoClose: false, toastId: "generating-excel" });
-
-      // Importar a biblioteca xlsx dinamicamente (caso não esteja no bundle)
       const XLSX = await import('xlsx');
-
-      // Criar um novo workbook
       const wb = XLSX.utils.book_new();
-
-      // Agrupar dados por cliente
       const clientGroups = timeEntries.reduce((acc, entry) => {
-        if (!acc[entry.client_name]) {
-          acc[entry.client_name] = [];
-        }
-        acc[entry.client_name].push(entry);
+        const clientName = entry.client_name || "Sem Cliente";
+        if (!acc[clientName]) acc[clientName] = [];
+        acc[clientName].push(entry);
         return acc;
       }, {});
 
-      // Planilha de resumo geral
-      const summaryData = [];
-      let totalAllClients = 0;
-
-      // Adicionar linha de cabeçalho para o resumo
-      summaryData.push(['Cliente', 'Total de Horas', 'Qtd. Registros', 'Percentual']);
-
-      // Calcular totais e percentuais
-      Object.entries(clientGroups).forEach(([clientName, entries]) => {
-        const clientTotal = entries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
-        totalAllClients += clientTotal;
-        summaryData.push([
-          clientName,
-          formatMinutes(clientTotal),
-          entries.length,
-          0 // Placeholder para a porcentagem, será calculado depois
-        ]);
+      const summaryData = [['Cliente', 'Total de Horas', 'Qtd. Registros', 'Percentual']];
+      let totalAllClientsMinutes = 0;
+      Object.values(clientGroups).forEach(entries => {
+        totalAllClientsMinutes += entries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
       });
 
-      // Adicionar linha de total
-      summaryData.push(['TOTAL', formatMinutes(totalAllClients), timeEntries.length, '100%']);
-
-      // Calcular percentuais
-      for (let i = 1; i < summaryData.length - 1; i++) {
-        const clientTotal = summaryData[i][0] === 'TOTAL'
-          ? totalAllClients
-          : clientGroups[summaryData[i][0]].reduce((sum, entry) => sum + entry.minutes_spent, 0);
-        const percentage = (clientTotal / totalAllClients * 100).toFixed(1);
-        summaryData[i][3] = `${percentage}%`;
-      }
-
-      // Criar planilha de resumo
+      Object.entries(clientGroups).forEach(([clientName, entries]) => {
+        const clientTotalMinutes = entries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
+        const percentage = totalAllClientsMinutes > 0 ? (clientTotalMinutes / totalAllClientsMinutes * 100).toFixed(1) : "0.0";
+        summaryData.push([
+          clientName,
+          formatMinutes(clientTotalMinutes),
+          entries.length,
+          `${percentage}%`
+        ]);
+      });
+      summaryData.push(['TOTAL', formatMinutes(totalAllClientsMinutes), timeEntries.length, '100%']);
       const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
-
-      // Definir larguras de coluna para o resumo
-      const summaryColWidths = [
-        { wch: 30 }, // Cliente
-        { wch: 15 }, // Total de Horas
-        { wch: 15 }, // Qtd. Registros
-        { wch: 12 }, // Percentual
-      ];
-      summaryWs['!cols'] = summaryColWidths;
-
-      // Adicionar a planilha de resumo ao workbook
+      summaryWs['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 12 }];
       XLSX.utils.book_append_sheet(wb, summaryWs, 'Resumo');
 
-      // Criar uma planilha para cada cliente
       Object.entries(clientGroups).forEach(([clientName, entries]) => {
-        // Ordenar entradas por data (mais recente primeiro)
         const sortedEntries = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        // Preparar dados para a planilha
-        const clientData = [];
-
-        // Cabeçalho da tabela
-        clientData.push(['Data', 'Descrição', 'Categoria', 'Tarefa', 'Minutos', 'Tempo']);
-
-        // Adicionar entradas
+        const clientSheetData = [['Data', 'Descrição', 'Categoria', 'Tarefa', 'Minutos', 'Tempo']];
         sortedEntries.forEach(entry => {
-          clientData.push([
+          clientSheetData.push([
             entry.date,
             entry.description,
             entry.category_name || '',
@@ -525,43 +482,23 @@ const TimeEntry = () => {
             formatMinutes(entry.minutes_spent)
           ]);
         });
-
-        // Adicionar linha de total
-        const totalMinutes = sortedEntries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
-        clientData.push(['', '', '', 'TOTAL', totalMinutes, formatMinutes(totalMinutes)]);
-
-        // Criar planilha para o cliente
-        const ws = XLSX.utils.aoa_to_sheet(clientData);
-
-        // Definir larguras de coluna
-        const colWidths = [
-          { wch: 12 }, // Data
-          { wch: 50 }, // Descrição
-          { wch: 18 }, // Categoria
-          { wch: 25 }, // Tarefa
-          { wch: 10 }, // Minutos
-          { wch: 12 }, // Tempo formatado
-        ];
-        ws['!cols'] = colWidths;
-
-        // Adicionar a planilha ao workbook
-        const safeSheetName = clientName.replace(/[\[\]\*\?\/\\]/g, '_').substring(0, 31);
+        const totalClientMinutes = sortedEntries.reduce((sum, entry) => sum + entry.minutes_spent, 0);
+        clientSheetData.push(['', '', '', 'TOTAL', totalClientMinutes, formatMinutes(totalClientMinutes)]);
+        const ws = XLSX.utils.aoa_to_sheet(clientSheetData);
+        ws['!cols'] = [{ wch: 12 }, { wch: 50 }, { wch: 18 }, { wch: 25 }, { wch: 10 }, { wch: 12 }];
+        const safeSheetName = clientName.replace(/[\[\]*?/\\]/g, '_').substring(0, 31);
         XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
       });
 
-      // Gerar arquivo Excel
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
-      // Criar link para download
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Relatório_Tempo_${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.download = `Relatorio_Tempo_${new Date().toISOString().split('T')[0]}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
       toast.dismiss("generating-excel");
       toast.success("Relatório Excel gerado com sucesso!");
     } catch (error) {
@@ -571,936 +508,671 @@ const TimeEntry = () => {
     }
   };
 
-
-  const filteredEntries = useMemo(() => {
-    if (!timeEntries || timeEntries.length === 0) return [];
-    if (!searchQuery) return timeEntries;
-
-    const query = searchQuery.toLowerCase();
-    return timeEntries.filter(entry =>
-      entry.description.toLowerCase().includes(query) ||
-      entry.client_name.toLowerCase().includes(query) ||
-      (entry.task_title && entry.task_title.toLowerCase().includes(query))
-    );
-  }, [timeEntries, searchQuery]);
-
-  // Agrupamento por dia/cliente
-  const groupedEntries = useMemo(() => {
-    if (groupBy === 'none') return { 'Todos os registros': filteredEntries };
-
-    return filteredEntries.reduce((groups, entry) => {
-      const key = groupBy === 'date' ? entry.date : entry.client_name;
+  const displayedEntries = useMemo(() => {
+    // This function now primarily handles grouping, filtering is done by query
+    if (groupBy === 'none') return { 'Todos os registros': timeEntries };
+    return timeEntries.reduce((groups, entry) => {
+      const key = groupBy === 'date' ? entry.date : (entry.client_name || "Sem Cliente");
       if (!groups[key]) groups[key] = [];
       groups[key].push(entry);
       return groups;
     }, {});
-  }, [filteredEntries, groupBy]);
+  }, [timeEntries, groupBy]);
 
-  // Componente para feedback após salvar
   const SaveFeedback = ({ entry, onDuplicate, onClose }) => {
     if (!entry) return null;
-
     return (
       <motion.div
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
-        className="fixed bottom-4 right-4 bg-green-100 border border-green-300 p-4 rounded-lg shadow-lg max-w-md z-50"
+        style={{
+            position: 'fixed',
+            bottom: '1rem',
+            right: '1rem',
+            zIndex: 1000,
+            ...glassStyle,
+            padding: '1rem',
+            background: 'rgba(52, 211, 153, 0.2)', // Greenish glass
+            border: '1px solid rgba(52, 211, 153, 0.3)',
+            maxWidth: '350px'
+        }}
       >
-        <div className="flex items-start">
-          <CheckCircle className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
+        <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+          <CheckCircle size={20} style={{ color: 'rgb(52, 211, 153)', marginRight: '0.75rem', marginTop: '0.125rem' }} />
           <div>
-            <h4 className="font-medium text-green-800">Registro salvo com sucesso</h4>
-            <p className="text-sm text-green-700 mt-1">
-              {formatMinutes(entry.minutes_spent)} registrados para {entry.client_name}
+            <h4 style={{ fontWeight: '600', color: 'white', margin: '0 0 0.25rem 0' }}>
+                Registro salvo com sucesso
+            </h4>
+            <p style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)', margin: 0 }}>
+              {formatMinutes(entry.data.minutes_spent)} registrados para {entry.data.client_name}
             </p>
-            <div className="mt-2 flex space-x-2">
-              <button
-                onClick={() => onDuplicate(entry)}
-                className="text-xs bg-white text-green-700 px-2 py-1 rounded border border-green-300 hover:bg-green-50"
+            <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => onDuplicate(entry.data)}
+                style={{
+                    fontSize: '0.75rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    color: 'white',
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                }}
               >
                 Duplicar
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={onClose}
-                className="text-xs text-green-700 px-2 py-1 hover:underline"
+                style={{
+                    fontSize: '0.75rem',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    background: 'none',
+                    border: 'none',
+                    padding: '0.25rem 0.5rem',
+                    cursor: 'pointer'
+                }}
               >
                 Fechar
-              </button>
+              </motion.button>
             </div>
           </div>
         </div>
       </motion.div>
     );
   };
-
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
-
+    if (!validateForm()) {
+      toast.error("Por favor corrija os erros no formulário.");
+      return;
+    }
     if (isNaturalLanguageMode) {
-      // Usar o método para processamento de linguagem natural
       await handleNaturalLanguageSubmit(e);
     } else {
-      // Validar campos obrigatórios para o formulário manual
-      if (!validateForm()) {
-        // Mostrar mensagem de erro se a validação falhar
-        toast.error("Por favor corrija os erros no formulário");
-        return;
-      }
-
-      // Formatar horas se fornecidas
-      // Formatar horas se fornecidas, ou definir como null se vazio
       const submissionData = { ...formData };
-
-      submissionData.start_time = submissionData.start_time
-        ? formatTimeForAPI(submissionData.start_time)
-        : null;
-
-      submissionData.end_time = submissionData.end_time
-        ? formatTimeForAPI(submissionData.end_time)
-        : null;
-      // Envio regular do formulário
+      submissionData.start_time = submissionData.start_time ? formatTimeForAPI(submissionData.start_time) : null;
+      submissionData.end_time = submissionData.end_time ? formatTimeForAPI(submissionData.end_time) : null;
       createTimeEntryMutation.mutate(submissionData);
     }
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
-      client: "",
-      task: "",
-      category: "",
-      description: "",
-      minutes_spent: 0,
-      date: new Date().toISOString().split("T")[0],
-      start_time: "",
-      end_time: "",
-      original_text: "",
-      task_status_after: "no_change",
+      client: "", task: "", category: "", description: "",
+      minutes_spent: 0, date: new Date().toISOString().split("T")[0],
+      start_time: "", end_time: "", original_text: "", task_status_after: "no_change",
     });
     setNaturalLanguageInput("");
     setShowForm(false);
-  };
+    setFormErrors({});
+  }, []);
 
-  const handleDeleteEntry = (entryId) => {
-    // Verificar permissão para excluir registros de tempo
+  const handleDeleteEntry = useCallback((entryId) => {
     const canDelete = permissions.isOrgAdmin || permissions.canEditAllTime;
-
     if (!canDelete) {
       toast.error("Você não tem permissão para excluir registros de tempo");
       return;
     }
-
     if (window.confirm("Tem certeza que deseja eliminar este registo de tempo?")) {
       deleteTimeEntryMutation.mutate(entryId);
     }
-  };
+  }, [permissions, deleteTimeEntryMutation]);
 
-  // Funções auxiliares
   const formatTimeForAPI = (timeString) => {
-    // Se o tempo já estiver no formato correto (HH:MM:SS), retorná-lo
-    if (/^\d{2}:\d{2}:\d{2}$/.test(timeString)) {
-      return timeString;
-    }
-
-    // Se estiver no formato HH:MM, adicionar segundos
-    if (/^\d{2}:\d{2}$/.test(timeString)) {
-      return `${timeString}:00`;
-    }
-
-    // Tentar analisar a entrada e formatá-la corretamente
+    if (/^\d{2}:\d{2}:\d{2}$/.test(timeString)) return timeString;
+    if (/^\d{2}:\d{2}$/.test(timeString)) return `${timeString}:00`;
     try {
-      // Para entradas como "9:30", converter para "09:30:00"
       const [hours, minutes] = timeString.split(':').map(num => parseInt(num, 10));
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
     } catch (e) {
       console.error("Erro ao formatar hora:", e);
-      return timeString; // Retornar original e deixar a API lidar com o erro
+      return null; 
     }
   };
 
   const formatMinutes = (minutes) => {
+    if (minutes === null || minutes === undefined) return "N/A";
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hours}h ${mins}m`;
   };
 
-  // Verificar estado de carregamento global
-  const isLoading = isLoadingEntries || isLoadingClients || isLoadingCategories || isLoadingTasks ||
-    createTimeEntryMutation.isPending || deleteTimeEntryMutation.isPending;
+  const isLoadingOverall = isLoadingEntries || isLoadingClients || isLoadingCategories || isLoadingTasks ||
+    createTimeEntryMutation.isPending || deleteTimeEntryMutation.isPending || isProcessing;
 
-  // Se ocorrer um erro ao carregar dados essenciais, mostrar mensagem de erro
+  if (permissions.loading) {
+    return (
+      <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+        <BackgroundElements businessStatus="optimal" />
+        <motion.div animate={{ rotate: 360, scale: [1, 1.1, 1] }} transition={{ rotate: { duration: 2, repeat: Infinity, ease: "linear" }, scale: { duration: 1, repeat: Infinity }}}>
+          <Brain size={48} style={{ color: 'rgb(147, 51, 234)' }} />
+        </motion.div>
+        <p style={{ marginLeft: '1rem', fontSize: '1rem' }}>Carregando...</p>
+      </div>
+    );
+  }
+
+  if (!permissions.canLogTime) {
+    return (
+      <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: 'white' }}>
+        <BackgroundElements businessStatus="optimal" />
+        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ ...glassStyle, padding: '2rem', textAlign: 'center', maxWidth: '500px' }}>
+          <AlertCircle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>Acesso Restrito</h2>
+          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>Você não possui permissões para registrar tempo.</p>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>Entre em contato com o administrador.</p>
+        </motion.div>
+      </div>
+    );
+  }
+  
   if (isErrorEntries) {
     return <ErrorView message={entriesError?.message || "Erro ao carregar registos de tempo"} onRetry={refetchTimeEntries} />;
   }
 
-  // Diálogo de confirmação para entradas extraídas do NLP
-  // Componente ConfirmationDialog
   const ConfirmationDialog = ({ visible, extractedData, onConfirm, onCancel }) => {
     if (!visible || !extractedData) return null;
-
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-          <h2 className="text-xl font-semibold mb-4">Confirmar entradas de tempo</h2>
-
-          <p className="mb-4 text-gray-700">
-            Encontrei as seguintes informações no seu texto. Por favor verifique e confirme:
-          </p>
-
-          {extractedData.clients.length > 0 ? (
-            <div className="mb-4">
-              <h3 className="font-medium text-gray-800">Clientes identificados:</h3>
-              <ul className="list-disc pl-5 mt-1">
-                {extractedData.clients.map((client, index) => (
-                  <li key={index} className="text-gray-700">{client.name}</li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <div className="mb-4 p-2 bg-yellow-50 border border-yellow-300 rounded">
-              <p className="text-yellow-800 text-sm">
-                Nenhum cliente identificado. Será utilizado o cliente selecionado manualmente.
-              </p>
-            </div>
-          )}
-
-          {/* Exibir as tarefas identificadas */}
-          {extractedData.tasks && extractedData.tasks.length > 0 && (
-            <div className="mb-4">
-              <h3 className="font-medium text-gray-800">Tarefas identificadas:</h3>
-              <ul className="list-disc pl-5 mt-1">
-                {extractedData.tasks.map((task, index) => (
-                  <li key={index} className="text-gray-700">
-                    {task.title} {task.client_name && `(${task.client_name})`}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {extractedData.times.length > 0 && (
-            <div className="mb-4">
-              <h3 className="font-medium text-gray-800">Tempos identificados:</h3>
-              <ul className="list-disc pl-5 mt-1">
-                {extractedData.times.map((minutes, index) => (
-                  <li key={index} className="text-gray-700">
-                    {formatMinutes(minutes)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {extractedData.activities.length > 0 && (
-            <div className="mb-4">
-              <h3 className="font-medium text-gray-800">Atividades identificadas:</h3>
-              <ul className="list-disc pl-5 mt-1">
-                {extractedData.activities.map((activity, index) => (
-                  <li key={index} className="text-gray-700">{activity}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {extractedData.categories.length > 0 && (
-            <div className="mb-4">
-              <h3 className="font-medium text-gray-800">Categorias identificadas:</h3>
-              <ul className="list-disc pl-5 mt-1">
-                {extractedData.categories.map((category, index) => (
-                  <li key={index} className="text-gray-700">{category.name}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {formData.task_status_after !== 'no_change' && (
-            <div className="mb-4 p-2 bg-blue-50 border border-blue-300 rounded">
-              <p className="text-blue-800 text-sm">
-                <strong>Status da tarefa:</strong> Será alterado para "{getTaskStatusLabel(formData.task_status_after)}"
-              </p>
-            </div>
-          )}
-
-          <div className="mt-6 flex justify-end space-x-3">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-white-50"
-            >
-              Cancelar
-            </button>
-
-            <button
-              onClick={onConfirm}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-            >
-              Confirmar e Criar
-            </button>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+          style={{ ...glassStyle, width: '100%', maxWidth: '600px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', color: 'white' }}>
+          <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', margin: 0 }}>Confirmar Entradas de Tempo</h2>
           </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Obter permissões do contexto
-  const permissions = usePermissions();
-
-  // Verificar permissões para mostrar mensagem de acesso restrito
-  if (permissions.loading) {
-    return (
-      <div className="main">
-     
-          <div className="flex justify-center items-center min-h-screen">
-            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
-          </div>
-   
-      </div>
-    );
-  }
-
-  // Verificar se usuário pode registrar tempo
-  if (!permissions.canLogTime) {
-    return (
-      <div className="main">
-
-          <div className="flex flex-col items-center justify-center min-h-screen p-4">
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
-              <div className="flex items-start">
-                <AlertCircle className="h-6 w-6 mr-2" />
-                <div>
-                  <p className="font-bold">Acesso Restrito</p>
-                  <p>Você não possui permissões para registrar tempo.</p>
-                </div>
-              </div>
-            </div>
-            <p className="text-gray-600">
-              Entre em contato com o administrador da sua organização para solicitar acesso.
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+            <p style={{ marginBottom: '1rem', color: 'rgba(255,255,255,0.8)' }}>
+              Encontrei as seguintes informações no seu texto. Por favor verifique e confirme:
             </p>
-          </div>
-      </div>
-    );
-  }
-
-  const TimeEntryCard = ({ entry, onDelete, onDuplicate, permissions }) => {
-    return (
-      <motion.div
-        variants={itemVariants}
-        className="bg-white p-4 rounded-lg shadow border border-gray-100 hover:shadow-md transition-shadow"
-      >
-        <div className="flex justify-between items-start mb-3">
-          <div className="flex items-center">
-            <Calendar size={16} className="text-blue-600 mr-2" />
-            <span className="font-medium">{entry.date}</span>
-          </div>
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-            {formatMinutes(entry.minutes_spent)}
-          </span>
-        </div>
-
-        <h3 className="font-semibold mb-2 truncate">{entry.client_name}</h3>
-
-        {entry.task_title && (
-          <div className="mb-2 flex items-center text-sm text-gray-600">
-            <Clock size={14} className="mr-1" />
-            <span>{entry.task_title}</span>
-          </div>
-        )}
-
-        <p className="text-sm text-gray-700 mb-3 line-clamp-2">{entry.description}</p>
-
-        <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
-          <div className="text-xs text-gray-500">
-            {entry.start_time && entry.end_time ? `${entry.start_time.substring(0, 5)} - ${entry.end_time.substring(0, 5)}` : "Sem horário definido"}
-          </div>
-
-          <div className="flex space-x-2">
-            {/* Botão de duplicar */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDuplicate(entry);
-              }}
-              className="text-blue-500 hover:text-blue-700"
-              title="Duplicar registro"
-            >
-              <Copy size={16} />
-            </button>
-
-            {/* Botão de excluir */}
-            {(permissions.isOrgAdmin || permissions.canEditAllTime) && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(entry.id);
-                }}
-                className="text-red-500 hover:text-red-700"
-                title="Excluir registro"
-              >
-                <Trash2 size={16} />
-              </button>
+            {/* Clients */}
+            {extractedData.clients?.length > 0 ? (
+              <div style={{ marginBottom: '1rem' }}>
+                <h3 style={{ fontWeight: '500', color: 'white' }}>Clientes:</h3>
+                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
+                  {extractedData.clients.map((client, index) => (
+                    <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{client.name}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : (<div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.2)', borderRadius: '8px' }}><p style={{color: 'rgb(251, 191, 36)', fontSize: '0.875rem' }}>Nenhum cliente novo identificado. Será usado o cliente padrão selecionado (se houver).</p></div>)}
+            {/* Tasks */}
+            {extractedData.tasks?.length > 0 && (
+              <div style={{ marginBottom: '1rem' }}>
+                <h3 style={{ fontWeight: '500', color: 'white' }}>Tarefas:</h3>
+                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
+                  {extractedData.tasks.map((task, index) => (
+                    <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{task.title} {task.client_name && `(${task.client_name})`}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {/* Times */}
+            {extractedData.times?.length > 0 && (
+              <div style={{ marginBottom: '1rem' }}>
+                <h3 style={{ fontWeight: '500', color: 'white' }}>Tempos:</h3>
+                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
+                  {extractedData.times.map((minutes, index) => ( <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{formatMinutes(minutes)}</li> ))}
+                </ul>
+              </div>
+            )}
+            {/* Activities */}
+             {extractedData.activities?.length > 0 && (
+              <div style={{ marginBottom: '1rem' }}>
+                <h3 style={{ fontWeight: '500', color: 'white' }}>Atividades:</h3>
+                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
+                  {extractedData.activities.map((activity, index) => ( <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{activity}</li> ))}
+                </ul>
+              </div>
+            )}
+             {/* Categories */}
+            {extractedData.categories?.length > 0 && (
+              <div style={{ marginBottom: '1rem' }}>
+                <h3 style={{ fontWeight: '500', color: 'white' }}>Categorias:</h3>
+                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
+                  {extractedData.categories.map((category, index) => ( <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{category.name}</li> ))}
+                </ul>
+              </div>
+            )}
+            {formData.task_status_after !== 'no_change' && (
+                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '8px' }}>
+                    <p style={{color: 'rgb(59, 130, 246)', fontSize: '0.875rem' }}><strong>Status da Tarefa:</strong> Será alterado para "{getTaskStatusLabel(formData.task_status_after)}"</p>
+                </div>
             )}
           </div>
-        </div>
-      </motion.div>
-    );
-  };
-
-  // Componente para alternar entre visualizações
-  const ViewToggle = ({ activeView, onChange }) => {
-    return (
-      <div className="inline-flex rounded-md overflow-hidden shadow-sm">
-        <button
-          className={`px-4 py-2 text-sm font-medium ${activeView === 'grid'
-            ? 'bg-blue-600 text-white'
-            : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          onClick={() => onChange('grid')}
-        >
-          <Grid size={16} className="inline-block ml-2 mr-1" />
-          Cartões
-        </button>
-        <button
-          className={`px-4 py-2 text-sm font-medium ${activeView === 'list'
-            ? 'bg-blue-600 text-white'
-            : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          onClick={() => onChange('list')}
-        >
-          <List size={16} className="inline-block ml-2 mr-1" />
-          Tabela
-        </button>
+          <div style={{ padding: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={onCancel} style={{ padding: '0.75rem 1.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', cursor: 'pointer' }}>Cancelar</motion.button>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={onConfirm} style={{ padding: '0.75rem 1.5rem', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', borderRadius: '8px', color: 'white', cursor: 'pointer' }}>Confirmar e Criar</motion.button>
+          </div>
+        </motion.div>
       </div>
     );
   };
+  
+  const TimeEntryCard = ({ entry, onDelete, onDuplicate, permissions }) => (
+    <motion.div
+      variants={itemVariants}
+      style={{
+        ...glassStyle,
+        padding: '1.5rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1rem',
+        opacity: entry.is_billed ? 0.7 : 1, // Example: Dim if billed
+        borderLeft: entry.is_billed ? '4px solid rgb(251, 146, 60)' : `4px solid ${entry.client_color || 'rgb(59, 130, 246)'}`, // Client color or default
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Calendar size={16} style={{ color: 'rgba(255,255,255,0.7)' }} />
+          <span style={{ fontWeight: '500', fontSize: '0.875rem' }}>{entry.date}</span>
+        </div>
+        <span style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', fontWeight: '600', borderRadius: '9999px', background: 'rgba(59, 130, 246, 0.2)', color: 'rgb(59, 130, 246)' }}>
+          {formatMinutes(entry.minutes_spent)}
+        </span>
+      </div>
+      <h3 style={{ fontWeight: '600', fontSize: '1rem', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {entry.client_name || "Cliente não especificado"}
+      </h3>
+      {entry.task_title && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)' }}>
+          <Activity size={14} />
+          <span>{entry.task_title}</span>
+        </div>
+      )}
+      <p style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.7)', margin: 0, flexGrow: 1, maxHeight: '3.9em', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+        {entry.description}
+      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
+          {entry.start_time && entry.end_time ? `${entry.start_time.substring(0,5)} - ${entry.end_time.substring(0,5)}` : "Sem horário"}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onDuplicate(entry)} title="Duplicar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', padding: '0.5rem', color: 'white', cursor: 'pointer' }}>
+            <Copy size={16} />
+          </motion.button>
+          {(permissions.isOrgAdmin || permissions.canEditAllTime) && (
+            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onDelete(entry.id)} title="Excluir" style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '0.5rem', color: 'rgb(239,68,68)', cursor: 'pointer' }}>
+              <Trash2 size={16} />
+            </motion.button>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+
+  const ViewToggle = ({ activeView, onChange }) => (
+    <div style={{ display: 'inline-flex', borderRadius: '8px', overflow: 'hidden', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}>
+      <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => onChange('grid')}
+        style={{ padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: '500', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', background: activeView === 'grid' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'white' }}>
+        <Grid size={16} /> Cartões
+      </motion.button>
+      <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => onChange('list')}
+        style={{ padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: '500', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', background: activeView === 'list' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'white' }}>
+        <List size={16} /> Tabela
+      </motion.button>
+    </div>
+  );
 
   return (
-    <div className="main bg-white">
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-      />
+    <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
+        <BackgroundElements businessStatus="optimal" />
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }}/>
       <AnimatePresence>
         {lastSavedEntry && (
-          <SaveFeedback
-            entry={lastSavedEntry}
-            onDuplicate={duplicateEntry}
-            onClose={() => setLastSavedEntry(null)}
-          />
+          <SaveFeedback entry={lastSavedEntry} onDuplicate={duplicateEntry} onClose={() => setLastSavedEntry(null)} />
         )}
       </AnimatePresence>
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={containerVariants}
-          className="p-6 bg-white min-h-screen"
-          style={{ marginLeft: "3%" }}
-        >
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold">Registo de Tempos</h1>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => {
-                  setShowForm(!showForm);
-                  if (showAutoTracking) setShowAutoTracking(false);
-                }}
-                className={`${showForm ? "bg-white-600" : "bg-blue-600 hover:bg-blue-700"} text-white px-4 py-2 rounded-md flex items-center`}
-              >
-                <Plus size={18} className="mr-2" />
-                {showForm ? "Cancelar" : "Registar Entradas de Tempo"}
-              </button>
-              <button
-                onClick={generateExcelReport}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center transition-colors duration-200 shadow-sm"
-                disabled={isLoading || timeEntries.length === 0}
-              >
-                <Download size={18} className="mr-2" />
-                Exportar
-              </button>
-            </div>
-            <ConfirmationDialog
-              visible={showConfirmationDialog}
-              extractedData={extractedEntries}
-              onConfirm={confirmAndCreateEntries}
-              onCancel={() => setShowConfirmationDialog(false)}
-
-            />
-
-            {/* Indicador de processamento */}
-            {isProcessing && (
-              <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-                <div className="bg-white p-6 rounded-lg shadow-lg flex items-center space-x-4">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                  <p className="text-gray-700">Processando texto...</p>
-                </div>
-              </div>
-            )}
+      
+      <motion.div initial="hidden" animate="visible" variants={containerVariants} style={{ position: 'relative', zIndex: 10, padding: '2rem', paddingTop: '1rem' }}>
+        {/* Header */}
+        <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0 0 0.5rem 0', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              Registo de Tempos
+            </h1>
+            <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>Monitorize e gira o seu tempo eficientemente.</p>
           </div>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => { setShowForm(!showForm); if (showAutoTracking) setShowAutoTracking(false); }}
+              style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(${showForm ? '239,68,68,0.3' : '59,130,246,0.3'})`, background: `rgba(${showForm ? '239,68,68,0.2' : '59,130,246,0.2'})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
+              <Plus size={18} /> {showForm ? "Cancelar" : "Registar Tempo"}
+            </motion.button>
+            <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={generateExcelReport} disabled={isLoadingOverall || timeEntries.length === 0}
+              style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.2)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
+              <Download size={18} /> Exportar
+            </motion.button>
+          </div>
+        </motion.div>
 
-          {/* Componente de Rastreamento Automático de Tempo */}
-          {showAutoTracking && (
-            <div className="mb-6">
-              <AutoTimeTracking onTimeEntryCreated={() => queryClient.invalidateQueries({ queryKey: ['timeEntries'] })} />
+        <ConfirmationDialog visible={showConfirmationDialog} extractedData={extractedEntries} onConfirm={confirmAndCreateEntries} onCancel={() => setShowConfirmationDialog(false)} />
+        {isProcessing && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
+                <motion.div style={{ ...glassStyle, padding: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }} initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+                    <Loader2 size={32} className="animate-spin" style={{ color: 'rgb(59,130,246)'}} />
+                    <p style={{ fontSize: '1rem', color: 'white' }}>Processando texto...</p>
+                </motion.div>
             </div>
-          )}
+        )}
+        
+        {/* Auto Tracking Component (if shown) */}
+        {showAutoTracking && (
+          <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
+            <AutoTimeTracking onTimeEntryCreated={() => queryClient.invalidateQueries({ queryKey: ['timeEntries'] })} />
+          </motion.div>
+        )}
 
-          {/* Formulário de Registo Manual */}
+        {/* Form Section */}
+        <AnimatePresence>
           {showForm && (
-            <div className="bg-white p-6 rounded-lg shadow mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Registar Tempo Manualmente</h2>
-                <div className="flex items-center">
-                  <span className="mr-2">Linguagem Natural</span>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={isNaturalLanguageMode}
-                      onChange={() => setIsNaturalLanguageMode(!isNaturalLanguageMode)}
-                    />
+            <motion.div initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: -20 }}
+              transition={{ duration: 0.3 }} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ padding: '0.5rem', backgroundColor: 'rgba(59,130,246,0.2)', borderRadius: '12px' }}><Clock style={{ color: 'rgb(59,130,246)'}} size={20} /></div>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Registar Tempo</h3>
+                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Adicione uma nova entrada de tempo manual ou por linguagem natural.</p>
+                    </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)'}}>Linguagem Natural</span>
+                  <label className="switch"> {/* Ensure .switch .slider styles are in <style jsx> */}
+                    <input type="checkbox" checked={isNaturalLanguageMode} onChange={() => setIsNaturalLanguageMode(!isNaturalLanguageMode)} />
                     <span className="slider round"></span>
                   </label>
                 </div>
               </div>
-
               <form onSubmit={handleSubmit}>
                 {isNaturalLanguageMode ? (
                   <>
-                    <div className="mb-4">
-                      <label className="block text-gray-700 mb-2">Cliente</label>
-                      <select
-                        name="client"
-                        value={formData.client}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      >
-                        <option value="">Selecionar Cliente</option>
-                        {clients.map((client) => (
-                          <option key={client.id} value={client.id}>
-                            {client.name}
-                          </option>
-                        ))}
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Cliente (Opcional)</label>
+                      <select name="client" value={formData.client} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
+                        <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Cliente (Padrão)</option>
+                        {clients.map((client) => (<option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>{client.name}</option>))}
                       </select>
                     </div>
-
-                    <div className="mb-4">
-                      <label className="block text-gray-700 mb-2">
-                        Descreva a sua atividade
-                      </label>
-                      <textarea
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        value={naturalLanguageInput}
-                        onChange={handleNaturalLanguageInputChange}
-                        placeholder="Exemplo: Demorei 2 horas na declaração de IVA para o cliente ABC e 30 minutos numa reunião com XYZ"
-                        rows={3}
-                        required
-                      />
-                      <p className="text-sm text-gray-500 mt-1">
-                        O sistema irá extrair o tempo gasto e categorizar a sua atividade.
-                      </p>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Descreva a sua atividade *</label>
+                      <textarea value={naturalLanguageInput} onChange={handleNaturalLanguageInputChange} placeholder="Ex: 2h declaração IVA cliente ABC, 30m reunião XYZ" rows={3} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }} />
+                      <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.5rem' }}>O sistema irá extrair o tempo, cliente e outras informações.</p>
                     </div>
-                    <div>
-                      <label className="block text-gray-700 mb-2">Status da Tarefa (Após Registro)</label>
-                      <select
-                        name="task_status_after"
-                        value={formData.task_status_after}
-                        onChange={handleInputChange}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      >
-                        <option value="no_change">Sem alteração</option>
-                        <option value="in_progress">Marcar como Em Progresso</option>
-                        <option value="completed">Marcar como Concluída</option>
-                      </select>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Será aplicado à tarefa identificada no texto
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label className="block text-gray-700 mb-2">Data</label>
-                        <input
-                          type="date"
-                          name="date"
-                          value={formData.date}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          required
-                        />
-                      </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Data</label>
+                            <input type="date" name="date" value={formData.date} onChange={handleInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Status da Tarefa (Após)</label>
+                            <select name="task_status_after" value={formData.task_status_after} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
+                                <option value="no_change" style={{ background: '#1f2937', color: 'white' }}>Sem alteração</option>
+                                <option value="in_progress" style={{ background: '#1f2937', color: 'white' }}>Marcar como Em Progresso</option>
+                                <option value="completed" style={{ background: '#1f2937', color: 'white' }}>Marcar como Concluída</option>
+                            </select>
+                            <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.25rem' }}>Aplicado à tarefa identificada no texto.</p>
+                        </div>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label className="block text-gray-700 mb-2">Cliente</label>
-                        <select
-                          name="client"
-                          value={formData.client}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          required
-                        >
-                          <option value="">Selecionar Cliente</option>
-                          {clients.map((client) => (
-                            <option key={client.id} value={client.id}>
-                              {client.name}
-                            </option>
-                          ))}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                      {/* Client, Task, Category, Date, Minutes Spent, Start/End Time */}
+                       <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Cliente *</label>
+                        <select name="client" value={formData.client} onChange={handleInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.client ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
+                            <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Cliente</option>
+                            {clients.map((client) => (<option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>{client.name}</option>))}
                         </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">Tarefa</label>
-                        <select
-                          name="task"
-                          value={formData.task}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                        >
-                          <option value="">Selecionar Tarefa (Opcional)</option>
-                          {tasks
-                            .filter(task => !formData.client || task.client === formData.client)
-                            .filter(task => task.status !== "completed")
-                            .map(task => (
-                              <option key={task.id} value={task.id}>
-                                {task.title}
-                              </option>
-                            ))}
+                        {formErrors.client && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.client}</p>}
+                       </div>
+                       <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Tarefa (Opcional)</label>
+                        <select name="task" value={formData.task} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
+                            <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Tarefa</option>
+                            {tasks.filter(task => (!formData.client || task.client === formData.client) && task.status !== "completed").map(task => (<option key={task.id} value={task.id} style={{ background: '#1f2937', color: 'white' }}>{task.title}</option>))}
                         </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">Categoria</label>
-                        <select
-                          name="category"
-                          value={formData.category}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                        >
-                          <option value="">Selecionar Categoria (Opcional)</option>
-                          {taskCategories.map((category) => (
-                            <option key={category.id} value={category.id}>
-                              {category.name}
-                            </option>
-                          ))}
+                       </div>
+                       <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Categoria (Opcional)</label>
+                        <select name="category" value={formData.category} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
+                            <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Categoria</option>
+                            {taskCategories.map((category) => (<option key={category.id} value={category.id} style={{ background: '#1f2937', color: 'white' }}>{category.name}</option>))}
                         </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">Status da Tarefa (Após Registro)</label>
-                        <select
-                          name="task_status_after"
-                          value={formData.task_status_after}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          disabled={!formData.task}
-                        >
-                          <option value="no_change">Sem alteração</option>
-                          <option value="in_progress">Marcar como Em Progresso</option>
-                          <option value="completed">Marcar como Concluída</option>
-                        </select>
-                        {!formData.task && (
-                          <p className="text-sm text-gray-500 mt-1">
-                            Selecione uma tarefa para alterar o status
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">Data</label>
-                        <input
-                          type="date"
-                          name="date"
-                          value={formData.date}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-gray-700 mb-2">
-                          Minutos Gastos
-                        </label>
-                        <input
-                          type="number"
-                          name="minutes_spent"
-                          value={formData.minutes_spent}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          required
-                          min="1"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-gray-700 mb-2">
-                            Hora de Início (Opcional)
-                          </label>
-                          <input
-                            type="time"
-                            name="start_time"
-                            value={formData.start_time}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                          />
+                       </div>
+                       <div>
+                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Status da Tarefa (Após)</label>
+                            <select name="task_status_after" value={formData.task_status_after} onChange={handleInputChange} disabled={!formData.task} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', opacity: !formData.task ? 0.5 : 1 }}>
+                                <option value="no_change" style={{ background: '#1f2937', color: 'white' }}>Sem alteração</option>
+                                <option value="in_progress" style={{ background: '#1f2937', color: 'white' }}>Marcar como Em Progresso</option>
+                                <option value="completed" style={{ background: '#1f2937', color: 'white' }}>Marcar como Concluída</option>
+                            </select>
+                            {!formData.task && <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.25rem' }}>Selecione uma tarefa.</p>}
                         </div>
-                        <div>
-                          <label className="block text-gray-700 mb-2">
-                            Hora de Fim (Opcional)
-                          </label>
-                          <input
-                            type="time"
-                            name="end_time"
-                            value={formData.end_time}
-                            onChange={handleInputChange}
-                            className="w-full p-2 border border-gray-300 rounded-md"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="md:col-span-2">
-                        <label className="block text-gray-700 mb-2">
-                          Descrição
-                        </label>
-                        <textarea
-                          name="description"
-                          value={formData.description}
-                          onChange={handleInputChange}
-                          className="w-full p-2 border border-gray-300 rounded-md"
-                          rows={2}
-                          required
-                        />
-                      </div>
+                       <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Data *</label>
+                        <input type="date" name="date" value={formData.date} onChange={handleInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
+                       </div>
+                       <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Minutos Gastos *</label>
+                        <input type="number" name="minutes_spent" value={formData.minutes_spent} onChange={handleInputChange} required min="1" style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.minutes_spent ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
+                        {formErrors.minutes_spent && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.minutes_spent}</p>}
+                       </div>
+                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Hora Início</label>
+                                <input type="time" name="start_time" value={formData.start_time} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.start_time ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
+                                {formErrors.start_time && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.start_time}</p>}
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Hora Fim</label>
+                                <input type="time" name="end_time" value={formData.end_time} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.end_time ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
+                                {formErrors.end_time && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.end_time}</p>}
+                            </div>
+                       </div>
+                    </div>
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Descrição *</label>
+                      <textarea name="description" value={formData.description} onChange={handleInputChange} rows={2} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.description ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }} />
+                      {formErrors.description && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.description}</p>}
                     </div>
                   </>
                 )}
-
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                        A guardar...
-                      </>
-                    ) : (
-                      "Guardar Registo de Tempo"
-                    )}
-                  </button>
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="button" onClick={resetForm} style={{ padding: '0.75rem 1.5rem', background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' }}>Cancelar</motion.button>
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="submit" disabled={isLoadingOverall} style={{ padding: '0.75rem 1.5rem', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {isLoadingOverall ? (<Loader2 size={16} className="animate-spin" />) : (isNaturalLanguageMode ? "Processar e Criar" : "Guardar Registo")}
+                  </motion.button>
                 </div>
               </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Filter Section */}
+        <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showFilters ? '1.5rem' : 0 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Filtros e Pesquisa</h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Configure a visualização conforme necessário.</p>
+            </div>
+            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => setShowFilters(!showFilters)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '0.5rem', borderRadius: '8px' }}>
+              {showFilters ? <EyeOff size={20} /> : <Eye size={20} />}
+            </motion.button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: showFilters ? '1rem' : 0 }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}
+                  style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
+                  <option value="none" style={{ background: '#1f2937', color: 'white' }}>Sem Agrupamento</option>
+                  <option value="date" style={{ background: '#1f2937', color: 'white' }}>Agrupar por Data</option>
+                  <option value="client" style={{ background: '#1f2937', color: 'white' }}>Agrupar por Cliente</option>
+                </select>
+                <ViewToggle activeView={viewMode} onChange={setViewMode} />
+            </div>
+            <div style={{ position: 'relative', minWidth: '300px' }}>
+              <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.5)' }} />
+              <input type="text" placeholder="Pesquisar..." value={searchQuery} onChange={handleSearchChange}
+                style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}/>
+            </div>
+          </div>
+          <AnimatePresence>
+            {showFilters && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Data Início</label>
+                  <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} style={{ width: '100%', padding: '0.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: 'white', fontSize: '0.875rem' }}/>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Data Fim</label>
+                  <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} style={{ width: '100%', padding: '0.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: 'white', fontSize: '0.875rem' }}/>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Cliente</label>
+                  <select name="client" value={filters.client} onChange={handleFilterChange} style={{ width: '100%', padding: '0.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: 'white', fontSize: '0.875rem' }}>
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos</option>
+                    {clients.map(client => (<option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>{client.name}</option>))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={resetFilters}
+                    style={{ padding: '0.5rem 1rem', background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }}>Limpar Filtros</motion.button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Time Entries List/Grid */}
+        <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><Activity style={{ color: 'rgb(52,211,153)'}} size={20} /></div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Registos de Tempo</h3>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{timeEntries.length} registos encontrados</p>
+              </div>
+            </div>
+          </div>
+          {isLoadingOverall ? (
+            <div style={{ padding: '3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}><Loader2 size={32} style={{ color: 'rgb(59,130,246)'}} /></motion.div>
+              <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)' }}>Carregando registos...</p>
+            </div>
+          ) : timeEntries.length === 0 ? (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
+              <Clock size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Nenhum registo encontrado</h4>
+              <p style={{ margin: 0 }}>Tente ajustar os filtros ou crie um novo registo.</p>
+            </div>
+          ) : (
+            <div style={{ padding: viewMode === 'grid' ? '1.5rem' : '0' }}>
+              {viewMode === 'list' ? (
+                  Object.entries(displayedEntries).map(([groupName, entriesInGroup]) => (
+                    <div key={groupName}>
+                      {groupBy !== 'none' && (
+                        <h3 style={{ margin:0, padding: '1rem 1.5rem', background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '0.875rem', fontWeight: '600' }}>
+                            {groupName} ({entriesInGroup.length} {entriesInGroup.length === 1 ? 'registo' : 'registos'})
+                        </h3>
+                      )}
+                       <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead style={{ backgroundColor: groupBy === 'none' ? 'rgba(255,255,255,0.05)' : 'transparent' }}>
+                            <tr>
+                                {['date', 'client_name', 'task_title', 'description', 'minutes_spent'].map(field => (
+                                <th key={field} style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '0.875rem', fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>
+                                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => handleSort(field)}
+                                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 'inherit', fontWeight: 'inherit', padding: 0 }}>
+                                    {field.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                    {filters.sortField === field ? (filters.sortDirection === "asc" ? <ChevronUp size={16} /> : <ChevronDown size={16} />) : (<ChevronDown size={16} style={{ opacity: 0.5 }} />)}
+                                    </motion.button>
+                                </th>
+                                ))}
+                                <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '0.875rem', fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>Ações</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {entriesInGroup.map((entry, index) => (
+                                <motion.tr key={entry.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}
+                                style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }} whileHover={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                                <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{entry.date}</td>
+                                <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{entry.client_name || "N/A"}</td>
+                                <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{entry.task_title || "N/A"}</td>
+                                <td style={{ padding: '1rem', fontSize: '0.875rem', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.description}</td>
+                                <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{formatMinutes(entry.minutes_spent)}</td>
+                                <td style={{ padding: '1rem' }}>
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => duplicateEntry(entry)} title="Duplicar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', padding: '0.5rem', color: 'white', cursor: 'pointer' }}><Copy size={16} /></motion.button>
+                                    {(permissions.isOrgAdmin || permissions.canEditAllTime) && (
+                                        <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleDeleteEntry(entry.id)} title="Excluir" disabled={deleteTimeEntryMutation.isPending} style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '0.5rem', color: 'rgb(239,68,68)', cursor: 'pointer' }}><Trash2 size={16} /></motion.button>
+                                    )}
+                                    </div>
+                                </td>
+                                </motion.tr>
+                            ))}
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
+                  ))
+              ) : ( // Grid View
+                Object.entries(displayedEntries).map(([groupName, entriesInGroup]) => (
+                    <div key={groupName}>
+                        {groupBy !== 'none' && (
+                            <h3 style={{ margin: '0 0 1rem 0', paddingBottom: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '1rem', fontWeight: '600' }}>
+                                {groupName} ({entriesInGroup.length} {entriesInGroup.length === 1 ? 'registo' : 'registos'})
+                            </h3>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                            {entriesInGroup.map((entry, index) => (
+                                <TimeEntryCard key={entry.id} entry={entry} onDelete={handleDeleteEntry} onDuplicate={duplicateEntry} permissions={permissions} />
+                            ))}
+                        </div>
+                    </div>
+                ))
+              )}
             </div>
           )}
-
-          <div className="bg-white p-6 rounded-lg shadow mb-6">
-            <h2 className="text-xl font-semibold mb-4">Filtros</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div>
-                <label className="block text-gray-700 mb-2">Data de Início</label>
-                <input
-                  type="date"
-                  name="startDate"
-                  value={filters.startDate}
-                  onChange={handleFilterChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-
-              <div>
-                <label className="block text-gray-700 mb-2">Data de Fim</label>
-                <input
-                  type="date"
-                  name="endDate"
-                  value={filters.endDate}
-                  onChange={handleFilterChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-
-              <div>
-                <label className="block text-gray-700 mb-2">Cliente</label>
-                <select
-                  name="client"
-                  value={filters.client}
-                  onChange={handleFilterChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="">Todos os Clientes</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="mb-4">
-              <label className="block text-gray-700 mb-2">Pesquisar</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Pesquisar por descrição, cliente ou tarefa..."
-                  className="w-full p-2 pl-10 border border-gray-300 rounded-md"
-                />
-
-                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-              </div>
-            </div>
-            <div>
-              <label className="block text-gray-700 mb-2">Agrupar por</label>
-              <select
-                value={groupBy}
-                onChange={(e) => setGroupBy(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md"
-              >
-                <option value="none">Sem agrupamento</option>
-                <option value="date">Data</option>
-                <option value="client">Cliente</option>
-              </select>
-            </div>
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={resetFilters}
-                className="px-4 py-2 border border-gray-300 text-gray-700 bg-white hover:bg-white-100 rounded-md transition-colors"
-              >
-                Limpar
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="flex items-center mr-4">
-              <h2 className="text-xl font-semibold p-6 border-b">Registos de Tempo</h2>
-              <ViewToggle activeView={viewMode} onChange={setViewMode} />
-            </div>
-            {isLoading ? (
-              <div className="p-6 flex justify-center">
-                <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
-              </div>
-            ) : timeEntries.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
-                Nenhum registo de tempo encontrado. Crie o seu primeiro!
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                {viewMode === 'list' ? (
-                  <div>
-                    {Object.entries(groupedEntries).map(([groupName, entries]) => (
-                      <div key={groupName}>
-                        {groupBy !== 'none' && (
-                          <h3 className="font-medium p-3 bg-gray-100">{groupName}</h3>
-                        )}
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-white-50">
-                            <tr>
-                              <tr>
-                                <th
-                                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                  onClick={() => handleSort("date")}
-                                >
-                                  <div className="flex items-center">
-                                    Data
-                                    {sortConfig.field === "date" && (
-                                      sortConfig.direction === "asc" ?
-                                        <ChevronUp size={14} className="ml-1" /> :
-                                        <ChevronDown size={14} className="ml-1" />
-                                    )}
-                                  </div>
-                                </th>
-                              </tr>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Cliente
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Tarefa
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Descrição
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Tempo
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Ações
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {timeEntries.map((entry) => (
-                              <tr key={entry.id} className="hover:bg-white-50">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="flex items-center">
-                                    <Calendar size={16} className="mr-2 text-gray-400" />
-                                    {entry.date}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {entry.client_name}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {entry.task_title || (
-                                    <span className="text-gray-400">Sem tarefa</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4">
-                                  <div className="max-w-xs truncate">{entry.description}</div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="flex items-center">
-                                    <Clock size={16} className="mr-2 text-gray-400" />
-                                    {formatMinutes(entry.minutes_spent)}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <button
-                                    className="text-red-600 hover:text-red-900 flex items-center"
-                                    onClick={() => handleDeleteEntry(entry.id)}
-                                    disabled={deleteTimeEntryMutation.isPending}
-                                  >
-                                    <Trash2 size={16} className="mr-1" />
-                                    Eliminar
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
-                    {Object.entries(groupedEntries).map(([groupName, entries]) => (
-                      <div key={groupName} className="col-span-full">
-                        {groupBy !== 'none' && (
-                          <h3 className="font-medium p-3 bg-gray-100 mb-3">{groupName}</h3>
-                        )}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {entries.map(entry => (
-                            <TimeEntryCard
-                              key={entry.id}
-                              entry={entry}
-                              onDelete={handleDeleteEntry}
-                              onDuplicate={duplicateEntry}
-                              permissions={permissions}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </motion.div>
+      </motion.div>
+
+      <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 1, type: "spring", stiffness: 200 }}
+        style={{ position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 100 }}>
+        <motion.button whileHover={{ scale: 1.1, boxShadow: '0 0 30px rgba(147,51,234,0.5)' }} whileTap={{ scale: 0.9 }}
+          style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'linear-gradient(135deg, rgb(147,51,234), rgb(196,181,253))', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(147,51,234,0.3)' }}
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+          <motion.div animate={{ rotate: [0, 360] }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }}><Brain size={24} /></motion.div>
+        </motion.button>
+      </motion.div>
+
+      <style jsx>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+        input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.5) !important; }
+        select option { background: #1f2937 !important; color: white !important; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
+        * { transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease; }
+        button:hover { transform: translateY(-1px); }
+        button:focus, input:focus, select:focus, textarea:focus { outline: 2px solid rgba(59,130,246,0.5); outline-offset: 2px; }
+        /* Switch for Natural Language Mode */
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.2); transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: rgb(147, 51, 234); }
+        input:focus + .slider { box-shadow: 0 0 1px rgb(147, 51, 234); }
+        input:checked + .slider:before { transform: translateX(20px); }
+        .slider.round { border-radius: 20px; }
+        .slider.round:before { border-radius: 50%; }
+      `}</style>
     </div>
   );
 };
