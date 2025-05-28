@@ -44,10 +44,10 @@ const PRIORITY_OPTIONS = [
 ];
 
 // --- Data Fetching Function (Outside Component) ---
-const fetchTaskManagementData = async () => {
-  console.log("Fetching task management data...");
+const fetchTaskManagementData = async (userId) => {
+  console.log("Fetching task management data for user:", userId);
   const [tasksRes, clientsRes, usersRes, categoriesRes] = await Promise.all([
-    api.get("/tasks/"),
+    api.get(`/tasks/?user=${userId}`),
     api.get("/clients/?is_active=true"),
     api.get("/profiles/"),
     api.get("/task-categories/")
@@ -85,12 +85,13 @@ const TaskManagement = () => {
   const [selectedTaskForWorkflow, setSelectedTaskForWorkflow] = useState(null);
   const [formData, setFormData] = useState(getInitialFormData());
   const [showFilters, setShowFilters] = useState(false);
-
-  // --- Data Fetching using React Query ---
+  
+    // --- Data Fetching using React Query ---
   const { data, isLoading: isLoadingData, isError, error, refetch } = useQuery({
-    queryKey: ['taskManagementData'],
-    queryFn: fetchTaskManagementData,
+    queryKey: ['taskManagementData', permissions.userId],
+    queryFn: () => fetchTaskManagementData(permissions.userId),
     staleTime: 5 * 60 * 1000,
+    enabled: !!permissions.userId, 
   });
 
   // Extracted data lists (provide defaults)

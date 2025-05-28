@@ -122,8 +122,8 @@ const ErrorView = ({ message, onRetry }) => (
 
 
 // Funções de obtenção de dados (fora do componente)
-const fetchTimeEntries = async (filters = {}) => {
-  let url = "/time-entries/?";
+const fetchTimeEntries = async (userId, filters = {}) => {
+  let url = `/time-entries/?user=${userId}`;
   const params = new URLSearchParams();
 
   if (filters.startDate) params.append('start_date', filters.startDate);
@@ -134,7 +134,12 @@ const fetchTimeEntries = async (filters = {}) => {
     params.append('ordering', `${filters.sortDirection === 'desc' ? '-' : ''}${filters.sortField}`);
   }
   
-  url += params.toString();
+  // Se houver parâmetros adicionais, adiciona ao URL
+  const paramString = params.toString();
+  if (paramString) {
+    url += `&${paramString}`;
+  }
+  
   const response = await api.get(url);
   return response.data;
 };
@@ -149,11 +154,12 @@ const fetchTaskCategories = async () => {
   return response.data;
 };
 
-const fetchTasks = async () => {
-  const response = await api.get("/tasks/");
+const fetchTasks = async (userId) => {
+  console.log("Fetching tasks for user:", userId);
+  const response = await api.get(`/tasks/?user=${userId}`);
+  console.log("Tasks fetched:", response.data.length);
   return response.data;
 };
-
 const TimeEntry = () => {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
@@ -201,9 +207,10 @@ const TimeEntry = () => {
     error: entriesError,
     refetch: refetchTimeEntries
   } = useQuery({
-    queryKey: ['timeEntries', filters],
-    queryFn: () => fetchTimeEntries(filters),
+    queryKey: ['timeEntries', permissions.userId, filters],
+    queryFn: () => fetchTimeEntries(permissions.userId, filters),
     staleTime: 5 * 60 * 1000,
+    enabled: !!permissions.userId, // Só executa quando temos o userId
   });
 
   const {
@@ -228,9 +235,10 @@ const TimeEntry = () => {
     data: tasks = [],
     isLoading: isLoadingTasks
   } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: fetchTasks,
+    queryKey: ['tasks', permissions.userId],
+    queryFn: () => fetchTasks(permissions.userId),
     staleTime: 10 * 60 * 1000,
+    enabled: !!permissions.userId, // Só executa quando temos o userId
   });
 
   // Mutações React Query

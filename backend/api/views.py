@@ -237,6 +237,10 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status_values = status_param.split(',')
                 base_queryset = base_queryset.filter(status__in=status_values)
                 
+            user_param = self.request.query_params.get('user')
+            if user_param:
+                base_queryset = base_queryset.filter(assigned_to__id=user_param)
+                
             client_id = self.request.query_params.get('client')
             if client_id:
                 base_queryset = base_queryset.filter(client_id=client_id)
