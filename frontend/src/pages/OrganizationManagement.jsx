@@ -23,7 +23,7 @@ import InvitationCodeForm from "../components/InvitationForm";
 import MemberPermissionsForm from "../components/MemberPermissionsForm";
 import { motion, AnimatePresence } from "framer-motion";
 import BackgroundElements from "../components/HeroSection/BackgroundElements";
-
+import { usePermissions } from "../contexts/PermissionsContext";
 // Estilos glass
 const glassStyle = {
   background: 'rgba(255, 255, 255, 0.1)',
@@ -111,12 +111,14 @@ const fetchUsers = async () => {
 const OrganizationManagement = () => {
   const queryClient = useQueryClient();
 
-  const [memberCreationStep, setMemberCreationStep] = useState(null); 
+  const permissions = usePermissions();
+  
+  const [memberCreationStep, setMemberCreationStep] = useState(null);
   const [newMemberDataFromInvitation, setNewMemberDataFromInvitation] = useState(null);
-  const [editingMember, setEditingMember] = useState(null); 
+  const [editingMember, setEditingMember] = useState(null);
 
   const [showOrganizationForm, setShowOrganizationForm] = useState(false);
-  
+
   const [organizationFormData, setOrganizationFormData] = useState({
     name: "", description: "", address: "", phone: "", email: "",
     subscription_plan: "Básico", max_users: 5, logo: ""
@@ -326,7 +328,9 @@ const OrganizationManagement = () => {
     return (member.username?.toLowerCase().includes(term) || member.role?.toLowerCase().includes(term) || member.email?.toLowerCase().includes(term));
   });
 
-  const isOrgAdminUser = users.find(u => u.is_current_user)?.is_org_admin || false;
+  const isOrgAdminUser = permissions.isOrgAdmin;
+
+  console.log("isOrgAdminUser:", isOrgAdminUser);
 
   const isLoadingOverall = isLoadingOrganization || isLoadingMembers || isLoadingUsers ||
     createOrganizationMutation.isPending || updateOrganizationMutation.isPending ||
@@ -335,24 +339,24 @@ const OrganizationManagement = () => {
   if (isLoadingOrganization || isLoadingUsers) { // Initial essential data loading
     return (
       <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-<BackgroundElements businessStatus="optimal" />        <motion.div animate={{ rotate: 360, scale: [1, 1.1, 1] }} transition={{ rotate: { duration: 2, repeat: Infinity, ease: "linear" }, scale: { duration: 1, repeat: Infinity }}}>
+        <BackgroundElements businessStatus="optimal" />        
+        <motion.div animate={{ rotate: 360, scale: [1, 1.1, 1] }} transition={{ rotate: { duration: 2, repeat: Infinity, ease: "linear" }, scale: { duration: 1, repeat: Infinity } }}>
           <Brain size={48} style={{ color: 'rgb(147, 51, 234)' }} />
         </motion.div>
         <p style={{ marginLeft: '1rem', fontSize: '1rem' }}>Carregando gestão da organização...</p>
       </div>
     );
   }
-  
+
   if (isErrorOrganization) {
     return <ThemedErrorView message={organizationError?.message || "Erro ao carregar dados da organização"} onRetry={refetchOrganization} />;
   }
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
-<BackgroundElements businessStatus="optimal" />      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }} />
-      
+      <BackgroundElements businessStatus="optimal" />      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }} />
+
       <motion.div initial="hidden" animate="visible" variants={containerVariants} style={{ position: 'relative', zIndex: 10, padding: '2rem', paddingTop: '1rem' }}>
-        {/* Header */}
         <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0 0 0.5rem 0', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
@@ -392,7 +396,7 @@ const OrganizationManagement = () => {
             <motion.div initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: -20 }}
               transition={{ duration: 0.3 }} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                <div style={{ padding: '0.5rem', backgroundColor: 'rgba(59,130,246,0.2)', borderRadius: '12px' }}><Building style={{ color: 'rgb(59,130,246)'}} size={20} /></div>
+                <div style={{ padding: '0.5rem', backgroundColor: 'rgba(59,130,246,0.2)', borderRadius: '12px' }}><Building style={{ color: 'rgb(59,130,246)' }} size={20} /></div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>{editingOrganization ? "Editar Organização" : "Nova Organização"}</h3>
                   <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{editingOrganization ? "Atualize os detalhes da sua organização." : "Crie uma nova organização."}</p>
@@ -402,37 +406,37 @@ const OrganizationManagement = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                   {/* Name, Email, Phone, Address, Subscription, Max Users */}
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Nome *</label>
-                    <input type="text" name="name" value={organizationFormData.name} onChange={handleOrganizationInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Nome da Organização"/>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>Nome *</label>
+                    <input type="text" name="name" value={organizationFormData.name} onChange={handleOrganizationInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Nome da Organização" />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Email</label>
-                    <input type="email" name="email" value={organizationFormData.email} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Email de contacto"/>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>Email</label>
+                    <input type="email" name="email" value={organizationFormData.email} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Email de contacto" />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Telefone</label>
-                    <input type="tel" name="phone" value={organizationFormData.phone} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Número de telefone"/>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>Telefone</label>
+                    <input type="tel" name="phone" value={organizationFormData.phone} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Número de telefone" />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Morada</label>
-                    <input type="text" name="address" value={organizationFormData.address} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Morada completa"/>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>Morada</label>
+                    <input type="text" name="address" value={organizationFormData.address} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} placeholder="Morada completa" />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Plano</label>
-                     <select name="subscription_plan" value={organizationFormData.subscription_plan} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
-                        <option value="Básico" style={{ background: '#1f2937', color: 'white' }}>Básico</option>
-                        <option value="Premium" style={{ background: '#1f2937', color: 'white' }}>Premium</option>
-                        <option value="Enterprise" style={{ background: '#1f2937', color: 'white' }}>Enterprise</option>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>Plano</label>
+                    <select name="subscription_plan" value={organizationFormData.subscription_plan} onChange={handleOrganizationInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
+                      <option value="Básico" style={{ background: '#1f2937', color: 'white' }}>Básico</option>
+                      <option value="Premium" style={{ background: '#1f2937', color: 'white' }}>Premium</option>
+                      <option value="Enterprise" style={{ background: '#1f2937', color: 'white' }}>Enterprise</option>
                     </select>
                   </div>
-                   <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Máx. Utilizadores</label>
-                    <input type="number" name="max_users" value={organizationFormData.max_users} onChange={handleOrganizationInputChange} min="1" style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}/>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>Máx. Utilizadores</label>
+                    <input type="number" name="max_users" value={organizationFormData.max_users} onChange={handleOrganizationInputChange} min="1" style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
                   </div>
                 </div>
                 <div style={{ marginBottom: '1.5rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Descrição</label>
-                  <textarea name="description" value={organizationFormData.description} onChange={handleOrganizationInputChange} rows={3} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }} placeholder="Breve descrição da organização..."/>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>Descrição</label>
+                  <textarea name="description" value={organizationFormData.description} onChange={handleOrganizationInputChange} rows={3} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }} placeholder="Breve descrição da organização..." />
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                   <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="button" onClick={() => { setShowOrganizationForm(false); setEditingOrganization(false); resetOrganizationForm(); }} style={{ padding: '0.75rem 1.5rem', background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' }} disabled={isLoadingOverall}>Cancelar</motion.button>
@@ -448,48 +452,48 @@ const OrganizationManagement = () => {
 
         {/* Member Invitation Form (Step 1) */}
         <AnimatePresence>
-        {memberCreationStep === 'invitation' && organization && !showOrganizationForm && (
+          {memberCreationStep === 'invitation' && organization && !showOrganizationForm && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-                style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                    <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><UserPlus style={{ color: 'rgb(52,211,153)'}} size={20} /></div>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Adicionar Novo Membro (Passo 1/2)</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Insira o código de convite do utilizador.</p>
-                    </div>
+              style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><UserPlus style={{ color: 'rgb(52,211,153)' }} size={20} /></div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Adicionar Novo Membro (Passo 1/2)</h3>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Insira o código de convite do utilizador.</p>
                 </div>
-                <InvitationCodeForm
-                    onNext={handleInvitationFormNext}
-                    isProcessing={createNewMemberAndSetPermissionsMutation.isPending}
-                    onCancel={handlePermissionsFormCancel}
-                />
+              </div>
+              <InvitationCodeForm
+                onNext={handleInvitationFormNext}
+                isProcessing={createNewMemberAndSetPermissionsMutation.isPending}
+                onCancel={handlePermissionsFormCancel}
+              />
             </motion.div>
-        )}
+          )}
         </AnimatePresence>
 
         {/* Member Permissions Form (Step 2 or Edit) */}
         <AnimatePresence>
-        {memberCreationStep === 'permissions' && organization && !showOrganizationForm && (
+          {memberCreationStep === 'permissions' && organization && !showOrganizationForm && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-                 style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                    <div style={{ padding: '0.5rem', backgroundColor: editingMember ? 'rgba(147,51,234,0.2)' : 'rgba(52,211,153,0.2)', borderRadius: '12px' }}>
-                        {editingMember ? <Edit style={{ color: 'rgb(147,51,234)'}} size={20} /> : <Shield style={{ color: 'rgb(52,211,153)'}} size={20} /> }
-                    </div>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>{editingMember ? `Editar Permissões de ${editingMember.username}` : 'Definir Permissões (Passo 2/2)'}</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Configure o acesso e as permissões do membro.</p>
-                    </div>
+              style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                <div style={{ padding: '0.5rem', backgroundColor: editingMember ? 'rgba(147,51,234,0.2)' : 'rgba(52,211,153,0.2)', borderRadius: '12px' }}>
+                  {editingMember ? <Edit style={{ color: 'rgb(147,51,234)' }} size={20} /> : <Shield style={{ color: 'rgb(52,211,153)' }} size={20} />}
                 </div>
-                <MemberPermissionsForm
-                    member={editingMember || (newMemberDataFromInvitation ? { ...newMemberDataFromInvitation, is_org_admin: newMemberDataFromInvitation.is_admin /* map form field */ } : null) }
-                    clients={clients}
-                    onSave={handleSavePermissions}
-                    onCancel={handlePermissionsFormCancel}
-                    isProcessing={updateMemberMutation.isPending || createNewMemberAndSetPermissionsMutation.isPending}
-                />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>{editingMember ? `Editar Permissões de ${editingMember.username}` : 'Definir Permissões (Passo 2/2)'}</h3>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Configure o acesso e as permissões do membro.</p>
+                </div>
+              </div>
+              <MemberPermissionsForm
+                member={editingMember || (newMemberDataFromInvitation ? { ...newMemberDataFromInvitation, is_org_admin: newMemberDataFromInvitation.is_admin /* map form field */ } : null)}
+                clients={clients}
+                onSave={handleSavePermissions}
+                onCancel={handlePermissionsFormCancel}
+                isProcessing={updateMemberMutation.isPending || createNewMemberAndSetPermissionsMutation.isPending}
+              />
             </motion.div>
-        )}
+          )}
         </AnimatePresence>
 
         {/* Organization Details & Members List */}
@@ -497,7 +501,7 @@ const OrganizationManagement = () => {
           <>
             <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ padding: '0.5rem', backgroundColor: 'rgba(147,51,234,0.2)', borderRadius: '12px' }}><Building style={{ color: 'rgb(147,51,234)'}} size={20} /></div>
+                <div style={{ padding: '0.5rem', backgroundColor: 'rgba(147,51,234,0.2)', borderRadius: '12px' }}><Building style={{ color: 'rgb(147,51,234)' }} size={20} /></div>
                 <h2 style={{ fontSize: '1.25rem', fontWeight: '600', margin: 0 }}>{organization.name}</h2>
               </div>
               <p style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '0.5rem' }}>{organization.description || "Sem descrição."}</p>
@@ -513,20 +517,20 @@ const OrganizationManagement = () => {
             <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><Users style={{ color: 'rgb(52,211,153)'}} size={20} /></div>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Membros da Organização</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{filteredMembers.length} membros encontrados</p>
-                    </div>
+                  <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><Users style={{ color: 'rgb(52,211,153)' }} size={20} /></div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Membros da Organização</h3>
+                    <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{filteredMembers.length} membros encontrados</p>
+                  </div>
                 </div>
                 <div style={{ position: 'relative', minWidth: '250px' }}>
                   <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.5)' }} />
                   <input type="text" placeholder="Pesquisar membros..." value={searchTerm} onChange={handleSearchChange}
-                    style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}/>
+                    style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
                 </div>
               </div>
               {isLoadingMembers ? (
-                <div style={{ padding: '3rem', textAlign: 'center' }}><Loader2 size={32} className="animate-spin" style={{ color: 'rgb(59,130,246)'}} /></div>
+                <div style={{ padding: '3rem', textAlign: 'center' }}><Loader2 size={32} className="animate-spin" style={{ color: 'rgb(59,130,246)' }} /></div>
               ) : members.length === 0 ? (
                 <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
                   <Users size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
@@ -534,8 +538,8 @@ const OrganizationManagement = () => {
                 </div>
               ) : filteredMembers.length === 0 ? (
                 <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
-                    <Search size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                    <p>Nenhum membro encontrado para: "{searchTerm}"</p>
+                  <Search size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+                  <p>Nenhum membro encontrado para: "{searchTerm}"</p>
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
@@ -590,7 +594,7 @@ const OrganizationManagement = () => {
             </motion.div>
           </>
         )}
-        
+
         {/* No Organization Message */}
         {!organization && !showOrganizationForm && !memberCreationStep && !isLoadingOrganization && (
           <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '2rem', textAlign: 'center', marginTop: '2rem' }}>
@@ -600,7 +604,7 @@ const OrganizationManagement = () => {
               Parece que não está associado a nenhuma organização ou ainda não criou uma.
             </p>
             {isOrgAdminUser && (
-                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => { setShowOrganizationForm(true); setMemberCreationStep(null); }}
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => { setShowOrganizationForm(true); setMemberCreationStep(null); }}
                 style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.2)', color: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}
                 disabled={isLoadingOverall}>
                 <Building size={18} /> Criar Organização
@@ -611,15 +615,15 @@ const OrganizationManagement = () => {
 
         {/* Info Box */}
         <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem', marginTop: '2rem', background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.2)' }}>
-           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                <Info size={24} style={{ color: 'rgb(59,130,246)', marginTop: '0.125rem', flexShrink: 0 }} />
-                <div>
-                    <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: '600', color: 'white' }}>Sobre Organizações</h3>
-                    <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
-                        Uma organização permite agrupar utilizadores, clientes e tarefas. Administradores podem gerir membros, definir permissões detalhadas e configurar as definições gerais da organização. Utilize códigos de convite para adicionar novos membros de forma segura.
-                    </p>
-                </div>
-           </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+            <Info size={24} style={{ color: 'rgb(59,130,246)', marginTop: '0.125rem', flexShrink: 0 }} />
+            <div>
+              <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', fontWeight: '600', color: 'white' }}>Sobre Organizações</h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
+                Uma organização permite agrupar utilizadores, clientes e tarefas. Administradores podem gerir membros, definir permissões detalhadas e configurar as definições gerais da organização. Utilize códigos de convite para adicionar novos membros de forma segura.
+              </p>
+            </div>
+          </div>
         </motion.div>
       </motion.div>
 

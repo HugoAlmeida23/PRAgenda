@@ -1945,7 +1945,8 @@ onClick={refreshData}  // em vez de onClick={() => {/* refreshData */}}
               ...glassStyle,
               padding: '1.5rem',
               background: 'rgba(52, 211, 153, 0.05)',
-              border: '1px solid rgba(52, 211, 153, 0.2)'
+              border: '1px solid rgba(52, 211, 153, 0.2)',
+              marginTop: '1.5rem'
             }}
           >
             <div style={{
@@ -2055,7 +2056,9 @@ onClick={refreshData}  // em vez de onClick={() => {/* refreshData */}}
               ...glassStyle,
               padding: '1.5rem',
               background: 'rgba(239, 68, 68, 0.05)',
-              border: '1px solid rgba(239, 68, 68, 0.2)'
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              marginTop: '1.5rem'
+
             }}
           >
             <div style={{

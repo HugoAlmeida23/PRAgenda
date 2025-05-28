@@ -85,8 +85,8 @@ const UniversalBackground = () => {
         inset: 0,
         background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)'
       }} />
-      
-      <motion.div 
+
+      <motion.div
         style={{
           position: 'absolute',
           inset: 0,
@@ -120,7 +120,7 @@ const UniversalBackground = () => {
           }}
           animate={{
             y: [-particle.size, particle.size],
-            x: [-particle.size/2, particle.size/2],
+            x: [-particle.size / 2, particle.size / 2],
             opacity: [0.1, 0.4, 0.1],
             scale: [0.5, 1, 0.5]
           }}
@@ -224,11 +224,11 @@ const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onC
         padding: '1.5rem',
         cursor: 'pointer',
         opacity: client.is_active ? 1 : 0.7,
-        background: client.is_active 
-          ? 'rgba(255, 255, 255, 0.1)' 
+        background: client.is_active
+          ? 'rgba(255, 255, 255, 0.1)'
           : 'rgba(239, 68, 68, 0.1)',
-        border: client.is_active 
-          ? '1px solid rgba(255, 255, 255, 0.15)' 
+        border: client.is_active
+          ? '1px solid rgba(255, 255, 255, 0.15)'
           : '1px solid rgba(239, 68, 68, 0.2)'
       }}
     >
@@ -266,14 +266,14 @@ const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onC
               borderRadius: '9999px',
               fontSize: '0.75rem',
               fontWeight: '600',
-              background: client.is_active 
-                ? 'rgba(52, 211, 153, 0.2)' 
+              background: client.is_active
+                ? 'rgba(52, 211, 153, 0.2)'
                 : 'rgba(239, 68, 68, 0.2)',
-              border: client.is_active 
-                ? '1px solid rgba(52, 211, 153, 0.3)' 
+              border: client.is_active
+                ? '1px solid rgba(52, 211, 153, 0.3)'
                 : '1px solid rgba(239, 68, 68, 0.3)',
-              color: client.is_active 
-                ? 'rgb(110, 231, 183)' 
+              color: client.is_active
+                ? 'rgb(110, 231, 183)'
                 : 'rgb(252, 165, 165)'
             }}>
               {client.is_active ? 'Ativo' : 'Inativo'}
@@ -489,16 +489,16 @@ const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onC
                 onToggleStatus(client);
               }}
               style={{
-                background: client.is_active 
-                  ? 'rgba(251, 146, 60, 0.2)' 
+                background: client.is_active
+                  ? 'rgba(251, 146, 60, 0.2)'
                   : 'rgba(52, 211, 153, 0.2)',
-                border: client.is_active 
-                  ? '1px solid rgba(251, 146, 60, 0.3)' 
+                border: client.is_active
+                  ? '1px solid rgba(251, 146, 60, 0.3)'
                   : '1px solid rgba(52, 211, 153, 0.3)',
                 borderRadius: '6px',
                 padding: '0.5rem',
-                color: client.is_active 
-                  ? 'rgb(251, 146, 60)' 
+                color: client.is_active
+                  ? 'rgb(251, 146, 60)'
                   : 'rgb(52, 211, 153)',
                 cursor: 'pointer'
               }}
@@ -696,14 +696,14 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                   borderRadius: '9999px',
                   fontSize: '0.75rem',
                   fontWeight: '600',
-                  background: client.is_active 
-                    ? 'rgba(52, 211, 153, 0.2)' 
+                  background: client.is_active
+                    ? 'rgba(52, 211, 153, 0.2)'
                     : 'rgba(239, 68, 68, 0.2)',
-                  border: client.is_active 
-                    ? '1px solid rgba(52, 211, 153, 0.3)' 
+                  border: client.is_active
+                    ? '1px solid rgba(52, 211, 153, 0.3)'
                     : '1px solid rgba(239, 68, 68, 0.3)',
-                  color: client.is_active 
-                    ? 'rgb(110, 231, 183)' 
+                  color: client.is_active
+                    ? 'rgb(110, 231, 183)'
                     : 'rgb(252, 165, 165)'
                 }}>
                   {client.is_active ? 'Ativo' : 'Inativo'}
@@ -767,11 +767,11 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                   border: 'none',
                   background: 'none',
                   cursor: 'pointer',
-                  borderBottom: activeTab === tab.id 
-                    ? '2px solid rgb(59, 130, 246)' 
+                  borderBottom: activeTab === tab.id
+                    ? '2px solid rgb(59, 130, 246)'
                     : '2px solid transparent',
-                  color: activeTab === tab.id 
-                    ? 'rgb(59, 130, 246)' 
+                  color: activeTab === tab.id
+                    ? 'rgb(59, 130, 246)'
                     : 'rgba(255, 255, 255, 0.7)'
                 }}
               >
@@ -810,7 +810,7 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                   </p>
                 </div>
               )}
-              
+
               {activeTab === 'tasks' && (
                 <div>
                   <h3 style={{ color: 'white', marginBottom: '1rem' }}>Tarefas Recentes</h3>
@@ -837,7 +837,7 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                   )}
                 </div>
               )}
-              
+
               {activeTab === 'time' && (
                 <div>
                   <h3 style={{ color: 'white', marginBottom: '1rem' }}>Registos de Tempo</h3>
@@ -875,7 +875,7 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                   )}
                 </div>
               )}
-              
+
               {activeTab === 'profitability' && (
                 <div>
                   <h3 style={{ color: 'white', marginBottom: '1rem' }}>Análise de Rentabilidade</h3>
@@ -915,11 +915,11 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                       </div>
                       <div style={{
                         padding: '1rem',
-                        background: profitabilityData.is_profitable 
-                          ? 'rgba(52, 211, 153, 0.1)' 
+                        background: profitabilityData.is_profitable
+                          ? 'rgba(52, 211, 153, 0.1)'
                           : 'rgba(239, 68, 68, 0.1)',
-                        border: profitabilityData.is_profitable 
-                          ? '1px solid rgba(52, 211, 153, 0.2)' 
+                        border: profitabilityData.is_profitable
+                          ? '1px solid rgba(52, 211, 153, 0.2)'
                           : '1px solid rgba(239, 68, 68, 0.2)',
                         borderRadius: '8px',
                         textAlign: 'center'
@@ -927,13 +927,13 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                         <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
                           Margem de Lucro
                         </p>
-                        <p style={{ 
-                          margin: 0, 
-                          fontSize: '1.25rem', 
-                          fontWeight: '700', 
-                          color: profitabilityData.is_profitable 
-                            ? 'rgb(52, 211, 153)' 
-                            : 'rgb(239, 68, 68)' 
+                        <p style={{
+                          margin: 0,
+                          fontSize: '1.25rem',
+                          fontWeight: '700',
+                          color: profitabilityData.is_profitable
+                            ? 'rgb(52, 211, 153)'
+                            : 'rgb(239, 68, 68)'
                         }}>
                           {profitabilityData.profit_margin.toFixed(2)}%
                         </p>
@@ -1067,10 +1067,10 @@ const ClientManagement = () => {
         if (a[sortConfig.key] === null) return 1;
         if (b[sortConfig.key] === null) return -1;
 
-        const valA = typeof a[sortConfig.key] === "string" 
+        const valA = typeof a[sortConfig.key] === "string"
           ? a[sortConfig.key].toLowerCase()
           : a[sortConfig.key];
-        const valB = typeof b[sortConfig.key] === "string" 
+        const valB = typeof b[sortConfig.key] === "string"
           ? b[sortConfig.key].toLowerCase()
           : b[sortConfig.key];
 
@@ -1132,7 +1132,7 @@ const ClientManagement = () => {
 
   const handleSubmit = useCallback((e) => {
     e.preventDefault();
-    
+
     if (selectedClient) {
       if (!permissions.isOrgAdmin && !permissions.canEditClients) {
         toast.error("Você não tem permissão para editar clientes");
@@ -1173,9 +1173,9 @@ const ClientManagement = () => {
       toast.error("Você não tem permissão para alterar status de clientes");
       return;
     }
-    toggleClientStatusMutation.mutate({ 
-      id: client.id, 
-      is_active: !client.is_active 
+    toggleClientStatusMutation.mutate({
+      id: client.id,
+      is_active: !client.is_active
     });
   }, [toggleClientStatusMutation, permissions]);
 
@@ -1222,6 +1222,9 @@ const ClientManagement = () => {
     }
   };
 
+  // In ClientManagement.jsx, update the permissions check section:
+
+  // Replace this section (around line 1100):
   if (permissions.loading || isLoading) {
     return (
       <div style={{
@@ -1308,10 +1311,10 @@ const ClientManagement = () => {
     );
   }
 
-  // Verificar permissões
-  const canViewClients = permissions.canViewAllClients || permissions.isOrgAdmin || permissions.canEditClients;
+  // Check permissions AFTER loading is complete
+  const canViewClients = permissions.canManageClients || permissions.canViewAllClients || permissions.isOrgAdmin;
 
-  if (!canViewClients) {
+  if (!permissions.loading && !canViewClients) {
     return (
       <div style={{
         position: 'relative',
@@ -1321,7 +1324,7 @@ const ClientManagement = () => {
         justifyContent: 'center',
         padding: '2rem'
       }}>
-<BackgroundElements businessStatus="optimal" />
+        <BackgroundElements businessStatus="optimal" />
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -1347,14 +1350,14 @@ const ClientManagement = () => {
       </div>
     );
   }
-
+  
   return (
     <div style={{
       position: 'relative',
       minHeight: '100vh',
       color: 'white'
     }}>
-<BackgroundElements businessStatus="optimal" />
+      <BackgroundElements businessStatus="optimal" />
       <ToastContainer
         position="top-right"
         autoClose={3000}
@@ -1437,7 +1440,7 @@ const ClientManagement = () => {
             <motion.button
               whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => {/* Export functionality */}}
+              onClick={() => {/* Export functionality */ }}
               style={{
                 ...glassStyle,
                 padding: '0.75rem 1.5rem',
@@ -2127,7 +2130,7 @@ const ClientManagement = () => {
                     Clientes Inativos Detectados
                   </h4>
                   <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-                    {clients.filter(c => !c.is_active).length} clientes estão inativos. 
+                    {clients.filter(c => !c.is_active).length} clientes estão inativos.
                     Considere reativar ou remover da base de dados.
                   </p>
                 </div>
@@ -2314,8 +2317,8 @@ const ClientManagement = () => {
                           >
                             Nome
                             {sortConfig.key === "name" ? (
-                              sortConfig.direction === "asc" ? 
-                                <ChevronUp size={16} /> : 
+                              sortConfig.direction === "asc" ?
+                                <ChevronUp size={16} /> :
                                 <ChevronDown size={16} />
                             ) : (
                               <ChevronDown size={16} style={{ opacity: 0.5 }} />
@@ -2358,15 +2361,15 @@ const ClientManagement = () => {
                           >
                             Avença Mensal
                             {sortConfig.key === "monthly_fee" ? (
-                              sortConfig.direction === "asc" ? 
-                                <ChevronUp size={16} /> : 
+                              sortConfig.direction === "asc" ?
+                                <ChevronUp size={16} /> :
                                 <ChevronDown size={16} />
                             ) : (
                               <ChevronDown size={16} style={{ opacity: 0.5 }} />
                             )}
                           </motion.button>
                         </th>
-                         <th style={{
+                        <th style={{
                           padding: '1rem',
                           textAlign: 'left',
                           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
@@ -2471,14 +2474,14 @@ const ClientManagement = () => {
                               borderRadius: '9999px',
                               fontSize: '0.75rem',
                               fontWeight: '600',
-                              background: client.is_active 
-                                ? 'rgba(52, 211, 153, 0.2)' 
+                              background: client.is_active
+                                ? 'rgba(52, 211, 153, 0.2)'
                                 : 'rgba(239, 68, 68, 0.2)',
-                              border: client.is_active 
-                                ? '1px solid rgba(52, 211, 153, 0.3)' 
+                              border: client.is_active
+                                ? '1px solid rgba(52, 211, 153, 0.3)'
                                 : '1px solid rgba(239, 68, 68, 0.3)',
-                              color: client.is_active 
-                                ? 'rgb(110, 231, 183)' 
+                              color: client.is_active
+                                ? 'rgb(110, 231, 183)'
                                 : 'rgb(252, 165, 165)'
                             }}>
                               {client.is_active ? "Ativo" : "Inativo"}
@@ -2515,16 +2518,16 @@ const ClientManagement = () => {
                                   whileTap={{ scale: 0.9 }}
                                   onClick={() => toggleClientStatus(client)}
                                   style={{
-                                    background: client.is_active 
-                                      ? 'rgba(251, 146, 60, 0.2)' 
+                                    background: client.is_active
+                                      ? 'rgba(251, 146, 60, 0.2)'
                                       : 'rgba(52, 211, 153, 0.2)',
-                                    border: client.is_active 
-                                      ? '1px solid rgba(251, 146, 60, 0.3)' 
+                                    border: client.is_active
+                                      ? '1px solid rgba(251, 146, 60, 0.3)'
                                       : '1px solid rgba(52, 211, 153, 0.3)',
                                     borderRadius: '6px',
                                     padding: '0.5rem',
-                                    color: client.is_active 
-                                      ? 'rgb(251, 146, 60)' 
+                                    color: client.is_active
+                                      ? 'rgb(251, 146, 60)'
                                       : 'rgb(52, 211, 153)',
                                     cursor: 'pointer'
                                   }}
@@ -2597,9 +2600,9 @@ const ClientManagement = () => {
               setSelectedClient(null);
             }}
             onSave={(updatedData) => {
-              updateClientMutation.mutate({ 
-                id: selectedClient.id, 
-                updatedData 
+              updateClientMutation.mutate({
+                id: selectedClient.id,
+                updatedData
               });
             }}
             permissions={permissions}
@@ -2620,7 +2623,7 @@ const ClientManagement = () => {
         }}
       >
         <motion.button
-          whileHover={{ 
+          whileHover={{
             scale: 1.1,
             boxShadow: '0 0 30px rgba(147, 51, 234, 0.5)'
           }}

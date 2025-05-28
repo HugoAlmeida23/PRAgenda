@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import api from "../api";
 import "../styles/Home.css";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7,8 +7,6 @@ import { toast, ToastContainer } from "react-toastify";
 import {
   CheckCircle,
   Clock,
-  Search,
-  Filter,
   Plus,
   Edit,
   Trash2,
@@ -20,17 +18,11 @@ import {
   ChevronUp,
   RotateCcw,
   Settings,
-  Sparkles,
   Brain,
   Target,
-  Activity,
-  Eye,
-  EyeOff,
-  ArrowRight,
-  Loader2
+  Activity
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import TaskWorkflowView from './TaskOverflowView';
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
 import BackgroundElements from "../components/HeroSection/BackgroundElements";
@@ -291,7 +283,7 @@ const TaskManagement = () => {
   // Handle submission from the main form
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    
+
     if (selectedTask) {
       const canEdit = permissions.isOrgAdmin ||
         permissions.canEditAllTasks ||
@@ -309,7 +301,7 @@ const TaskManagement = () => {
       }
       createTaskMutation.mutate(formData);
     }
-  }, [selectedTask, formData, createTaskMutation, updateTaskMutation, permissions]); 
+  }, [selectedTask, formData, createTaskMutation, updateTaskMutation, permissions]);
 
   // Handle NLP form submission
   const handleNaturalLanguageSubmit = useCallback(async (e) => {
@@ -511,7 +503,7 @@ const TaskManagement = () => {
         justifyContent: 'center',
         padding: '2rem'
       }}>
-<BackgroundElements businessStatus="optimal" />        <motion.div
+        <BackgroundElements businessStatus="optimal" />        <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           style={{
@@ -569,7 +561,7 @@ const TaskManagement = () => {
         justifyContent: 'center',
         padding: '2rem'
       }}>
-<BackgroundElements businessStatus="optimal" />        <motion.div
+        <BackgroundElements businessStatus="optimal" />        <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           style={{
@@ -599,9 +591,10 @@ const TaskManagement = () => {
     <div style={{
       position: 'relative',
       minHeight: '100vh',
-      color: 'white'
+      color: 'white',
+      padding: '2rem',
     }}>
-<BackgroundElements businessStatus="optimal" />      <ToastContainer
+      <BackgroundElements businessStatus="optimal" />      <ToastContainer
         position="top-right"
         autoClose={3000}
         hideProgressBar={false}
@@ -616,7 +609,7 @@ const TaskManagement = () => {
           position: 'relative',
           zIndex: 10,
           padding: '2rem',
-          paddingTop: '1rem'
+          paddingTop: '1rem',
         }}
       >
         {/* Header */}
@@ -957,620 +950,620 @@ const TaskManagement = () => {
                     ))}
                   </select>
                 </div>
-                </form>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-{/* Task Summary Stats */}
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+      {/* Task Summary Stats */}
+      <motion.div
+        variants={itemVariants}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '1rem',
+          marginBottom: '2rem'
+        }}
+      >
+        {/* Total Tasks */}
         <motion.div
-          variants={itemVariants}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '1rem',
-            marginBottom: '2rem'
-          }}
-        >
-          {/* Total Tasks */}
-          <motion.div
-            whileHover={{ scale: 1.02, y: -5 }}
-            style={{
-              ...glassStyle,
-              padding: '1.5rem',
-              textAlign: 'center',
-              background: 'rgba(59, 130, 246, 0.1)',
-              border: '1px solid rgba(59, 130, 246, 0.2)'
-            }}
-          >
-            <div style={{
-              fontSize: '2rem',
-              fontWeight: '700',
-              color: 'rgb(59, 130, 246)',
-              marginBottom: '0.5rem'
-            }}>
-              {tasks.length}
-            </div>
-            <div style={{
-              fontSize: '0.875rem',
-              color: 'rgba(255, 255, 255, 0.8)'
-            }}>
-              Total de Tarefas
-            </div>
-          </motion.div>
-
-          {/* Pending Tasks */}
-          <motion.div
-            whileHover={{ scale: 1.02, y: -5 }}
-            style={{
-              ...glassStyle,
-              padding: '1.5rem',
-              textAlign: 'center',
-              background: 'rgba(251, 191, 36, 0.1)',
-              border: '1px solid rgba(251, 191, 36, 0.2)'
-            }}
-          >
-            <div style={{
-              fontSize: '2rem',
-              fontWeight: '700',
-              color: 'rgb(251, 191, 36)',
-              marginBottom: '0.5rem'
-            }}>
-              {tasks.filter(t => t.status === 'pending').length}
-            </div>
-            <div style={{
-              fontSize: '0.875rem',
-              color: 'rgba(255, 255, 255, 0.8)'
-            }}>
-              Pendentes
-            </div>
-          </motion.div>
-
-          {/* In Progress Tasks */}
-          <motion.div
-            whileHover={{ scale: 1.02, y: -5 }}
-            style={{
-              ...glassStyle,
-              padding: '1.5rem',
-              textAlign: 'center',
-              background: 'rgba(59, 130, 246, 0.1)',
-              border: '1px solid rgba(59, 130, 246, 0.2)'
-            }}
-          >
-            <div style={{
-              fontSize: '2rem',
-              fontWeight: '700',
-              color: 'rgb(59, 130, 246)',
-              marginBottom: '0.5rem'
-            }}>
-              {tasks.filter(t => t.status === 'in_progress').length}
-            </div>
-            <div style={{
-              fontSize: '0.875rem',
-              color: 'rgba(255, 255, 255, 0.8)'
-            }}>
-              Em Progresso
-            </div>
-          </motion.div>
-
-          {/* Completed Tasks */}
-          <motion.div
-            whileHover={{ scale: 1.02, y: -5 }}
-            style={{
-              ...glassStyle,
-              padding: '1.5rem',
-              textAlign: 'center',
-              background: 'rgba(52, 211, 153, 0.1)',
-              border: '1px solid rgba(52, 211, 153, 0.2)'
-            }}
-          >
-            <div style={{
-              fontSize: '2rem',
-              fontWeight: '700',
-              color: 'rgb(52, 211, 153)',
-              marginBottom: '0.5rem'
-            }}>
-              {tasks.filter(t => t.status === 'completed').length}
-            </div>
-            <div style={{
-              fontSize: '0.875rem',
-              color: 'rgba(255, 255, 255, 0.8)'
-            }}>
-              Concluídas
-            </div>
-          </motion.div>
-
-          {/* Overdue Tasks */}
-          <motion.div
-            whileHover={{ scale: 1.02, y: -5 }}
-            style={{
-              ...glassStyle,
-              padding: '1.5rem',
-              textAlign: 'center',
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.2)'
-            }}
-          >
-            <div style={{
-              fontSize: '2rem',
-              fontWeight: '700',
-              color: 'rgb(239, 68, 68)',
-              marginBottom: '0.5rem'
-            }}>
-              {tasks.filter(t => isOverdue(t.deadline) && t.status !== 'completed').length}
-            </div>
-            <div style={{
-              fontSize: '0.875rem',
-              color: 'rgba(255, 255, 255, 0.8)'
-            }}>
-              Atrasadas
-            </div>
-          </motion.div>
-        </motion.div>
-
-        {/* Task List */}
-        <motion.div
-          variants={itemVariants}
+          whileHover={{ scale: 1.02, y: -5 }}
           style={{
             ...glassStyle,
-            padding: 0,
-            overflow: 'hidden'
+            padding: '1.5rem',
+            textAlign: 'center',
+            background: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.2)'
           }}
         >
           <div style={{
-            padding: '1.5rem',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
+            fontSize: '2rem',
+            fontWeight: '700',
+            color: 'rgb(59, 130, 246)',
+            marginBottom: '0.5rem'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{
-                padding: '0.5rem',
-                backgroundColor: 'rgba(52, 211, 153, 0.2)',
-                borderRadius: '12px'
-              }}>
-                <Activity style={{ color: 'rgb(52, 211, 153)' }} size={20} />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
-                  Lista de Tarefas
-                </h3>
-                <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
-                  {filteredAndSortedTasks.length} tarefas encontradas
-                </p>
-              </div>
-            </div>
+            {tasks.length}
           </div>
+          <div style={{
+            fontSize: '0.875rem',
+            color: 'rgba(255, 255, 255, 0.8)'
+          }}>
+            Total de Tarefas
+          </div>
+        </motion.div>
 
-          {filteredAndSortedTasks.length === 0 ? (
+        {/* Pending Tasks */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -5 }}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            textAlign: 'center',
+            background: 'rgba(251, 191, 36, 0.1)',
+            border: '1px solid rgba(251, 191, 36, 0.2)'
+          }}
+        >
+          <div style={{
+            fontSize: '2rem',
+            fontWeight: '700',
+            color: 'rgb(251, 191, 36)',
+            marginBottom: '0.5rem'
+          }}>
+            {tasks.filter(t => t.status === 'pending').length}
+          </div>
+          <div style={{
+            fontSize: '0.875rem',
+            color: 'rgba(255, 255, 255, 0.8)'
+          }}>
+            Pendentes
+          </div>
+        </motion.div>
+
+        {/* In Progress Tasks */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -5 }}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            textAlign: 'center',
+            background: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.2)'
+          }}
+        >
+          <div style={{
+            fontSize: '2rem',
+            fontWeight: '700',
+            color: 'rgb(59, 130, 246)',
+            marginBottom: '0.5rem'
+          }}>
+            {tasks.filter(t => t.status === 'in_progress').length}
+          </div>
+          <div style={{
+            fontSize: '0.875rem',
+            color: 'rgba(255, 255, 255, 0.8)'
+          }}>
+            Em Progresso
+          </div>
+        </motion.div>
+
+        {/* Completed Tasks */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -5 }}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            textAlign: 'center',
+            background: 'rgba(52, 211, 153, 0.1)',
+            border: '1px solid rgba(52, 211, 153, 0.2)'
+          }}
+        >
+          <div style={{
+            fontSize: '2rem',
+            fontWeight: '700',
+            color: 'rgb(52, 211, 153)',
+            marginBottom: '0.5rem'
+          }}>
+            {tasks.filter(t => t.status === 'completed').length}
+          </div>
+          <div style={{
+            fontSize: '0.875rem',
+            color: 'rgba(255, 255, 255, 0.8)'
+          }}>
+            Concluídas
+          </div>
+        </motion.div>
+
+        {/* Overdue Tasks */}
+        <motion.div
+          whileHover={{ scale: 1.02, y: -5 }}
+          style={{
+            ...glassStyle,
+            padding: '1.5rem',
+            textAlign: 'center',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.2)'
+          }}
+        >
+          <div style={{
+            fontSize: '2rem',
+            fontWeight: '700',
+            color: 'rgb(239, 68, 68)',
+            marginBottom: '0.5rem'
+          }}>
+            {tasks.filter(t => isOverdue(t.deadline) && t.status !== 'completed').length}
+          </div>
+          <div style={{
+            fontSize: '0.875rem',
+            color: 'rgba(255, 255, 255, 0.8)'
+          }}>
+            Atrasadas
+          </div>
+        </motion.div>
+      </motion.div>
+
+      {/* Task List */}
+      <motion.div
+        variants={itemVariants}
+        style={{
+          ...glassStyle,
+          padding: 0,
+          overflow: 'hidden'
+        }}
+      >
+        <div style={{
+          padding: '1.5rem',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div style={{
-              padding: '3rem',
-              textAlign: 'center',
-              color: 'rgba(255, 255, 255, 0.6)'
+              padding: '0.5rem',
+              backgroundColor: 'rgba(52, 211, 153, 0.2)',
+              borderRadius: '12px'
             }}>
-              <Target size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>
-                Nenhuma tarefa encontrada
-              </h4>
-              <p style={{ margin: 0 }}>
-                {searchTerm || Object.values(filters).some(val => val)
-                  ? "Tente ajustar os filtros para ver mais resultados."
-                  : "Crie sua primeira tarefa para começar!"}
+              <Activity style={{ color: 'rgb(52, 211, 153)' }} size={20} />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
+                Lista de Tarefas
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                {filteredAndSortedTasks.length} tarefas encontradas
               </p>
             </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{
-                width: '100%',
-                borderCollapse: 'collapse'
-              }}>
-                <thead>
-                  <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
-                    <th style={{
-                      padding: '1rem',
-                      textAlign: 'left',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => handleSort("title")}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'inherit',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          fontSize: 'inherit',
-                          fontWeight: 'inherit'
-                        }}
-                      >
-                        Título
-                        {sortConfig.key === "title" ? (
-                          sortConfig.direction === "asc" ? 
-                            <ChevronUp size={16} /> : 
-                            <ChevronDown size={16} />
-                        ) : (
-                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
-                        )}
-                      </motion.button>
-                    </th>
-                    <th style={{
-                      padding: '1rem',
-                      textAlign: 'left',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => handleSort("client_name")}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'inherit',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          fontSize: 'inherit',
-                          fontWeight: 'inherit'
-                        }}
-                      >
-                        Cliente
-                        {sortConfig.key === "client_name" ? (
-                          sortConfig.direction === "asc" ? 
-                            <ChevronUp size={16} /> : 
-                            <ChevronDown size={16} />
-                        ) : (
-                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
-                        )}
-                      </motion.button>
-                    </th>
-                    <th style={{
-                      padding: '1rem',
-                      textAlign: 'left',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => handleSort("priority")}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'inherit',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          fontSize: 'inherit',
-                          fontWeight: 'inherit'
-                        }}
-                      >
-                        Prioridade
-                        {sortConfig.key === "priority" ? (
-                          sortConfig.direction === "asc" ? 
-                            <ChevronUp size={16} /> : 
-                            <ChevronDown size={16} />
-                        ) : (
-                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
-                        )}
-                      </motion.button>
-                    </th>
-                    <th style={{
-                      padding: '1rem',
-                      textAlign: 'left',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => handleSort("deadline")}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'inherit',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          fontSize: 'inherit',
-                          fontWeight: 'inherit'
-                        }}
-                      >
-                        Prazo
-                        {sortConfig.key === "deadline" ? (
-                          sortConfig.direction === "asc" ? 
-                            <ChevronUp size={16} /> : 
-                            <ChevronDown size={16} />
-                        ) : (
-                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
-                        )}
-                      </motion.button>
-                    </th>
-                    <th style={{
-                      padding: '1rem',
-                      textAlign: 'left',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => handleSort("status")}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'inherit',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          fontSize: 'inherit',
-                          fontWeight: 'inherit'
-                        }}
-                      >
-                        Status
-                        {sortConfig.key === "status" ? (
-                          sortConfig.direction === "asc" ? 
-                            <ChevronUp size={16} /> : 
-                            <ChevronDown size={16} />
-                        ) : (
-                          <ChevronDown size={16} style={{ opacity: 0.5 }} />
-                        )}
-                      </motion.button>
-                    </th>
-                    <th style={{
-                      padding: '1rem',
-                      textAlign: 'left',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      Responsável
-                    </th>
-                    <th style={{
-                      padding: '1rem',
-                      textAlign: 'center',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: '0.875rem',
-                      fontWeight: '600',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAndSortedTasks.map((task, index) => (
-                    <motion.tr
-                      key={task.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
+          </div>
+        </div>
+
+        {filteredAndSortedTasks.length === 0 ? (
+          <div style={{
+            padding: '3rem',
+            textAlign: 'center',
+            color: 'rgba(255, 255, 255, 0.6)'
+          }}>
+            <Target size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+            <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>
+              Nenhuma tarefa encontrada
+            </h4>
+            <p style={{ margin: 0 }}>
+              {searchTerm || Object.values(filters).some(val => val)
+                ? "Tente ajustar os filtros para ver mais resultados."
+                : "Crie sua primeira tarefa para começar!"}
+            </p>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{
+              width: '100%',
+              borderCollapse: 'collapse'
+            }}>
+              <thead>
+                <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                  <th style={{
+                    padding: '1rem',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleSort("title")}
                       style={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.02)',
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
-                      }}
-                      whileHover={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        fontSize: 'inherit',
+                        fontWeight: 'inherit'
                       }}
                     >
-                      <td style={{ padding: '1rem' }}>
-                        <div>
+                      Título
+                      {sortConfig.key === "title" ? (
+                        sortConfig.direction === "asc" ?
+                          <ChevronUp size={16} /> :
+                          <ChevronDown size={16} />
+                      ) : (
+                        <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                      )}
+                    </motion.button>
+                  </th>
+                  <th style={{
+                    padding: '1rem',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleSort("client_name")}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        fontSize: 'inherit',
+                        fontWeight: 'inherit'
+                      }}
+                    >
+                      Cliente
+                      {sortConfig.key === "client_name" ? (
+                        sortConfig.direction === "asc" ?
+                          <ChevronUp size={16} /> :
+                          <ChevronDown size={16} />
+                      ) : (
+                        <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                      )}
+                    </motion.button>
+                  </th>
+                  <th style={{
+                    padding: '1rem',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleSort("priority")}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        fontSize: 'inherit',
+                        fontWeight: 'inherit'
+                      }}
+                    >
+                      Prioridade
+                      {sortConfig.key === "priority" ? (
+                        sortConfig.direction === "asc" ?
+                          <ChevronUp size={16} /> :
+                          <ChevronDown size={16} />
+                      ) : (
+                        <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                      )}
+                    </motion.button>
+                  </th>
+                  <th style={{
+                    padding: '1rem',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleSort("deadline")}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        fontSize: 'inherit',
+                        fontWeight: 'inherit'
+                      }}
+                    >
+                      Prazo
+                      {sortConfig.key === "deadline" ? (
+                        sortConfig.direction === "asc" ?
+                          <ChevronUp size={16} /> :
+                          <ChevronDown size={16} />
+                      ) : (
+                        <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                      )}
+                    </motion.button>
+                  </th>
+                  <th style={{
+                    padding: '1rem',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleSort("status")}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        fontSize: 'inherit',
+                        fontWeight: 'inherit'
+                      }}
+                    >
+                      Status
+                      {sortConfig.key === "status" ? (
+                        sortConfig.direction === "asc" ?
+                          <ChevronUp size={16} /> :
+                          <ChevronDown size={16} />
+                      ) : (
+                        <ChevronDown size={16} style={{ opacity: 0.5 }} />
+                      )}
+                    </motion.button>
+                  </th>
+                  <th style={{
+                    padding: '1rem',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    Responsável
+                  </th>
+                  <th style={{
+                    padding: '1rem',
+                    textAlign: 'center',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAndSortedTasks.map((task, index) => (
+                  <motion.tr
+                    key={task.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                    }}
+                    whileHover={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)'
+                    }}
+                  >
+                    <td style={{ padding: '1rem' }}>
+                      <div>
+                        <div style={{
+                          fontWeight: '600',
+                          color: 'white',
+                          fontSize: '0.875rem',
+                          marginBottom: '0.25rem'
+                        }}>
+                          {task.title}
+                        </div>
+                        {task.description && (
                           <div style={{
-                            fontWeight: '600',
-                            color: 'white',
-                            fontSize: '0.875rem',
-                            marginBottom: '0.25rem'
+                            color: 'rgba(255, 255, 255, 0.6)',
+                            fontSize: '0.75rem',
+                            maxWidth: '300px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}>
-                            {task.title}
+                            {task.description}
                           </div>
-                          {task.description && (
-                            <div style={{
-                              color: 'rgba(255, 255, 255, 0.6)',
-                              fontSize: '0.75rem',
-                              maxWidth: '300px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}>
-                              {task.description}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        <span style={{
-                          color: 'rgba(255, 255, 255, 0.8)',
-                          fontSize: '0.875rem'
-                        }}>
-                          {task.client_name || 'N/A'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        <div style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          padding: '0.25rem 0.75rem',
-                          borderRadius: '9999px',
-                          fontSize: '0.75rem',
-                          fontWeight: '600',
-                          backgroundColor: `${getPriorityInfo(task.priority).color}20`,
-                          border: `1px solid ${getPriorityInfo(task.priority).color}30`,
-                          color: getPriorityInfo(task.priority).color
-                        }}>
-                          {getPriorityInfo(task.priority).label}
-                        </div>
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          color: isOverdue(task.deadline) && task.status !== 'completed'
-                            ? 'rgb(239, 68, 68)'
-                            : 'rgba(255, 255, 255, 0.8)',
-                          fontSize: '0.875rem'
-                        }}>
-                          <Calendar
-                            size={16}
-                            style={{
-                              marginRight: '0.5rem',
-                              color: isOverdue(task.deadline) && task.status !== 'completed'
-                                ? 'rgb(239, 68, 68)'
-                                : 'rgba(255, 255, 255, 0.6)'
-                            }}
-                          />
-                          {formatDate(task.deadline)}
-                          {isOverdue(task.deadline) && task.status !== 'completed' && (
-                            <AlertTriangle size={16} style={{ marginLeft: '0.5rem', color: 'rgb(239, 68, 68)' }} />
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        <div style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          padding: '0.5rem 1rem',
-                          borderRadius: '9999px',
-                          fontSize: '0.75rem',
-                          fontWeight: '600',
-                          backgroundColor: `${STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'}20`,
-                          border: `1px solid ${STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'}30`,
-                          color: STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'
-                        }}>
-                          {STATUS_OPTIONS.find(option => option.value === task.status)?.label || task.status}
-                        </div>
-                      </td>
-                      <td style={{ padding: '1rem' }}>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          color: 'rgba(255, 255, 255, 0.8)',
-                          fontSize: '0.875rem'
-                        }}>
-                          <User size={16} style={{ marginRight: '0.5rem', color: 'rgba(255, 255, 255, 0.6)' }} />
-                          {task.assigned_to_name || "Não atribuída"}
-                        </div>
-                      </td>
-                      <td style={{ padding: '1rem', textAlign: 'center' }}>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.5rem'
-                        }}>
-                          {task.status !== "completed" && (
-                            <motion.button
-                              whileHover={{ scale: 1.1, y: -2 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => updateTaskStatusHandler(task, "completed")}
-                              title="Marcar como concluída"
-                              style={{
-                                background: 'rgba(52, 211, 153, 0.2)',
-                                border: '1px solid rgba(52, 211, 153, 0.3)',
-                                borderRadius: '6px',
-                                padding: '0.5rem',
-                                color: 'rgb(52, 211, 153)',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <CheckCircle size={16} />
-                            </motion.button>
-                          )}
-                          {task.status === "pending" && (
-                            <motion.button
-                              whileHover={{ scale: 1.1, y: -2 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={() => updateTaskStatusHandler(task, "in_progress")}
-                              title="Marcar como em progresso"
-                              style={{
-                                background: 'rgba(59, 130, 246, 0.2)',
-                                border: '1px solid rgba(59, 130, 246, 0.3)',
-                                borderRadius: '6px',
-                                padding: '0.5rem',
-                                color: 'rgb(59, 130, 246)',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <Clock size={16} />
-                            </motion.button>
-                          )}
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <span style={{
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        fontSize: '0.875rem'
+                      }}>
+                        {task.client_name || 'N/A'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        backgroundColor: `${getPriorityInfo(task.priority).color}20`,
+                        border: `1px solid ${getPriorityInfo(task.priority).color}30`,
+                        color: getPriorityInfo(task.priority).color
+                      }}>
+                        {getPriorityInfo(task.priority).label}
+                      </div>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: isOverdue(task.deadline) && task.status !== 'completed'
+                          ? 'rgb(239, 68, 68)'
+                          : 'rgba(255, 255, 255, 0.8)',
+                        fontSize: '0.875rem'
+                      }}>
+                        <Calendar
+                          size={16}
+                          style={{
+                            marginRight: '0.5rem',
+                            color: isOverdue(task.deadline) && task.status !== 'completed'
+                              ? 'rgb(239, 68, 68)'
+                              : 'rgba(255, 255, 255, 0.6)'
+                          }}
+                        />
+                        {formatDate(task.deadline)}
+                        {isOverdue(task.deadline) && task.status !== 'completed' && (
+                          <AlertTriangle size={16} style={{ marginLeft: '0.5rem', color: 'rgb(239, 68, 68)' }} />
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        backgroundColor: `${STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'}20`,
+                        border: `1px solid ${STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'}30`,
+                        color: STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'rgba(255, 255, 255, 0.6)'
+                      }}>
+                        {STATUS_OPTIONS.find(option => option.value === task.status)?.label || task.status}
+                      </div>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        fontSize: '0.875rem'
+                      }}>
+                        <User size={16} style={{ marginRight: '0.5rem', color: 'rgba(255, 255, 255, 0.6)' }} />
+                        {task.assigned_to_name || "Não atribuída"}
+                      </div>
+                    </td>
+                    <td style={{ padding: '1rem', textAlign: 'center' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem'
+                      }}>
+                        {task.status !== "completed" && (
                           <motion.button
                             whileHover={{ scale: 1.1, y: -2 }}
                             whileTap={{ scale: 0.9 }}
-                            onClick={() => selectTaskForEdit(task)}
-                            title="Editar tarefa"
+                            onClick={() => updateTaskStatusHandler(task, "completed")}
+                            title="Marcar como concluída"
                             style={{
-                              background: 'rgba(147, 51, 234, 0.2)',
-                              border: '1px solid rgba(147, 51, 234, 0.3)',
+                              background: 'rgba(52, 211, 153, 0.2)',
+                              border: '1px solid rgba(52, 211, 153, 0.3)',
                               borderRadius: '6px',
                               padding: '0.5rem',
-                              color: 'rgb(147, 51, 234)',
+                              color: 'rgb(52, 211, 153)',
                               cursor: 'pointer'
                             }}
                           >
-                            <Edit size={16} />
+                            <CheckCircle size={16} />
                           </motion.button>
+                        )}
+                        {task.status === "pending" && (
                           <motion.button
                             whileHover={{ scale: 1.1, y: -2 }}
                             whileTap={{ scale: 0.9 }}
-                            onClick={() => handleViewWorkflow(task)}
-                            title="Ver workflow"
+                            onClick={() => updateTaskStatusHandler(task, "in_progress")}
+                            title="Marcar como em progresso"
                             style={{
-                              background: 'rgba(251, 146, 60, 0.2)',
-                              border: '1px solid rgba(251, 146, 60, 0.3)',
+                              background: 'rgba(59, 130, 246, 0.2)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
                               borderRadius: '6px',
                               padding: '0.5rem',
-                              color: 'rgb(251, 146, 60)',
+                              color: 'rgb(59, 130, 246)',
                               cursor: 'pointer'
                             }}
                           >
-                            <Settings size={16} />
+                            <Clock size={16} />
                           </motion.button>
-                          <motion.button
-                            whileHover={{ scale: 1.1, y: -2 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => confirmDelete(task.id)}
-                            title="Excluir tarefa"
-                            style={{
-                              background: 'rgba(239, 68, 68, 0.2)',
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
-                              borderRadius: '6px',
-                              padding: '0.5rem',
-                              color: 'rgb(239, 68, 68)',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </motion.button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </motion.div>
+                        )}
+                        <motion.button
+                          whileHover={{ scale: 1.1, y: -2 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => selectTaskForEdit(task)}
+                          title="Editar tarefa"
+                          style={{
+                            background: 'rgba(147, 51, 234, 0.2)',
+                            border: '1px solid rgba(147, 51, 234, 0.3)',
+                            borderRadius: '6px',
+                            padding: '0.5rem',
+                            color: 'rgb(147, 51, 234)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Edit size={16} />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.1, y: -2 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => handleViewWorkflow(task)}
+                          title="Ver workflow"
+                          style={{
+                            background: 'rgba(251, 146, 60, 0.2)',
+                            border: '1px solid rgba(251, 146, 60, 0.3)',
+                            borderRadius: '6px',
+                            padding: '0.5rem',
+                            color: 'rgb(251, 146, 60)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Settings size={16} />
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.1, y: -2 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => confirmDelete(task.id)}
+                          title="Excluir tarefa"
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.2)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '6px',
+                            padding: '0.5rem',
+                            color: 'rgb(239, 68, 68)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </motion.button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </motion.div>
       <style jsx>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
@@ -1652,4 +1645,3 @@ const TaskManagement = () => {
 };
 
 export default TaskManagement;
-        
