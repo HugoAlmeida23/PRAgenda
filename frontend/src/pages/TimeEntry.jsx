@@ -246,7 +246,7 @@ const TimeEntry = () => {
     mutationFn: (entryData) => api.post("/time-entries/", entryData),
     onSuccess: (data) => {
       toast.success("Registo de tempo criado com sucesso");
-      setLastSavedEntry(data); // Assuming data structure is { client_name: "...", minutes_spent: ... }
+      setLastSavedEntry(data); 
       resetForm();
       queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
     },

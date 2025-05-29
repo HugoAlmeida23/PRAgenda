@@ -8,98 +8,7 @@ import {
   BarChart3, TrendingUp, Calendar, FileText, HelpCircle,User2
 } from 'lucide-react';
 import api from '../../api'; // Adjust the import based on your API setup
-
-// Background Component (similar to BackgroundElements)
-const UnifiedBackground = () => {
-  const particles = Array.from({ length: 8 }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    delay: Math.random() * 2,
-    duration: 3 + Math.random() * 4,
-    size: 4 + Math.random() * 8
-  }));
-
-  return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      overflowY: 'hidden',
-      zIndex: -1
-    }}>
-      {/* Main Gradient */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'linear-gradient(135deg, rgb(19, 41, 77) 0%, rgb(18, 7, 29) 50%, rgb(3, 53, 61) 100%)',
-
-      }} />
-
-      {/* Animated Overlay */}
-      <motion.div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          opacity: 0.4
-        }}
-        
-        animate={{
-          background: [
-            'radial-gradient(circle at 20% 80%, rgb(19, 41, 77) 50%, transparent 50%)',
-            'radial-gradient(circle at 80% 20%, rgb(18, 7, 29) 50%, transparent 50%)',
-            'radial-gradient(circle at 40% 40%, rgb(3, 53, 61) 100%, transparent 50%)'
-          ]
-        }}
-        transition={{
-          duration: 8,
-          repeat: Infinity,
-          repeatType: "reverse"
-        }}
-      />
-
-      {/* Floating Particles */}
-      {particles.map((particle) => (
-        <motion.div
-          key={particle.id}
-          style={{
-            position: 'absolute',
-            width: '6px',
-            height: '6px',
-            backgroundColor: 'rgba(255, 255, 255, 0.3)',
-            borderRadius: '50%',
-            left: `${particle.x}%`,
-            top: `${particle.y}%`
-          }}
-          animate={{
-            y: [-particle.size, particle.size],
-            x: [-particle.size / 2, particle.size / 2],
-            opacity: [0.1, 0.4, 0.1],
-            scale: [0.5, 1, 0.5]
-          }}
-          transition={{
-            duration: particle.duration,
-            repeat: Infinity,
-            repeatType: "reverse",
-            delay: particle.delay,
-            ease: "easeInOut"
-          }}
-        />
-      ))}
-
-      {/* Grid Pattern */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        opacity: 0.02,
-        backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-        `,
-        backgroundSize: '50px 50px'
-      }} />
-    </div>
-  );
-};
+import BackgroundElements from '../HeroSection/BackgroundElements';
 
 // Navigation Component
 const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
@@ -154,7 +63,7 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
               top: 0,
               bottom: 0,
               width: '320px',
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.1)',
               backdropFilter: 'blur(20px)',
               borderRight: '1px solid rgba(255, 255, 255, 0.2)',
               zIndex: 999,
@@ -178,7 +87,7 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.75rem'
+                    gap: '0.75rem',
                   }}
                   whileHover={{ scale: 1.02 }}
                 >
@@ -412,7 +321,7 @@ const Layout = () => {
       position: 'relative',
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
-      <UnifiedBackground />
+       <BackgroundElements businessStatus="optimal" />
 
       {/* Top Navigation Bar */}
       <motion.header
