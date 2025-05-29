@@ -1,4 +1,5 @@
-from venv import logger
+import logging
+logger = logging.getLogger(__name__)
 from rest_framework import viewsets, generics
 from rest_framework.request import Request
 from datetime import datetime
@@ -29,8 +30,8 @@ from django.db.models import Sum, Count, Avg
 import logging
 from .constants.prompts import GEMINI_TIME_EXTRACTION_PROMPT
 from .services.gemini_service import GeminiService
-from django.db.models import Q
-from .services.data_service import DataService
+from django.db.models import Q, Prefetch, Sum, Count, Avg  # FIXED: Added Sum, Count, Avg importfrom .services.data_service import DataService
+from django.db import models
 
 logger = logging.getLogger(__name__)
 

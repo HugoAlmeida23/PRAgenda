@@ -158,7 +158,7 @@ const TimeEntry = () => {
     sortField: "date",
     sortDirection: "desc"
   });
-
+  
   // Consultas React Query
   const {
     data: timeEntries = [],

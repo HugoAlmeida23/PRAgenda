@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from '@tanstack/react-query';
 import { toast, ToastContainer } from "react-toastify";
 import TimeEntryForms from "../components/TimeEntryForms";
+import TaskOverflow from "./TaskOverflow";
 import {
   CheckCircle,
   Clock,
@@ -35,7 +36,18 @@ import {
   SlidersHorizontal, // For filter button
   EyeOff,
   X,
-  Info
+  Info,
+  Network,
+  Users,
+  ArrowRight,
+  Sparkles,
+  CheckCircle2,
+  Clock4,
+  User2,
+  Star,
+  Workflow,
+  GitBranch,
+  Route, 
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from "../contexts/PermissionsContext";
@@ -61,19 +73,228 @@ const PRIORITY_OPTIONS = [
 // --- Data Fetching Function (Outside Component) ---
 const fetchTaskManagementData = async (userId) => {
   console.log("Fetching task management data for user:", userId);
-  const [tasksRes, clientsRes, usersRes, categoriesRes] = await Promise.all([
+  const [tasksRes, clientsRes, usersRes, categoriesRes, workflowsRes] = await Promise.all([
     api.get(`/tasks/?user=${userId}`),
     api.get("/clients/?is_active=true"),
     api.get("/profiles/"),
-    api.get("/task-categories/")
+    api.get("/task-categories/"),
+    api.get("/workflow-definitions/?is_active=true") // ADICIONAR ESTA LINHA
   ]);
-  console.log("Data fetched:", { tasks: tasksRes.data.length, clients: clientsRes.data.length, users: usersRes.data.length, categories: categoriesRes.data.length });
+  console.log("Data fetched:", {
+    tasks: tasksRes.data.length,
+    clients: clientsRes.data.length,
+    users: usersRes.data.length,
+    categories: categoriesRes.data.length,
+    workflows: workflowsRes.data.length  // ADICIONAR ESTA LINHA
+  });
   return {
     tasks: tasksRes.data || [],
     clients: clientsRes.data || [],
     users: usersRes.data || [],
     categories: categoriesRes.data || [],
+    workflows: workflowsRes.data || [], // ADICIONAR ESTA LINHA
   };
+};
+
+const WorkflowConfiguration = ({
+  selectedWorkflow,
+  workflows,
+  users,
+  workflowSteps,
+  onStepAssignmentChange,
+  isLoadingSteps
+}) => {
+  if (!selectedWorkflow) return null;
+
+  const selectedWorkflowData = workflows.find(w => w.id === selectedWorkflow);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.3 }}
+      style={{
+        background: 'rgba(147, 51, 234, 0.1)',
+        border: '1px solid rgba(147, 51, 234, 0.2)',
+        borderRadius: '12px',
+        padding: '1.5rem',
+        marginTop: '1rem'
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        marginBottom: '1.5rem'
+      }}>
+        <Workflow size={20} style={{ color: 'rgb(147, 51, 234)' }} />
+        <div>
+          <h4 style={{ margin: 0, color: 'white', fontWeight: '600' }}>
+            Configuração do Workflow: {selectedWorkflowData?.name}
+          </h4>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+            Atribua responsáveis para cada passo do workflow
+          </p>
+        </div>
+      </div>
+
+      {isLoadingSteps ? (
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <Loader2 size={24} className="animate-spin" style={{ color: 'rgb(147, 51, 234)' }} />
+          <p style={{ margin: '0.5rem 0 0 0', color: 'rgba(255, 255, 255, 0.7)' }}>
+            Carregando passos...
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {workflowSteps.map((step, index) => (
+            <div key={step.id} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
+              padding: '1rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                background: 'rgba(147, 51, 234, 0.2)',
+                border: '1px solid rgba(147, 51, 234, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'rgb(147, 51, 234)',
+                fontWeight: '600',
+                fontSize: '0.875rem'
+              }}>
+                {step.order}
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: '600', color: 'white', marginBottom: '0.25rem' }}>
+                  {step.name}
+                </div>
+                {step.description && (
+                  <div style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+                    {step.description}
+                  </div>
+                )}
+                {step.requires_approval && (
+                  <div style={{
+                    fontSize: '0.75rem',
+                    color: 'rgb(251, 191, 36)',
+                    marginTop: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    <AlertTriangle size={12} />
+                    Requer aprovação: {step.approver_role || 'Necessária'}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ minWidth: '200px' }}>
+                <select
+                  value={step.assign_to || ''}
+                  onChange={(e) => onStepAssignmentChange(step.id, e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>
+                    Selecionar Responsável
+                  </option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.user} style={{ background: '#1f2937', color: 'white' }}>
+                      {user.username}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {index < workflowSteps.length - 1 && (
+                <ArrowRight size={16} style={{ color: 'rgba(255, 255, 255, 0.4)' }} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
+const WorkflowIndicator = ({ task, onViewWorkflow }) => {
+  if (!task.workflow_name) return null;
+
+  const progressPercentage = task.workflow_progress?.percentage || 0;
+  const currentStep = task.workflow_progress?.current_step || 0;
+  const totalSteps = task.workflow_progress?.total_steps || 0;
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.5rem',
+      background: 'rgba(147, 51, 234, 0.1)',
+      border: '1px solid rgba(147, 51, 234, 0.2)',
+      borderRadius: '8px',
+      fontSize: '0.75rem'
+    }}>
+      <Network size={12} style={{ color: 'rgb(147, 51, 234)' }} />
+      <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+        {task.workflow_name}
+      </span>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+        color: 'rgb(147, 51, 234)'
+      }}>
+        <span>{currentStep}/{totalSteps}</span>
+        <div style={{
+          width: '30px',
+          height: '4px',
+          background: 'rgba(147, 51, 234, 0.2)',
+          borderRadius: '2px',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            width: `${progressPercentage}%`,
+            height: '100%',
+            background: 'rgb(147, 51, 234)',
+            borderRadius: '2px'
+          }} />
+        </div>
+      </div>
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={() => onViewWorkflow(task)}
+        style={{
+          background: 'rgba(147, 51, 234, 0.2)',
+          border: '1px solid rgba(147, 51, 234, 0.3)',
+          borderRadius: '4px',
+          padding: '0.25rem',
+          color: 'rgb(147, 51, 234)',
+          cursor: 'pointer'
+        }}
+      >
+        <EyeIcon size={12} />
+      </motion.button>
+    </div>
+  );
 };
 
 // --- Main Component ---
@@ -84,6 +305,7 @@ const TaskManagement = () => {
   const getInitialFormData = () => ({
     title: "", description: "", client: "", category: "", assigned_to: "",
     status: "pending", priority: 3, deadline: "", estimated_time_minutes: "",
+    worflow: "", workflow_step_assignments: {}
   });
 
   // --- React Query Client ---
@@ -103,7 +325,11 @@ const TaskManagement = () => {
   const [notifications, setNotifications] = useState([]);
   const [showTimeEntryModal, setShowTimeEntryModal] = useState(false);
   const [selectedTaskForTimeEntry, setSelectedTaskForTimeEntry] = useState(null);
-
+  const [selectedWorkflow, setSelectedWorkflow] = useState('');
+  const [workflowSteps, setWorkflowSteps] = useState([]);
+  const [stepAssignments, setStepAssignments] = useState({});
+  const [isLoadingSteps, setIsLoadingSteps] = useState(false);
+  const [showWorkflowConfig, setShowWorkflowConfig] = useState(false);
 
   // --- Data Fetching using React Query ---
   const { data, isLoading: isLoadingData, isError, error, refetch } = useQuery({
@@ -123,6 +349,7 @@ const TaskManagement = () => {
   const clients = data?.clients ?? [];
   const users = data?.users ?? [];
   const categories = data?.categories ?? [];
+  const workflows = data?.workflows ?? [];
 
   const addNotification = useCallback((type, title, message, duration = 4000) => {
     const id = Date.now() + Math.random();
@@ -134,6 +361,35 @@ const TaskManagement = () => {
     setTimeout(() => {
       setNotifications(prev => prev.filter(notif => notif.id !== id));
     }, duration);
+  }, []);
+
+  const fetchWorkflowSteps = useCallback(async (workflowId) => {
+    if (!workflowId) {
+      setWorkflowSteps([]);
+      setStepAssignments({});
+      setShowWorkflowConfig(false);
+      return;
+    }
+
+    try {
+      setIsLoadingSteps(true);
+      const response = await api.get(`/workflow-steps/?workflow=${workflowId}`);
+      const steps = response.data.sort((a, b) => a.order - b.order);
+      setWorkflowSteps(steps);
+      setShowWorkflowConfig(true);
+
+      // Inicializar assignments vazios
+      const initialAssignments = {};
+      steps.forEach(step => {
+        initialAssignments[step.id] = step.assign_to || '';
+      });
+      setStepAssignments(initialAssignments);
+    } catch (error) {
+      console.error("Error fetching workflow steps:", error);
+      toast.error("Falha ao carregar passos do workflow");
+    } finally {
+      setIsLoadingSteps(false);
+    }
   }, []);
 
   const removeNotification = useCallback((id) => {
@@ -441,6 +697,18 @@ const TaskManagement = () => {
       ...prev,
       [name]: type === "number" ? (value ? parseInt(value, 10) : "") : value,
     }));
+
+    if (name === 'workflow') {
+      setSelectedWorkflow(value);
+      fetchWorkflowSteps(value);
+    }
+  }, [fetchWorkflowSteps]);
+
+  const handleStepAssignmentChange = useCallback((stepId, userId) => {
+    setStepAssignments(prev => ({
+      ...prev,
+      [stepId]: userId
+    }));
   }, []);
 
   const handleFilterChange = useCallback((e) => {
@@ -470,6 +738,10 @@ const TaskManagement = () => {
     setShowNaturalLanguageForm(false);
     setNaturalLanguageInput("");
     setSelectedTaskForWorkflow(null);
+    setSelectedWorkflow('');
+    setWorkflowSteps([]);
+    setStepAssignments({});
+    setShowWorkflowConfig(false);
   }, []);
 
   // Handle submission from the main form
@@ -1267,6 +1539,42 @@ const TaskManagement = () => {
                   </div>
                 </div>
 
+                {/* Workflow */}
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    marginBottom: '0.5rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    Workflow (Opcional)
+                  </label>
+                  <select
+                    name="workflow"
+                    value={formData.workflow}
+                    onChange={handleInputChange}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '8px',
+                      color: 'white',
+                      fontSize: '0.875rem'
+                    }}
+                  >
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>
+                      Selecionar Workflow
+                    </option>
+                    {workflows.map((workflow) => (
+                      <option key={workflow.id} value={workflow.id} style={{ background: '#1f2937', color: 'white' }}>
+                        {workflow.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Descrição */}
                 <div style={{ marginBottom: '1.5rem' }}>
                   <label style={{
@@ -1296,6 +1604,21 @@ const TaskManagement = () => {
                     }}
                   />
                 </div>
+
+                {/* Configuração de Workflow */}
+                <AnimatePresence>
+                  {showWorkflowConfig && (
+                    <WorkflowConfiguration
+                      selectedWorkflow={selectedWorkflow}
+                      workflows={workflows}
+                      users={users}
+                      workflowSteps={workflowSteps}
+                      onWorkflowChange={setSelectedWorkflow}
+                      onStepAssignmentChange={handleStepAssignmentChange}
+                      isLoadingSteps={isLoadingSteps}
+                    />
+                  )}
+                </AnimatePresence>
 
                 {/* Botões */}
                 <div style={{
@@ -2051,6 +2374,16 @@ const TaskManagement = () => {
                   </th>
                   <th style={{
                     padding: '1rem',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)'
+                  }}>
+                    Workflow
+                  </th>
+                  <th style={{
+                    padding: '1rem',
                     textAlign: 'center',
                     borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
                     fontSize: '0.875rem',
@@ -2173,6 +2506,15 @@ const TaskManagement = () => {
                         {task.assigned_to_name || "Não atribuída"}
                       </div>
                     </td>
+                    <td style={{ padding: '1rem' }}>
+                      {task.workflow_name ? (
+                        <WorkflowIndicator task={task} onViewWorkflow={handleViewWorkflow} />
+                      ) : (
+                        <span style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '0.875rem' }}>
+                          Sem workflow
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '1rem', textAlign: 'center' }}>
                       <div style={{
                         display: 'flex',
@@ -2249,21 +2591,21 @@ const TaskManagement = () => {
                           <SettingsIcon size={16} />
                         </motion.button>
                         <motion.button
-  whileHover={{ scale: 1.1, y: -2 }}
-  whileTap={{ scale: 0.9 }}
-  onClick={() => handleLogTimeForTask(task)}
-  title="Registrar tempo"
-  style={{
-    background: 'rgba(52, 211, 153, 0.2)',
-    border: '1px solid rgba(52, 211, 153, 0.3)',
-    borderRadius: '6px',
-    padding: '0.5rem',
-    color: 'rgb(52, 211, 153)',
-    cursor: 'pointer'
-  }}
->
-  <Clock size={16} />
-</motion.button>
+                          whileHover={{ scale: 1.1, y: -2 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => handleLogTimeForTask(task)}
+                          title="Registrar tempo"
+                          style={{
+                            background: 'rgba(52, 211, 153, 0.2)',
+                            border: '1px solid rgba(52, 211, 153, 0.3)',
+                            borderRadius: '6px',
+                            padding: '0.5rem',
+                            color: 'rgb(52, 211, 153)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Clock size={16} />
+                        </motion.button>
 
                         <motion.button
                           whileHover={{ scale: 1.1, y: -2 }}
@@ -2291,7 +2633,76 @@ const TaskManagement = () => {
         )}
       </motion.div>
       <AnimatePresence>
-  {showTimeEntryModal && (
+        {showTimeEntryModal && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              style={{
+                ...glassStyle,
+                width: '100%',
+                maxWidth: '800px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                color: 'white'
+              }}
+            >
+              <div style={{
+                padding: '1.5rem',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <h3 style={{ margin: 0 }}>
+                  Registrar Tempo - {selectedTaskForTimeEntry?.title}
+                </h3>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowTimeEntryModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.7)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <X size={24} />
+                </motion.button>
+              </div>
+
+              <div style={{ padding: '1.5rem' }}>
+                <TimeEntryForms
+                  initialClientId={selectedTaskForTimeEntry?.client}
+                  initialTaskId={selectedTaskForTimeEntry?.id}
+                  onTimeEntryCreated={(newEntry) => {
+                    queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
+                    setShowTimeEntryModal(false);
+                    showSuccess("Tempo Registrado", "Tempo registrado com sucesso para a tarefa");
+                  }}
+                  permissions={permissions}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <NotificationsContainer />
+      {/* Modal do TaskOverflow */}
+<AnimatePresence>
+  {selectedTaskForWorkflow && (
     <div style={{
       position: 'fixed',
       inset: 0,
@@ -2310,7 +2721,7 @@ const TaskManagement = () => {
         style={{
           ...glassStyle,
           width: '100%',
-          maxWidth: '800px',
+          maxWidth: '1200px',
           maxHeight: '90vh',
           overflowY: 'auto',
           color: 'white'
@@ -2324,12 +2735,12 @@ const TaskManagement = () => {
           alignItems: 'center'
         }}>
           <h3 style={{ margin: 0 }}>
-            Registrar Tempo - {selectedTaskForTimeEntry?.title}
+            Workflow - {selectedTaskForWorkflow?.title}
           </h3>
           <motion.button
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
-            onClick={() => setShowTimeEntryModal(false)}
+            onClick={() => setSelectedTaskForWorkflow(null)}
             style={{
               background: 'none',
               border: 'none',
@@ -2342,13 +2753,10 @@ const TaskManagement = () => {
         </div>
         
         <div style={{ padding: '1.5rem' }}>
-          <TimeEntryForms
-            initialClientId={selectedTaskForTimeEntry?.client}
-            initialTaskId={selectedTaskForTimeEntry?.id}
-            onTimeEntryCreated={(newEntry) => {
+          <TaskOverflow
+            taskId={selectedTaskForWorkflow?.id}
+            onWorkflowUpdate={() => {
               queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
-              setShowTimeEntryModal(false);
-              showSuccess("Tempo Registrado", "Tempo registrado com sucesso para a tarefa");
             }}
             permissions={permissions}
           />
@@ -2357,7 +2765,6 @@ const TaskManagement = () => {
     </div>
   )}
 </AnimatePresence>
-      <NotificationsContainer />
       <style jsx>{`
         @keyframes spin {
           from { transform: rotate(0deg); }

@@ -3,7 +3,7 @@ from rest_framework import serializers
 from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
 import json
 from django.db import models
-
+from django.db.models import Sum
 
 class OrganizationSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
