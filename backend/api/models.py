@@ -1066,6 +1066,16 @@ class TimeEntry(models.Model):
         verbose_name="Categoria"
     )
     
+    # NOVO: Passo do workflow associado
+    workflow_step = models.ForeignKey(
+        'WorkflowStep',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='time_entries',
+        verbose_name="Passo do Workflow"
+    )
+    
     # Detalhes do tempo
     description = models.TextField(verbose_name="Descrição")
     minutes_spent = models.PositiveIntegerField(verbose_name="Minutos Gastos")
@@ -1079,7 +1089,7 @@ class TimeEntry(models.Model):
         blank=True, 
         null=True, 
         verbose_name="Texto Original"
-    )  # Para guardar o texto natural inserido pelo usuário
+    )
     task_status_after = models.CharField(
         max_length=20,
         choices=[
@@ -1091,12 +1101,154 @@ class TimeEntry(models.Model):
         verbose_name="Status da Tarefa Após Registro"
     )
     
+    # NOVO: Avançar workflow ao registrar tempo
+    advance_workflow = models.BooleanField(
+        default=False,
+        verbose_name="Avançar Workflow"
+    )
+    workflow_step_completed = models.BooleanField(
+        default=False,
+        verbose_name="Passo do Workflow Concluído"
+    )
+    
     class Meta:
         verbose_name = "Registro de Tempo"
         verbose_name_plural = "Registros de Tempo"
         ordering = ["-date", "-created_at"]
     
     def __str__(self):
-        return f"{self.client.name} - {self.minutes_spent}min - {self.date}"
+        step_info = f" - {self.workflow_step.name}" if self.workflow_step else ""
+        return f"{self.client.name} - {self.minutes_spent}min - {self.date}{step_info}"
+
+class WorkflowNotification(models.Model):
+    """
+    Notificações relacionadas a atualizações de workflow
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='workflow_notifications',
+        verbose_name="Usuário"
+    )
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name='workflow_notifications',
+        verbose_name="Tarefa"
+    )
+    workflow_step = models.ForeignKey(
+        WorkflowStep,
+        on_delete=models.CASCADE,
+        related_name='notifications',
+        verbose_name="Passo do Workflow"
+    )
+    
+    notification_type = models.CharField(
+        max_length=50,
+        choices=[
+            ('step_assigned', 'Passo Atribuído'),
+            ('step_ready', 'Passo Pronto para Execução'),
+            ('step_completed', 'Passo Concluído'),
+            ('approval_needed', 'Aprovação Necessária'),
+            ('approval_completed', 'Aprovação Concluída'),
+            ('workflow_completed', 'Workflow Concluído')
+        ],
+        verbose_name="Tipo de Notificação"
+    )
+    
+    title = models.CharField(max_length=200, verbose_name="Título")
+    message = models.TextField(verbose_name="Mensagem")
+    
+    is_read = models.BooleanField(default=False, verbose_name="Lida")
+    email_sent = models.BooleanField(default=False, verbose_name="Email Enviado")
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name="Lida em")
+    
+    class Meta:
+        verbose_name = "Notificação de Workflow"
+        verbose_name_plural = "Notificações de Workflow"
+        ordering = ["-created_at"]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.title}"
+    
+    def mark_as_read(self):
+        """Marca a notificação como lida"""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save()
+
+
+# NOVO: Modelo para histórico de workflow
+class WorkflowHistory(models.Model):
+    """
+    Histórico de mudanças no workflow de uma tarefa
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name='workflow_history',
+        verbose_name="Tarefa"
+    )
+    from_step = models.ForeignKey(
+        WorkflowStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='history_from',
+        verbose_name="Passo Anterior"
+    )
+    to_step = models.ForeignKey(
+        WorkflowStep,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='history_to',
+        verbose_name="Passo Seguinte"
+    )
+    
+    changed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='workflow_changes',
+        verbose_name="Alterado por"
+    )
+    
+    action = models.CharField(
+        max_length=50,
+        choices=[
+            ('step_started', 'Passo Iniciado'),
+            ('step_completed', 'Passo Concluído'),
+            ('step_approved', 'Passo Aprovado'),
+            ('step_rejected', 'Passo Rejeitado'),
+            ('workflow_assigned', 'Workflow Atribuído'),
+            ('workflow_completed', 'Workflow Concluído')
+        ],
+        verbose_name="Ação"
+    )
+    
+    comment = models.TextField(blank=True, null=True, verbose_name="Comentário")
+    time_spent_minutes = models.PositiveIntegerField(
+        null=True, 
+        blank=True,
+        verbose_name="Tempo Gasto (minutos)"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    
+    class Meta:
+        verbose_name = "Histórico de Workflow"
+        verbose_name_plural = "Históricos de Workflow"
+        ordering = ["-created_at"]
+    
+    def __str__(self):
+        return f"{self.task.title} - {self.action} - {self.created_at}"
+  
     

@@ -1,12 +1,11 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { toast, ToastContainer } from "react-toastify";
+import TimeEntryForms from "../components/TimeEntryForms"; // Path correto
 import api from "../api";
-// Removed "../styles/Home.css"; as styles will be inline or via <style jsx>
 import {
   Clock,
   Calendar,
   Search,
-  Plus,
   Trash2,
   Loader2,
   AlertTriangle,
@@ -20,16 +19,11 @@ import {
   CheckCircle,
   Eye,
   EyeOff,
-  ArrowRight,
-  FileText,
-  Brain,
-  Sparkles,
   Activity,
-  Target,
-  Settings,
-  User, // Added for consistency if needed later
+  Brain,
+  User,
 } from "lucide-react";
-import AutoTimeTracking from "../components/AutoTimeTracking"; // Assuming this component exists
+import AutoTimeTracking from "../components/AutoTimeTracking";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
@@ -74,8 +68,7 @@ const ErrorView = ({ message, onRetry }) => (
     textAlign: 'center',
     color: 'white'
   }}>
-            <BackgroundElements businessStatus="optimal" />
-
+    <BackgroundElements businessStatus="optimal" />
     <motion.div
       initial={{ scale: 0.8, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
@@ -120,8 +113,7 @@ const ErrorView = ({ message, onRetry }) => (
   </div>
 );
 
-
-// Funções de obtenção de dados (fora do componente)
+// Funções de obtenção de dados
 const fetchTimeEntries = async (userId, filters = {}) => {
   let url = `/time-entries/?user=${userId}`;
   const params = new URLSearchParams();
@@ -134,7 +126,6 @@ const fetchTimeEntries = async (userId, filters = {}) => {
     params.append('ordering', `${filters.sortDirection === 'desc' ? '-' : ''}${filters.sortField}`);
   }
   
-  // Se houver parâmetros adicionais, adiciona ao URL
   const paramString = params.toString();
   if (paramString) {
     url += `&${paramString}`;
@@ -149,55 +140,24 @@ const fetchClients = async () => {
   return response.data;
 };
 
-const fetchTaskCategories = async () => {
-  const response = await api.get("/task-categories/");
-  return response.data;
-};
-
-const fetchTasks = async (userId) => {
-  console.log("Fetching tasks for user:", userId);
-  const response = await api.get(`/tasks/?user=${userId}`);
-  console.log("Tasks fetched:", response.data.length);
-  return response.data;
-};
 const TimeEntry = () => {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [groupBy, setGroupBy] = useState('none'); // 'none', 'date', 'client'
+  const [groupBy, setGroupBy] = useState('none');
   const [lastSavedEntry, setLastSavedEntry] = useState(null);
-  const [formErrors, setFormErrors] = useState({});
-  const [formData, setFormData] = useState({
-    client: "",
-    task: "",
-    category: "",
-    description: "",
-    minutes_spent: 0,
-    date: new Date().toISOString().split("T")[0],
-    start_time: "",
-    end_time: "",
-    original_text: "",
-    task_status_after: "no_change",
-  });
-  const [isNaturalLanguageMode, setIsNaturalLanguageMode] = useState(false);
-  const [naturalLanguageInput, setNaturalLanguageInput] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [showAutoTracking, setShowAutoTracking] = useState(false); // Assuming AutoTimeTracking component will be styled similarly
+  const [showAutoTracking, setShowAutoTracking] = useState(false);
   const [viewMode, setViewMode] = useState('list'); 
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     startDate: "",
     endDate: "",
     client: "",
-    searchQuery: "", // This will be updated from the top-level searchQuery state
+    searchQuery: "",
     sortField: "date",
     sortDirection: "desc"
   });
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedEntries, setExtractedEntries] = useState(null);
-  const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
-
 
   // Consultas React Query
   const {
@@ -210,7 +170,7 @@ const TimeEntry = () => {
     queryKey: ['timeEntries', permissions.userId, filters],
     queryFn: () => fetchTimeEntries(permissions.userId, filters),
     staleTime: 5 * 60 * 1000,
-    enabled: !!permissions.userId, // Só executa quando temos o userId
+    enabled: !!permissions.userId,
   });
 
   const {
@@ -222,48 +182,7 @@ const TimeEntry = () => {
     staleTime: 10 * 60 * 1000,
   });
 
-  const {
-    data: taskCategories = [],
-    isLoading: isLoadingCategories
-  } = useQuery({
-    queryKey: ['taskCategories'],
-    queryFn: fetchTaskCategories,
-    staleTime: 10 * 60 * 1000,
-  });
-
-  const {
-    data: tasks = [],
-    isLoading: isLoadingTasks
-  } = useQuery({
-    queryKey: ['tasks', permissions.userId],
-    queryFn: () => fetchTasks(permissions.userId),
-    staleTime: 10 * 60 * 1000,
-    enabled: !!permissions.userId, // Só executa quando temos o userId
-  });
-
-  // Mutações React Query
-  const createTimeEntryMutation = useMutation({
-    mutationFn: (entryData) => api.post("/time-entries/", entryData),
-    onSuccess: (data) => {
-      toast.success("Registo de tempo criado com sucesso");
-      setLastSavedEntry(data); 
-      resetForm();
-      queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
-    },
-    onError: (error) => {
-      console.error("Erro ao criar registo de tempo:", error);
-      const errorData = error.response?.data;
-      if (errorData && typeof errorData === 'object') {
-        const messages = Object.entries(errorData)
-          .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
-          .join('; ');
-        toast.error(`Falha ao criar registo: ${messages || "Erro desconhecido."}`);
-      } else {
-        toast.error("Falha ao criar registo de tempo.");
-      }
-    }
-  });
-
+  // Mutation para delete
   const deleteTimeEntryMutation = useMutation({
     mutationFn: (entryId) => api.delete(`/time-entries/${entryId}/`),
     onSuccess: () => {
@@ -276,19 +195,7 @@ const TimeEntry = () => {
     }
   });
 
-  // Manipuladores de eventos
-  const handleInputChange = useCallback((e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  }, []);
-
-  const handleNaturalLanguageInputChange = useCallback((e) => {
-    setNaturalLanguageInput(e.target.value);
-  }, []);
-
+  // Handlers
   const handleFilterChange = useCallback((e) => {
     const { name, value } = e.target;
     setFilters(prev => ({ ...prev, [name]: value }));
@@ -298,7 +205,6 @@ const TimeEntry = () => {
     setSearchQuery(e.target.value);
     setFilters(prev => ({ ...prev, searchQuery: e.target.value }));
   }, []);
-
 
   const resetFilters = useCallback(() => {
     setFilters({
@@ -312,64 +218,6 @@ const TimeEntry = () => {
     setSearchQuery("");
   }, []);
 
-  const handleNaturalLanguageSubmit = async (e) => {
-    e.preventDefault();
-    if (!naturalLanguageInput) {
-      toast.error("Por favor insira uma descrição da sua atividade");
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      const response = await api.post("/gemini-nlp/process_text/", {
-        text: naturalLanguageInput,
-        client_id: formData.client || null,
-      });
-      const extractedData = response.data;
-      if (extractedData.clients.length === 0 && !formData.client) {
-        toast.warning("Não consegui identificar nenhum cliente no texto. Por favor selecione um cliente manualmente.");
-        setIsProcessing(false);
-        return;
-      }
-      if (extractedData.times.length === 0) {
-        toast.warning("Não consegui identificar o tempo gasto nas atividades. Por favor verifique ou especifique manualmente.");
-        setIsProcessing(false);
-        return;
-      }
-      setExtractedEntries(extractedData);
-      setShowConfirmationDialog(true);
-    } catch (error) {
-      console.error("Erro ao processar texto natural:", error);
-      toast.error("Ocorreu um erro ao processar seu texto. Por favor tente novamente ou use o formulário manual.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const confirmAndCreateEntries = useCallback(async () => {
-    setIsProcessing(true);
-    try {
-      const payload = {
-        text: naturalLanguageInput,
-        client_id: formData.client || (extractedEntries?.clients?.[0]?.id) || null,
-        date: formData.date,
-        task_status_after: formData.task_status_after,
-        task_id: formData.task || (extractedEntries?.tasks?.[0]?.id) || null,
-      };
-      const response = await api.post("/gemini-nlp/create_time_entries/", payload);
-      toast.success(`${response.data.length} entrada(s) de tempo criada(s) com sucesso!`);
-      resetForm();
-      setShowConfirmationDialog(false);
-      setExtractedEntries(null);
-      queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
-    } catch (error) {
-      console.error("Erro ao criar entradas de tempo:", error);
-      toast.error("Ocorreu um erro ao criar as entradas de tempo.");
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [naturalLanguageInput, formData, extractedEntries, queryClient]);
-
-
   const handleSort = useCallback((field) => {
     setFilters(prevFilters => {
       const newDirection =
@@ -379,66 +227,11 @@ const TimeEntry = () => {
       return { ...prevFilters, sortField: field, sortDirection: newDirection };
     });
   }, []);
-  
-
-  const validateForm = () => {
-    const errors = {};
-    if (!isNaturalLanguageMode) {
-        if (!formData.client) errors.client = "Cliente é obrigatório";
-        if (!formData.description) errors.description = "Descrição é obrigatória";
-        if (!formData.minutes_spent || formData.minutes_spent <= 0) errors.minutes_spent = "Tempo gasto deve ser maior que zero";
-    
-        if (formData.start_time && formData.end_time) {
-          const startMinutes = timeToMinutes(formData.start_time);
-          const endMinutes = timeToMinutes(formData.end_time);
-          if (endMinutes <= startMinutes) {
-            errors.end_time = "Horário de término deve ser após o início";
-          }
-          const calculatedMinutes = endMinutes - startMinutes;
-          if (Math.abs(calculatedMinutes - formData.minutes_spent) > 1) { // Allow 1 min diff for rounding
-            errors.minutes_spent = "Tempo total não corresponde aos horários informados. Diferença: " + Math.abs(calculatedMinutes - formData.minutes_spent) + " minutos.";
-          }
-        } else if (formData.start_time && !formData.end_time) {
-            errors.end_time = "Horário de término é obrigatório se o de início for fornecido.";
-        } else if (!formData.start_time && formData.end_time) {
-            errors.start_time = "Horário de início é obrigatório se o de término for fornecido.";
-        }
-    }
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-  
-  const timeToMinutes = (timeString) => {
-    if (!timeString || !timeString.includes(':')) return 0;
-    const [hours, minutes] = timeString.split(':').map(num => parseInt(num, 10));
-    return (hours || 0) * 60 + (minutes || 0);
-  };
 
   const duplicateEntry = useCallback((entry) => {
-    setFormData({
-      client: entry.client,
-      task: entry.task || "",
-      category: entry.category || "",
-      description: entry.description,
-      minutes_spent: entry.minutes_spent,
-      date: new Date().toISOString().split("T")[0],
-      start_time: entry.start_time || "",
-      end_time: entry.end_time || "",
-      task_status_after: entry.task_status_after || "no_change",
-      original_text: entry.original_text || ""
-    });
-    setIsNaturalLanguageMode(false); // Assume duplication goes to manual mode
-    setShowForm(true);
-    toast.info("Entrada duplicada! Edite se necessário e salve.");
+    // Esta função será chamada pelo TimeEntryForms quando necessário
+    toast.info("Use o formulário acima para criar uma nova entrada baseada nesta.");
   }, []);
-
-  const getTaskStatusLabel = (status) => {
-    switch (status) {
-      case 'in_progress': return 'Em Progresso';
-      case 'completed': return 'Concluída';
-      default: return 'Sem alteração';
-    }
-  };
 
   const generateExcelReport = async () => {
     if (!timeEntries || timeEntries.length === 0) {
@@ -517,7 +310,6 @@ const TimeEntry = () => {
   };
 
   const displayedEntries = useMemo(() => {
-    // This function now primarily handles grouping, filtering is done by query
     if (groupBy === 'none') return { 'Todos os registros': timeEntries };
     return timeEntries.reduce((groups, entry) => {
       const key = groupBy === 'date' ? entry.date : (entry.client_name || "Sem Cliente");
@@ -541,7 +333,7 @@ const TimeEntry = () => {
             zIndex: 1000,
             ...glassStyle,
             padding: '1rem',
-            background: 'rgba(52, 211, 153, 0.2)', // Greenish glass
+            background: 'rgba(52, 211, 153, 0.2)',
             border: '1px solid rgba(52, 211, 153, 0.3)',
             maxWidth: '350px'
         }}
@@ -553,7 +345,7 @@ const TimeEntry = () => {
                 Registro salvo com sucesso
             </h4>
             <p style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)', margin: 0 }}>
-              {formatMinutes(entry.data.minutes_spent)} registrados para {entry.data.client_name}
+              {formatMinutes(entry.data?.minutes_spent || 0)} registrados para {entry.data?.client_name || 'Cliente'}
             </p>
             <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
               <motion.button
@@ -593,33 +385,6 @@ const TimeEntry = () => {
       </motion.div>
     );
   };
-  
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) {
-      toast.error("Por favor corrija os erros no formulário.");
-      return;
-    }
-    if (isNaturalLanguageMode) {
-      await handleNaturalLanguageSubmit(e);
-    } else {
-      const submissionData = { ...formData };
-      submissionData.start_time = submissionData.start_time ? formatTimeForAPI(submissionData.start_time) : null;
-      submissionData.end_time = submissionData.end_time ? formatTimeForAPI(submissionData.end_time) : null;
-      createTimeEntryMutation.mutate(submissionData);
-    }
-  };
-
-  const resetForm = useCallback(() => {
-    setFormData({
-      client: "", task: "", category: "", description: "",
-      minutes_spent: 0, date: new Date().toISOString().split("T")[0],
-      start_time: "", end_time: "", original_text: "", task_status_after: "no_change",
-    });
-    setNaturalLanguageInput("");
-    setShowForm(false);
-    setFormErrors({});
-  }, []);
 
   const handleDeleteEntry = useCallback((entryId) => {
     const canDelete = permissions.isOrgAdmin || permissions.canEditAllTime;
@@ -632,18 +397,6 @@ const TimeEntry = () => {
     }
   }, [permissions, deleteTimeEntryMutation]);
 
-  const formatTimeForAPI = (timeString) => {
-    if (/^\d{2}:\d{2}:\d{2}$/.test(timeString)) return timeString;
-    if (/^\d{2}:\d{2}$/.test(timeString)) return `${timeString}:00`;
-    try {
-      const [hours, minutes] = timeString.split(':').map(num => parseInt(num, 10));
-      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
-    } catch (e) {
-      console.error("Erro ao formatar hora:", e);
-      return null; 
-    }
-  };
-
   const formatMinutes = (minutes) => {
     if (minutes === null || minutes === undefined) return "N/A";
     const hours = Math.floor(minutes / 60);
@@ -651,8 +404,12 @@ const TimeEntry = () => {
     return `${hours}h ${mins}m`;
   };
 
-  const isLoadingOverall = isLoadingEntries || isLoadingClients || isLoadingCategories || isLoadingTasks ||
-    createTimeEntryMutation.isPending || deleteTimeEntryMutation.isPending || isProcessing;
+  const isLoadingOverall = isLoadingEntries || isLoadingClients || deleteTimeEntryMutation.isPending;
+
+  // Success notification handler
+  const showSuccess = (title, message) => {
+    toast.success(`${title}: ${message}`);
+  };
 
   if (permissions.loading) {
     return (
@@ -684,83 +441,6 @@ const TimeEntry = () => {
     return <ErrorView message={entriesError?.message || "Erro ao carregar registos de tempo"} onRetry={refetchTimeEntries} />;
   }
 
-  const ConfirmationDialog = ({ visible, extractedData, onConfirm, onCancel }) => {
-    if (!visible || !extractedData) return null;
-    return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-          style={{ ...glassStyle, width: '100%', maxWidth: '600px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', color: 'white' }}>
-          <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', margin: 0 }}>Confirmar Entradas de Tempo</h2>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
-            <p style={{ marginBottom: '1rem', color: 'rgba(255,255,255,0.8)' }}>
-              Encontrei as seguintes informações no seu texto. Por favor verifique e confirme:
-            </p>
-            {/* Clients */}
-            {extractedData.clients?.length > 0 ? (
-              <div style={{ marginBottom: '1rem' }}>
-                <h3 style={{ fontWeight: '500', color: 'white' }}>Clientes:</h3>
-                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
-                  {extractedData.clients.map((client, index) => (
-                    <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{client.name}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : (<div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.2)', borderRadius: '8px' }}><p style={{color: 'rgb(251, 191, 36)', fontSize: '0.875rem' }}>Nenhum cliente novo identificado. Será usado o cliente padrão selecionado (se houver).</p></div>)}
-            {/* Tasks */}
-            {extractedData.tasks?.length > 0 && (
-              <div style={{ marginBottom: '1rem' }}>
-                <h3 style={{ fontWeight: '500', color: 'white' }}>Tarefas:</h3>
-                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
-                  {extractedData.tasks.map((task, index) => (
-                    <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{task.title} {task.client_name && `(${task.client_name})`}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {/* Times */}
-            {extractedData.times?.length > 0 && (
-              <div style={{ marginBottom: '1rem' }}>
-                <h3 style={{ fontWeight: '500', color: 'white' }}>Tempos:</h3>
-                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
-                  {extractedData.times.map((minutes, index) => ( <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{formatMinutes(minutes)}</li> ))}
-                </ul>
-              </div>
-            )}
-            {/* Activities */}
-             {extractedData.activities?.length > 0 && (
-              <div style={{ marginBottom: '1rem' }}>
-                <h3 style={{ fontWeight: '500', color: 'white' }}>Atividades:</h3>
-                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
-                  {extractedData.activities.map((activity, index) => ( <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{activity}</li> ))}
-                </ul>
-              </div>
-            )}
-             {/* Categories */}
-            {extractedData.categories?.length > 0 && (
-              <div style={{ marginBottom: '1rem' }}>
-                <h3 style={{ fontWeight: '500', color: 'white' }}>Categorias:</h3>
-                <ul style={{ listStyle: 'disc', paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
-                  {extractedData.categories.map((category, index) => ( <li key={index} style={{ color: 'rgba(255,255,255,0.8)' }}>{category.name}</li> ))}
-                </ul>
-              </div>
-            )}
-            {formData.task_status_after !== 'no_change' && (
-                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '8px' }}>
-                    <p style={{color: 'rgb(59, 130, 246)', fontSize: '0.875rem' }}><strong>Status da Tarefa:</strong> Será alterado para "{getTaskStatusLabel(formData.task_status_after)}"</p>
-                </div>
-            )}
-          </div>
-          <div style={{ padding: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={onCancel} style={{ padding: '0.75rem 1.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', cursor: 'pointer' }}>Cancelar</motion.button>
-            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={onConfirm} style={{ padding: '0.75rem 1.5rem', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', borderRadius: '8px', color: 'white', cursor: 'pointer' }}>Confirmar e Criar</motion.button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  };
-  
   const TimeEntryCard = ({ entry, onDelete, onDuplicate, permissions }) => (
     <motion.div
       variants={itemVariants}
@@ -770,8 +450,8 @@ const TimeEntry = () => {
         display: 'flex',
         flexDirection: 'column',
         gap: '1rem',
-        opacity: entry.is_billed ? 0.7 : 1, // Example: Dim if billed
-        borderLeft: entry.is_billed ? '4px solid rgb(251, 146, 60)' : `4px solid ${entry.client_color || 'rgb(59, 130, 246)'}`, // Client color or default
+        opacity: entry.is_billed ? 0.7 : 1,
+        borderLeft: entry.is_billed ? '4px solid rgb(251, 146, 60)' : `4px solid ${entry.client_color || 'rgb(59, 130, 246)'}`,
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -828,7 +508,7 @@ const TimeEntry = () => {
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
-        <BackgroundElements businessStatus="optimal" />
+      <BackgroundElements businessStatus="optimal" />
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }}/>
       <AnimatePresence>
         {lastSavedEntry && (
@@ -846,10 +526,6 @@ const TimeEntry = () => {
             <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>Monitorize e gira o seu tempo eficientemente.</p>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => { setShowForm(!showForm); if (showAutoTracking) setShowAutoTracking(false); }}
-              style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(${showForm ? '239,68,68,0.3' : '59,130,246,0.3'})`, background: `rgba(${showForm ? '239,68,68,0.2' : '59,130,246,0.2'})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-              <Plus size={18} /> {showForm ? "Cancelar" : "Registar Tempo"}
-            </motion.button>
             <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={generateExcelReport} disabled={isLoadingOverall || timeEntries.length === 0}
               style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.2)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
               <Download size={18} /> Exportar
@@ -857,16 +533,6 @@ const TimeEntry = () => {
           </div>
         </motion.div>
 
-        <ConfirmationDialog visible={showConfirmationDialog} extractedData={extractedEntries} onConfirm={confirmAndCreateEntries} onCancel={() => setShowConfirmationDialog(false)} />
-        {isProcessing && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
-                <motion.div style={{ ...glassStyle, padding: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }} initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                    <Loader2 size={32} className="animate-spin" style={{ color: 'rgb(59,130,246)'}} />
-                    <p style={{ fontSize: '1rem', color: 'white' }}>Processando texto...</p>
-                </motion.div>
-            </div>
-        )}
-        
         {/* Auto Tracking Component (if shown) */}
         {showAutoTracking && (
           <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
@@ -874,132 +540,18 @@ const TimeEntry = () => {
           </motion.div>
         )}
 
-        {/* Form Section */}
-        <AnimatePresence>
-          {showForm && (
-            <motion.div initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: -20 }}
-              transition={{ duration: 0.3 }} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ padding: '0.5rem', backgroundColor: 'rgba(59,130,246,0.2)', borderRadius: '12px' }}><Clock style={{ color: 'rgb(59,130,246)'}} size={20} /></div>
-                    <div>
-                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Registar Tempo</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Adicione uma nova entrada de tempo manual ou por linguagem natural.</p>
-                    </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)'}}>Linguagem Natural</span>
-                  <label className="switch"> {/* Ensure .switch .slider styles are in <style jsx> */}
-                    <input type="checkbox" checked={isNaturalLanguageMode} onChange={() => setIsNaturalLanguageMode(!isNaturalLanguageMode)} />
-                    <span className="slider round"></span>
-                  </label>
-                </div>
-              </div>
-              <form onSubmit={handleSubmit}>
-                {isNaturalLanguageMode ? (
-                  <>
-                    <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Cliente (Opcional)</label>
-                      <select name="client" value={formData.client} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
-                        <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Cliente (Padrão)</option>
-                        {clients.map((client) => (<option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>{client.name}</option>))}
-                      </select>
-                    </div>
-                    <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Descreva a sua atividade *</label>
-                      <textarea value={naturalLanguageInput} onChange={handleNaturalLanguageInputChange} placeholder="Ex: 2h declaração IVA cliente ABC, 30m reunião XYZ" rows={3} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }} />
-                      <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.5rem' }}>O sistema irá extrair o tempo, cliente e outras informações.</p>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Data</label>
-                            <input type="date" name="date" value={formData.date} onChange={handleInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Status da Tarefa (Após)</label>
-                            <select name="task_status_after" value={formData.task_status_after} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
-                                <option value="no_change" style={{ background: '#1f2937', color: 'white' }}>Sem alteração</option>
-                                <option value="in_progress" style={{ background: '#1f2937', color: 'white' }}>Marcar como Em Progresso</option>
-                                <option value="completed" style={{ background: '#1f2937', color: 'white' }}>Marcar como Concluída</option>
-                            </select>
-                            <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.25rem' }}>Aplicado à tarefa identificada no texto.</p>
-                        </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                      {/* Client, Task, Category, Date, Minutes Spent, Start/End Time */}
-                       <div>
-                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Cliente *</label>
-                        <select name="client" value={formData.client} onChange={handleInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.client ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
-                            <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Cliente</option>
-                            {clients.map((client) => (<option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>{client.name}</option>))}
-                        </select>
-                        {formErrors.client && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.client}</p>}
-                       </div>
-                       <div>
-                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Tarefa (Opcional)</label>
-                        <select name="task" value={formData.task} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
-                            <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Tarefa</option>
-                            {tasks.filter(task => (!formData.client || task.client === formData.client) && task.status !== "completed").map(task => (<option key={task.id} value={task.id} style={{ background: '#1f2937', color: 'white' }}>{task.title}</option>))}
-                        </select>
-                       </div>
-                       <div>
-                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Categoria (Opcional)</label>
-                        <select name="category" value={formData.category} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}>
-                            <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Categoria</option>
-                            {taskCategories.map((category) => (<option key={category.id} value={category.id} style={{ background: '#1f2937', color: 'white' }}>{category.name}</option>))}
-                        </select>
-                       </div>
-                       <div>
-                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Status da Tarefa (Após)</label>
-                            <select name="task_status_after" value={formData.task_status_after} onChange={handleInputChange} disabled={!formData.task} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', opacity: !formData.task ? 0.5 : 1 }}>
-                                <option value="no_change" style={{ background: '#1f2937', color: 'white' }}>Sem alteração</option>
-                                <option value="in_progress" style={{ background: '#1f2937', color: 'white' }}>Marcar como Em Progresso</option>
-                                <option value="completed" style={{ background: '#1f2937', color: 'white' }}>Marcar como Concluída</option>
-                            </select>
-                            {!formData.task && <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.25rem' }}>Selecione uma tarefa.</p>}
-                        </div>
-                       <div>
-                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Data *</label>
-                        <input type="date" name="date" value={formData.date} onChange={handleInputChange} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
-                       </div>
-                       <div>
-                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Minutos Gastos *</label>
-                        <input type="number" name="minutes_spent" value={formData.minutes_spent} onChange={handleInputChange} required min="1" style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.minutes_spent ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
-                        {formErrors.minutes_spent && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.minutes_spent}</p>}
-                       </div>
-                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Hora Início</label>
-                                <input type="time" name="start_time" value={formData.start_time} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.start_time ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
-                                {formErrors.start_time && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.start_time}</p>}
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Hora Fim</label>
-                                <input type="time" name="end_time" value={formData.end_time} onChange={handleInputChange} style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.end_time ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem' }} />
-                                {formErrors.end_time && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.end_time}</p>}
-                            </div>
-                       </div>
-                    </div>
-                    <div style={{ marginBottom: '1.5rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)'}}>Descrição *</label>
-                      <textarea name="description" value={formData.description} onChange={handleInputChange} rows={2} required style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: `1px solid ${formErrors.description ? 'rgb(239,68,68)' : 'rgba(255,255,255,0.2)'}`, borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }} />
-                      {formErrors.description && <p style={{fontSize: '0.75rem', color: 'rgb(239,68,68)', marginTop: '0.25rem'}}>{formErrors.description}</p>}
-                    </div>
-                  </>
-                )}
-                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="button" onClick={resetForm} style={{ padding: '0.75rem 1.5rem', background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' }}>Cancelar</motion.button>
-                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} type="submit" disabled={isLoadingOverall} style={{ padding: '0.75rem 1.5rem', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    {isLoadingOverall ? (<Loader2 size={16} className="animate-spin" />) : (isNaturalLanguageMode ? "Processar e Criar" : "Guardar Registo")}
-                  </motion.button>
-                </div>
-              </form>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* TimeEntryForms Component */}
+        <TimeEntryForms 
+          onTimeEntryCreated={(newEntry) => {
+            queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
+            if (Array.isArray(newEntry)) {
+              showSuccess("Entradas Criadas", `${newEntry.length} entradas de tempo criadas com sucesso`);
+            } else {
+              showSuccess("Entrada Criada", "Entrada de tempo criada com sucesso");
+            }
+          }}
+          permissions={permissions}
+        />
 
         {/* Filter Section */}
         <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>

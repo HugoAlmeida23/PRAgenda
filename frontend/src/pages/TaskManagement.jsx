@@ -1,14 +1,14 @@
 import { useState, useMemo, useCallback } from "react";
 import api from "../api";
-import "../styles/Home.css";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from '@tanstack/react-query';
 import { toast, ToastContainer } from "react-toastify";
+import TimeEntryForms from "../components/TimeEntryForms";
 import {
   CheckCircle,
   Clock,
   Plus,
-  Edit,
+  Edit3 as EditIcon, // Renamed for clarity
   Trash2,
   Calendar,
   AlertTriangle,
@@ -17,10 +17,25 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
-  Settings,
+  Settings2 as SettingsIcon, // Renamed for clarity
   Brain,
   Target,
-  Activity
+  Activity,
+  Filter as FilterIcon,
+  Search as SearchIcon,
+  Eye as EyeIcon,
+  XCircle,
+  Zap, // For NLP
+  ListChecks, // For tasks list
+  Briefcase, // For client
+  Tag as TagIcon, // For category
+  UserCheck, // For assigned to
+  Paperclip, // Generic task icon
+  Loader2, // For loading
+  SlidersHorizontal, // For filter button
+  EyeOff,
+  X,
+  Info
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from "../contexts/PermissionsContext";
@@ -85,14 +100,23 @@ const TaskManagement = () => {
   const [selectedTaskForWorkflow, setSelectedTaskForWorkflow] = useState(null);
   const [formData, setFormData] = useState(getInitialFormData());
   const [showFilters, setShowFilters] = useState(false);
-  
-    // --- Data Fetching using React Query ---
+  const [notifications, setNotifications] = useState([]);
+  const [showTimeEntryModal, setShowTimeEntryModal] = useState(false);
+  const [selectedTaskForTimeEntry, setSelectedTaskForTimeEntry] = useState(null);
+
+
+  // --- Data Fetching using React Query ---
   const { data, isLoading: isLoadingData, isError, error, refetch } = useQuery({
     queryKey: ['taskManagementData', permissions.userId],
     queryFn: () => fetchTaskManagementData(permissions.userId),
     staleTime: 5 * 60 * 1000,
-    enabled: !!permissions.userId, 
+    enabled: !!permissions.userId,
   });
+
+  const handleLogTimeForTask = useCallback((task) => {
+    setSelectedTaskForTimeEntry(task);
+    setShowTimeEntryModal(true);
+  }, []);
 
   // Extracted data lists (provide defaults)
   const tasks = data?.tasks ?? [];
@@ -100,81 +124,248 @@ const TaskManagement = () => {
   const users = data?.users ?? [];
   const categories = data?.categories ?? [];
 
-  // --- Mutations using React Query ---
-  const mutationOptions = {
+  const addNotification = useCallback((type, title, message, duration = 4000) => {
+    const id = Date.now() + Math.random();
+    const notification = { id, type, title, message };
+
+    setNotifications(prev => [...prev, notification]);
+
+    // Auto remove notification
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(notif => notif.id !== id));
+    }, duration);
+  }, []);
+
+  const removeNotification = useCallback((id) => {
+    setNotifications(prev => prev.filter(notif => notif.id !== id));
+  }, []);
+
+  // Funções de conveniência para diferentes tipos de notificação
+  const showSuccess = useCallback((title, message) => {
+    addNotification('success', title, message);
+  }, [addNotification]);
+
+  const showError = useCallback((title, message) => {
+    addNotification('error', title, message, 6000); // Erros ficam mais tempo
+  }, [addNotification]);
+
+  const showWarning = useCallback((title, message) => {
+    addNotification('warning', title, message, 5000);
+  }, [addNotification]);
+
+  const showInfo = useCallback((title, message) => {
+    addNotification('info', title, message);
+  }, [addNotification]);
+
+  // Componente de notificação individual
+  const NotificationItem = ({ notification, onRemove }) => {
+    const getIcon = () => {
+      switch (notification.type) {
+        case 'success':
+          return <CheckCircle size={20} style={{ color: 'rgb(52, 211, 153)' }} />;
+        case 'error':
+          return <XCircle size={20} style={{ color: 'rgb(239, 68, 68)' }} />;
+        case 'warning':
+          return <AlertTriangle size={20} style={{ color: 'rgb(251, 191, 36)' }} />;
+        case 'info':
+          return <Info size={20} style={{ color: 'rgb(59, 130, 246)' }} />;
+        default:
+          return <Info size={20} style={{ color: 'rgb(59, 130, 246)' }} />;
+      }
+    };
+
+    const getColors = () => {
+      switch (notification.type) {
+        case 'success':
+          return {
+            bg: 'rgba(52, 211, 153, 0.1)',
+            border: 'rgba(52, 211, 153, 0.3)',
+            text: 'rgb(52, 211, 153)'
+          };
+        case 'error':
+          return {
+            bg: 'rgba(239, 68, 68, 0.1)',
+            border: 'rgba(239, 68, 68, 0.3)',
+            text: 'rgb(239, 68, 68)'
+          };
+        case 'warning':
+          return {
+            bg: 'rgba(251, 191, 36, 0.1)',
+            border: 'rgba(251, 191, 36, 0.3)',
+            text: 'rgb(251, 191, 36)'
+          };
+        case 'info':
+          return {
+            bg: 'rgba(59, 130, 246, 0.1)',
+            border: 'rgba(59, 130, 246, 0.3)',
+            text: 'rgb(59, 130, 246)'
+          };
+        default:
+          return {
+            bg: 'rgba(59, 130, 246, 0.1)',
+            border: 'rgba(59, 130, 246, 0.3)',
+            text: 'rgb(59, 130, 246)'
+          };
+      }
+    };
+
+    const colors = getColors();
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 50, scale: 0.8 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 50, scale: 0.8 }}
+        whileHover={{ scale: 1.02 }}
+        style={{
+          ...glassStyle,
+          background: colors.bg,
+          border: `1px solid ${colors.border}`,
+          padding: '1rem',
+          marginBottom: '0.75rem',
+          maxWidth: '400px',
+          position: 'relative'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+          <div style={{ marginTop: '0.125rem' }}>
+            {getIcon()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h4 style={{
+              fontWeight: '600',
+              color: 'white',
+              margin: '0 0 0.25rem 0',
+              fontSize: '0.875rem'
+            }}>
+              {notification.title}
+            </h4>
+            <p style={{
+              fontSize: '0.8rem',
+              color: 'rgba(255, 255, 255, 0.8)',
+              margin: 0,
+              lineHeight: '1.4'
+            }}>
+              {notification.message}
+            </p>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.1, backgroundColor: 'rgba(255, 255, 255, 0.1)' }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => onRemove(notification.id)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255, 255, 255, 0.6)',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <X size={16} />
+          </motion.button>
+        </div>
+      </motion.div>
+    );
+  };
+
+  // Container de notificações (adicione antes do fechamento do div principal)
+  const NotificationsContainer = () => (
+    <div style={{
+      position: 'fixed',
+      bottom: '1rem',
+      right: '1rem',
+      zIndex: 9999,
+      pointerEvents: 'none'
+    }}>
+      <AnimatePresence mode="popLayout">
+        {notifications.map((notification) => (
+          <div key={notification.id} style={{ pointerEvents: 'auto' }}>
+            <NotificationItem
+              notification={notification}
+              onRemove={removeNotification}
+            />
+          </div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+
+  const createTaskMutation = useMutation({
+    mutationFn: (newTaskData) => api.post("/tasks/", newTaskData),
     onSuccess: () => {
-      console.log("Mutation successful, invalidating taskManagementData query");
+      showSuccess("Tarefa Criada", "A nova tarefa foi criada com sucesso");
       queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
       resetForm();
     },
-    onError: (err, variables, context) => {
+    onError: (err) => {
       console.error("Mutation failed:", err);
-      const errorMessage = err.response?.data?.detail || err.message || "An error occurred";
-      toast.error(`Falha: ${errorMessage}`);
+      const errorMessage = err.response?.data?.detail || err.message || "Ocorreu um erro desconhecido";
+      showError("Erro ao Criar", errorMessage);
     },
-  };
-
-  // Create Task Mutation
-  const createTaskMutation = useMutation({
-    mutationFn: (newTaskData) => api.post("/tasks/", newTaskData),
-    ...mutationOptions,
-    onSuccess: () => {
-      toast.success("Tarefa criada com sucesso");
-      mutationOptions.onSuccess();
-    }
   });
 
-  // Update Task Mutation
+  // Update Task Mutation - DEPOIS:
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, updatedData }) => api.put(`/tasks/${id}/`, updatedData),
-    ...mutationOptions,
     onSuccess: () => {
-      toast.success("Tarefa atualizada com sucesso");
-      mutationOptions.onSuccess();
-    }
+      showSuccess("Tarefa Atualizada", "As alterações foram salvas com sucesso");
+      queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
+      resetForm();
+    },
+    onError: (err) => {
+      console.error("Update failed:", err);
+      const errorMessage = err.response?.data?.detail || err.message || "Erro ao atualizar";
+      showError("Falha na Atualização", errorMessage);
+    },
   });
 
-  // Update Task Status Mutation (using PATCH)
+  // Update Task Status Mutation - DEPOIS:
   const updateTaskStatusMutation = useMutation({
     mutationFn: ({ id, status }) => api.patch(`/tasks/${id}/`, { status }),
     onSuccess: (data, variables) => {
-      toast.success(`Tarefa marcada como ${STATUS_OPTIONS.find(s => s.value === variables.status)?.label.toLowerCase()}`);
+      const statusLabel = STATUS_OPTIONS.find(s => s.value === variables.status)?.label || variables.status;
+      showSuccess("Status Alterado", `Tarefa marcada como ${statusLabel.toLowerCase()}`);
       queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
     },
     onError: (err) => {
       console.error("Error updating task status:", err);
-      toast.error("Falha ao atualizar status da tarefa");
+      showError("Erro de Status", "Não foi possível atualizar o status da tarefa");
     }
   });
 
-  // Delete Task Mutation
+  // Delete Task Mutation - DEPOIS:
   const deleteTaskMutation = useMutation({
     mutationFn: (taskId) => api.delete(`/tasks/${taskId}/`),
     onSuccess: () => {
-      toast.success("Tarefa excluída com sucesso");
+      showSuccess("Tarefa Excluída", "A tarefa foi removida permanentemente");
       queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
     },
     onError: (err) => {
       console.error("Error deleting task:", err);
-      toast.error("Falha ao excluir tarefa");
+      showError("Erro ao Excluir", "Não foi possível excluir a tarefa");
     }
   });
 
-  // Natural Language Task Creation Mutation
+  // Natural Language Task Creation Mutation - DEPOIS:
   const createNlpTaskMutation = useMutation({
     mutationFn: (nlpData) => api.post("/tasks/", nlpData),
-    ...mutationOptions,
     onSuccess: () => {
-      toast.success("Tarefa criada a partir do texto");
+      showSuccess("IA Processada", "Tarefa criada a partir da linguagem natural");
       setNaturalLanguageInput("");
       setShowNaturalLanguageForm(false);
-      mutationOptions.onSuccess();
+      queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
+      resetForm();
     },
     onError: (err) => {
       console.error("Error creating NLP task:", err);
-      toast.error("Falha ao criar tarefa a partir do texto");
+      showError("Erro de Processamento", "Falha ao processar o texto com IA");
     }
   });
+
 
   // --- Client-Side Filtering and Sorting using useMemo ---
   const filteredAndSortedTasks = useMemo(() => {
@@ -291,13 +482,14 @@ const TaskManagement = () => {
         (permissions.canEditAssignedTasks && selectedTask.assigned_to === permissions.userId);
 
       if (!canEdit) {
-        toast.error("Você não tem permissão para editar esta tarefa");
+        showWarning("Acesso Negado", "Você não tem permissão para editar esta tarefa");
         return;
       }
+
       updateTaskMutation.mutate({ id: selectedTask.id, updatedData: formData });
     } else {
       if (!permissions.isOrgAdmin && !permissions.canCreateTasks) {
-        toast.error("Você não tem permissão para criar tarefas");
+        showWarning("Acesso Restrito", "Você não tem permissão para criar tarefas");
         return;
       }
       createTaskMutation.mutate(formData);
@@ -308,11 +500,11 @@ const TaskManagement = () => {
   const handleNaturalLanguageSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!naturalLanguageInput.trim()) {
-      toast.error("Por favor, insira algum texto para criar uma tarefa.");
+      showWarning("Campo Obrigatório", "Por favor, insira algum texto para criar uma tarefa");
       return;
     }
 
-    // Basic NLP Placeholder
+    // Resto da função permanece igual...
     const deadlineMatch = naturalLanguageInput.match(/até (\d{4}-\d{2}-\d{2})/i);
     let deadline = deadlineMatch ? deadlineMatch[1] : null;
 
@@ -340,8 +532,7 @@ const TaskManagement = () => {
     };
 
     createNlpTaskMutation.mutate(nlpTaskData);
-  }, [naturalLanguageInput, clients, createNlpTaskMutation]);
-
+  }, [naturalLanguageInput, clients, createNlpTaskMutation, showWarning]);
   // Prepare a task for editing
   const selectTaskForEdit = useCallback((task) => {
     setSelectedTask(task);
@@ -368,7 +559,7 @@ const TaskManagement = () => {
   // Confirm and trigger delete
   const confirmDelete = useCallback((taskId) => {
     if (!permissions.isOrgAdmin && !permissions.canDeleteTasks) {
-      toast.error("Você não tem permissão para excluir tarefas");
+      showWarning("Acesso Negado", "Você não tem permissão para excluir tarefas");
       return;
     }
     if (window.confirm("Tem certeza que deseja excluir esta tarefa? Esta ação não pode ser desfeita.")) {
@@ -383,11 +574,11 @@ const TaskManagement = () => {
       (permissions.canEditAssignedTasks && task.assigned_to === permissions.userId);
 
     if (!canUpdate) {
-      toast.error("Você não tem permissão para atualizar esta tarefa");
+      showWarning("Acesso Restrito", "Você não tem permissão para atualizar esta tarefa");
       return;
     }
     updateTaskStatusMutation.mutate({ id: task.id, status: newStatus });
-  }, [updateTaskStatusMutation, permissions]);
+  }, [updateTaskStatusMutation, permissions, showWarning]);
 
   // --- Helper Functions ---
   const formatDate = (dateString) => {
@@ -551,6 +742,7 @@ const TaskManagement = () => {
 
   // Verificar permissões para mostrar mensagem de acesso restrito
   const canViewTasks = permissions.canViewAllTasks || permissions.isOrgAdmin;
+  const canCreateAnyTask = permissions.isOrgAdmin || permissions.canCreateTasks;
 
   if (!canViewTasks && !permissions.canEditAssignedTasks) {
     return (
@@ -594,13 +786,10 @@ const TaskManagement = () => {
       minHeight: '100vh',
       color: 'white',
       padding: '2rem',
+      zIndex: 9999
     }}>
-      <BackgroundElements businessStatus="optimal" />      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        style={{ zIndex: 9999 }}
-      />
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }} />
+      <BackgroundElements businessStatus="optimal" />
 
       <motion.div
         initial="hidden"
@@ -614,90 +803,37 @@ const TaskManagement = () => {
         }}
       >
         {/* Header */}
-        <motion.div
-          variants={itemVariants}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '2rem',
-            flexWrap: 'wrap',
-            gap: '1rem'
-          }}
-        >
-          <div>
-            <h1 style={{
-              fontSize: '1.8rem',
-              fontWeight: '700',
-              margin: '0 0 0.5rem 0',
-              background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
-            }}>
-              Gestão de Tarefas
-            </h1>
-            <p style={{
-              fontSize: '1rem',
-              color: 'rgba(191, 219, 254, 1)',
-              margin: 0
-            }}>
-              Organize e acompanhe todas as suas tarefas
-            </p>
+        <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <ListChecks size={36} style={{ color: 'rgb(52,211,153)' }} />
+            <div>
+              <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0 0 0.5rem 0', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                Gestão de Tarefas
+              </h1>
+              <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>Organize e acompanhe todas as suas tarefas.</p>
+            </div>
           </div>
-
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <motion.button
-              whileHover={{ scale: 1.05, y: -2 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => {
+            {canCreateAnyTask && (
+              <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => {
                 setShowNaturalLanguageForm(!showNaturalLanguageForm);
                 if (showForm) setShowForm(false);
                 if (showNaturalLanguageForm) setNaturalLanguageInput("");
+                setShowFilters(false);
               }}
-              style={{
-                ...glassStyle,
-                padding: '0.75rem 1.5rem',
-                border: '1px solid rgba(147, 51, 234, 0.3)',
-                background: showNaturalLanguageForm ? 'rgba(239, 68, 68, 0.2)' : 'rgba(147, 51, 234, 0.2)',
-                color: 'white',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                fontSize: '0.875rem',
-                fontWeight: '500'
+                style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(147,51,234,${showNaturalLanguageForm ? 0.6 : 0.3})`, background: `rgba(147,51,234,${showNaturalLanguageForm ? 0.3 : 0.2})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
+                <Zap size={18} /> {showNaturalLanguageForm ? 'Cancelar IA' : 'Criar com IA'}
+              </motion.button>
+            )}
+            {canCreateAnyTask && (
+              <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => {
+                resetForm();
+                setShowForm(!showForm);
+                if (showNaturalLanguageForm) setShowNaturalLanguageForm(false);
+                setShowFilters(false);
               }}
-            >
-              <FileText size={18} />
-              {showNaturalLanguageForm ? 'Cancelar' : 'Entrada Natural'}
-            </motion.button>
-
-            {(permissions.isOrgAdmin || permissions.canCreateTasks) && (
-              <motion.button
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  resetForm();
-                  setShowForm(!showForm);
-                  if (showNaturalLanguageForm) setShowNaturalLanguageForm(false);
-                }}
-                style={{
-                  ...glassStyle,
-                  padding: '0.75rem 1.5rem',
-                  border: '1px solid rgba(59, 130, 246, 0.3)',
-                  background: showForm ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                  color: 'white',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  fontSize: '0.875rem',
-                  fontWeight: '500'
-                }}
-              >
-                <Plus size={18} />
-                {showForm ? 'Cancelar' : 'Nova Tarefa'}
+                style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(59,130,246,${showForm ? 0.6 : 0.3})`, background: `rgba(59,130,246,${showForm ? 0.3 : 0.2})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
+                <Plus size={18} /> {showForm ? 'Cancelar Tarefa' : 'Nova Tarefa'}
               </motion.button>
             )}
           </div>
@@ -811,40 +947,7 @@ const TaskManagement = () => {
                       fontSize: '0.875rem'
                     }}
                   >
-                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Status</option>
-                    {STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{
-                    display: 'block',
-                    fontSize: '0.75rem',
-                    fontWeight: '500',
-                    marginBottom: '0.5rem',
-                    color: 'rgba(255, 255, 255, 0.8)'
-                  }}>
-                    Cliente
-                  </label>
-                  <select
-                    name="client"
-                    value={filters.client}
-                    onChange={handleFilterChange}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'white',
-                      fontSize: '0.875rem'
-                    }}
-                  >
-                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Clientes</option>
+                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecione um Cliente</option>
                     {clients.map((client) => (
                       <option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>
                         {client.name}
@@ -852,104 +955,397 @@ const TaskManagement = () => {
                     ))}
                   </select>
                 </div>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
+        {/* Regular Task Form */}
+        <AnimatePresence>
+          {showForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, y: -20 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                ...glassStyle,
+                padding: '1.5rem',
+                marginBottom: '2rem'
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                marginBottom: '1.5rem'
+              }}>
+                <div style={{
+                  padding: '0.5rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                  borderRadius: '12px'
+                }}>
+                  <Plus style={{ color: 'rgb(147, 197, 253)' }} size={20} />
+                </div>
                 <div>
-                  <label style={{
-                    display: 'block',
-                    fontSize: '0.75rem',
-                    fontWeight: '500',
-                    marginBottom: '0.5rem',
-                    color: 'rgba(255, 255, 255, 0.8)'
-                  }}>
-                    Prioridade
-                  </label>
-                  <select
-                    name="priority"
-                    value={filters.priority}
-                    onChange={handleFilterChange}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: 'white',
-                      fontSize: '0.875rem'
-                    }}
-                  >
-                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todas as Prioridades</option>
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
-                        {option.label}
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                    {selectedTask ? 'Editar Tarefa' : 'Criar Nova Tarefa'}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                    {selectedTask ? 'Atualize os detalhes da tarefa' : 'Preencha os campos para criar uma nova tarefa'}
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                  gap: '1rem',
+                  marginBottom: '1.5rem'
+                }}>
+                  {/* Título */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Título *
+                    </label>
+                    <input
+                      type="text"
+                      name="title"
+                      value={formData.title}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="Digite o título da tarefa"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    />
+                  </div>
+
+                  {/* Cliente */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Cliente
+                    </label>
+                    <select
+                      name="client"
+                      value={formData.client}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      <option value="" style={{ background: '#1f2937', color: 'white' }}>
+                        Selecione um cliente
                       </option>
-                    ))}
-                  </select>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>
+                          {client.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Categoria */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Categoria
+                    </label>
+                    <select
+                      name="category"
+                      value={formData.category}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      <option value="" style={{ background: '#1f2937', color: 'white' }}>
+                        Selecione uma categoria
+                      </option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id} style={{ background: '#1f2937', color: 'white' }}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Responsável */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Responsável
+                    </label>
+                    <select
+                      name="assigned_to"
+                      value={formData.assigned_to}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      <option value="" style={{ background: '#1f2937', color: 'white' }}>
+                        Selecione um responsável
+                      </option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.user} style={{ background: '#1f2937', color: 'white' }}>
+                          {user.username}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Status */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Status
+                    </label>
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      {STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Prioridade */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Prioridade
+                    </label>
+                    <select
+                      name="priority"
+                      value={formData.priority}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Prazo */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Prazo
+                    </label>
+                    <input
+                      type="date"
+                      name="deadline"
+                      value={formData.deadline}
+                      onChange={handleInputChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    />
+                  </div>
+
+                  {/* Tempo Estimado */}
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      marginBottom: '0.5rem',
+                      color: 'rgba(255, 255, 255, 0.8)'
+                    }}>
+                      Tempo Estimado (minutos)
+                    </label>
+                    <input
+                      type="number"
+                      name="estimated_time_minutes"
+                      value={formData.estimated_time_minutes}
+                      onChange={handleInputChange}
+                      placeholder="Ex: 120"
+                      min="0"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '0.875rem'
+                      }}
+                    />
+                  </div>
                 </div>
 
-                <div>
+                {/* Descrição */}
+                <div style={{ marginBottom: '1.5rem' }}>
                   <label style={{
                     display: 'block',
-                    fontSize: '0.75rem',
+                    fontSize: '0.875rem',
                     fontWeight: '500',
                     marginBottom: '0.5rem',
                     color: 'rgba(255, 255, 255, 0.8)'
                   }}>
-                    Atribuída a
+                    Descrição
                   </label>
-                  <select
-                    name="assignedTo"
-                    value={filters.assignedTo}
-                    onChange={handleFilterChange}
+                  <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    placeholder="Descrição detalhada da tarefa..."
+                    rows={4}
                     style={{
                       width: '100%',
-                      padding: '0.5rem',
+                      padding: '0.75rem',
                       background: 'rgba(255, 255, 255, 0.1)',
                       border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       color: 'white',
-                      fontSize: '0.875rem'
+                      fontSize: '0.875rem',
+                      resize: 'vertical'
                     }}
-                  >
-                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Responsáveis</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.user} style={{ background: '#1f2937', color: 'white' }}>
-                        {user.username}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
-                <div>
-                  <label style={{
-                    display: 'block',
-                    fontSize: '0.75rem',
-                    fontWeight: '500',
-                    marginBottom: '0.5rem',
-                    color: 'rgba(255, 255, 255, 0.8)'
-                  }}>
-                    Categoria
-                  </label>
-                  <select
-                    name="category"
-                    value={filters.category}
-                    onChange={handleFilterChange}
+                {/* Botões */}
+                <div style={{
+                  display: 'flex',
+                  gap: '0.75rem',
+                  justifyContent: 'flex-end'
+                }}>
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02, y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={resetForm}
                     style={{
-                      width: '100%',
-                      padding: '0.5rem',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
+                      ...glassStyle,
+                      padding: '0.75rem 1.5rem',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      background: 'rgba(239, 68, 68, 0.2)',
                       color: 'white',
-                      fontSize: '0.875rem'
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: '500'
                     }}
                   >
-                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Todas as Categorias</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id} style={{ background: '#1f2937', color: 'white' }}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
+                    Cancelar
+                  </motion.button>
+                  <motion.button
+                    type="submit"
+                    whileHover={{ scale: 1.02, y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    disabled={createTaskMutation.isPending || updateTaskMutation.isPending}
+                    style={{
+                      ...glassStyle,
+                      padding: '0.75rem 1.5rem',
+                      border: '1px solid rgba(52, 211, 153, 0.3)',
+                      background: 'rgba(52, 211, 153, 0.2)',
+                      color: 'white',
+                      cursor: createTaskMutation.isPending || updateTaskMutation.isPending ? 'not-allowed' : 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      opacity: createTaskMutation.isPending || updateTaskMutation.isPending ? 0.7 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    {(createTaskMutation.isPending || updateTaskMutation.isPending) && (
+                      <Loader2 size={16} className="animate-spin" />
+                    )}
+                    {selectedTask ? 'Atualizar' : 'Criar'} Tarefa
+                  </motion.button>
                 </div>
               </form>
             </motion.div>
@@ -1101,7 +1497,319 @@ const TaskManagement = () => {
           </div>
         </motion.div>
       </motion.div>
+      {/* Search and Filters Section */}
+      <motion.div
+        variants={itemVariants}
+        style={{
+          ...glassStyle,
+          padding: '1.5rem',
+          marginBottom: '2rem'
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '1.5rem',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              padding: '0.5rem',
+              backgroundColor: 'rgba(59, 130, 246, 0.2)',
+              borderRadius: '12px'
+            }}>
+              <SearchIcon style={{ color: 'rgb(147, 197, 253)' }} size={20} />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                Pesquisa e Filtros
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                Encontre rapidamente as tarefas que procura
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowFilters(!showFilters)}
+              style={{
+                ...glassStyle,
+                padding: '0.75rem 1rem',
+                border: `1px solid rgba(59, 130, 246, ${showFilters ? 0.6 : 0.3})`,
+                background: `rgba(59, 130, 246, ${showFilters ? 0.3 : 0.2})`,
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem',
+                fontWeight: '500'
+              }}
+            >
+              <SlidersHorizontal size={16} />
+              {showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={resetFilters}
+              style={{
+                ...glassStyle,
+                padding: '0.75rem 1rem',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                background: 'rgba(239, 68, 68, 0.2)',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem',
+                fontWeight: '500'
+              }}
+            >
+              <RotateCcw size={16} />
+              Limpar
+            </motion.button>
+          </div>
+        </div>
 
+        {/* Search Bar */}
+        <div style={{ marginBottom: showFilters ? '1.5rem' : '0' }}>
+          <div style={{ position: 'relative' }}>
+            <SearchIcon
+              size={20}
+              style={{
+                position: 'absolute',
+                left: '1rem',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'rgba(255, 255, 255, 0.5)'
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Pesquisar tarefas por título, descrição, cliente..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              style={{
+                width: '100%',
+                padding: '0.75rem 1rem 0.75rem 3rem',
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                color: 'white',
+                fontSize: '0.875rem'
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Filters */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '1rem'
+              }}
+            >
+              {/* Status Filter */}
+              <div>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  <Activity size={16} />
+                  Status
+                </label>
+                <select
+                  name="status"
+                  value={filters.status}
+                  onChange={handleFilterChange}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Status</option>
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Client Filter */}
+              <div>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  <Briefcase size={16} />
+                  Cliente
+                </label>
+                <select
+                  name="client"
+                  value={filters.client}
+                  onChange={handleFilterChange}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Clientes</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id} style={{ background: '#1f2937', color: 'white' }}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Priority Filter */}
+              <div>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  <Target size={16} />
+                  Prioridade
+                </label>
+                <select
+                  name="priority"
+                  value={filters.priority}
+                  onChange={handleFilterChange}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>Todas as Prioridades</option>
+                  {PRIORITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} style={{ background: '#1f2937', color: 'white' }}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Assigned To Filter */}
+              <div>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  <UserCheck size={16} />
+                  Atribuída a
+                </label>
+                <select
+                  name="assignedTo"
+                  value={filters.assignedTo}
+                  onChange={handleFilterChange}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>Todos os Responsáveis</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.user} style={{ background: '#1f2937', color: 'white' }}>
+                      {user.username}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.75rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  <TagIcon size={16} />
+                  Categoria
+                </label>
+                <select
+                  name="category"
+                  value={filters.category}
+                  onChange={handleFilterChange}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>Todas as Categorias</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id} style={{ background: '#1f2937', color: 'white' }}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
       {/* Task List */}
       <motion.div
         variants={itemVariants}
@@ -1522,7 +2230,7 @@ const TaskManagement = () => {
                             cursor: 'pointer'
                           }}
                         >
-                          <Edit size={16} />
+                          <EditIcon size={16} />
                         </motion.button>
                         <motion.button
                           whileHover={{ scale: 1.1, y: -2 }}
@@ -1538,8 +2246,25 @@ const TaskManagement = () => {
                             cursor: 'pointer'
                           }}
                         >
-                          <Settings size={16} />
+                          <SettingsIcon size={16} />
                         </motion.button>
+                        <motion.button
+  whileHover={{ scale: 1.1, y: -2 }}
+  whileTap={{ scale: 0.9 }}
+  onClick={() => handleLogTimeForTask(task)}
+  title="Registrar tempo"
+  style={{
+    background: 'rgba(52, 211, 153, 0.2)',
+    border: '1px solid rgba(52, 211, 153, 0.3)',
+    borderRadius: '6px',
+    padding: '0.5rem',
+    color: 'rgb(52, 211, 153)',
+    cursor: 'pointer'
+  }}
+>
+  <Clock size={16} />
+</motion.button>
+
                         <motion.button
                           whileHover={{ scale: 1.1, y: -2 }}
                           whileTap={{ scale: 0.9 }}
@@ -1565,6 +2290,74 @@ const TaskManagement = () => {
           </div>
         )}
       </motion.div>
+      <AnimatePresence>
+  {showTimeEntryModal && (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.6)',
+      backdropFilter: 'blur(4px)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '1rem'
+    }}>
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        style={{
+          ...glassStyle,
+          width: '100%',
+          maxWidth: '800px',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          color: 'white'
+        }}
+      >
+        <div style={{
+          padding: '1.5rem',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <h3 style={{ margin: 0 }}>
+            Registrar Tempo - {selectedTaskForTimeEntry?.title}
+          </h3>
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setShowTimeEntryModal(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255,255,255,0.7)',
+              cursor: 'pointer'
+            }}
+          >
+            <X size={24} />
+          </motion.button>
+        </div>
+        
+        <div style={{ padding: '1.5rem' }}>
+          <TimeEntryForms
+            initialClientId={selectedTaskForTimeEntry?.client}
+            initialTaskId={selectedTaskForTimeEntry?.id}
+            onTimeEntryCreated={(newEntry) => {
+              queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
+              setShowTimeEntryModal(false);
+              showSuccess("Tempo Registrado", "Tempo registrado com sucesso para a tarefa");
+            }}
+            permissions={permissions}
+          />
+        </div>
+      </motion.div>
+    </div>
+  )}
+</AnimatePresence>
+      <NotificationsContainer />
       <style jsx>{`
         @keyframes spin {
           from { transform: rotate(0deg); }

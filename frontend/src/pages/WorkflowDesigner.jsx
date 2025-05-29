@@ -6,719 +6,399 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronUp,
-  Check,
   AlertTriangle,
-  Settings,
+  Settings2 as SettingsIcon, // Renamed to avoid conflict
   HelpCircle,
   Users,
-  X
+  XCircle, // For cancel
+  Network, // For workflow icon
+  MoveVertical,
+  Link2,
+  ShieldCheck // For approval
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom'; // Kept if standalone usage is possible
 import { toast } from 'react-toastify';
 import api from '../api';
 import { useQuery } from '@tanstack/react-query';
 
-// Componente principal para desenho e gestão de workflows
+// Estilos glass (pode ser movido para um arquivo de utils se usado em muitos lugares)
+const glassStyle = {
+  background: 'rgba(255, 255, 255, 0.05)',
+  backdropFilter: 'blur(10px)', // Slightly less blur for embedded components
+  border: '1px solid rgba(255, 255, 255, 0.15)',
+  borderRadius: '12px', // Smaller radius for sub-components
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  exit: { opacity: 0, y: -10, transition: { duration: 0.2 } }
+};
+
+
 const WorkflowDesigner = ({ 
   existingWorkflow = null, 
   users = [], 
   onSave, 
-  onCancel 
+  onCancel,
+  isSaving = false // Prop to indicate saving state from parent
 }) => {
   const navigate = useNavigate();
   
-  // Adicione esta consulta para buscar usuários se não forem fornecidos como prop
   const { data: fetchedUsers = [] } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      if (users && users.length > 0) return users;
+      if (users && users.length > 0) return users; // Use prop if available
       const response = await api.get('/profiles/');
       return response.data;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 5 * 60 * 1000, // Cache for 5 mins
   });
   
-  // Use os usuários fornecidos como prop ou os buscados da API
   const effectiveUsers = users.length > 0 ? users : fetchedUsers;
   
-  // Estado para o workflow atual
   const [workflowData, setWorkflowData] = useState({
-    name: '',
-    description: '',
-    is_active: true,
-    steps: []
+    name: '', description: '', is_active: true, steps: []
   });
   
-  // Estado para controlar o passo que está sendo editado
   const [editingStepIndex, setEditingStepIndex] = useState(null);
   
-  // Estado para novo passo sendo adicionado
   const [newStep, setNewStep] = useState({
-    name: '',
-    description: '',
-    order: 0,
-    requires_approval: false,
-    approver_role: '',
-    assign_to: '',
-    next_steps: []
+    name: '', description: '', order: 0, requires_approval: false, 
+    approver_role: '', assign_to: '', next_steps: []
   });
 
-  // Carregar dados de workflow existente
   useEffect(() => {
     if (existingWorkflow) {
       setWorkflowData({
         name: existingWorkflow.name || '',
         description: existingWorkflow.description || '',
-        is_active: existingWorkflow.is_active !== false,
-        steps: existingWorkflow.steps || []
+        is_active: existingWorkflow.is_active !== undefined ? existingWorkflow.is_active : true,
+        steps: (existingWorkflow.steps || []).map(step => ({
+            ...step,
+            next_steps: Array.isArray(step.next_steps) ? step.next_steps :
+              (typeof step.next_steps === 'string' && step.next_steps.startsWith('[')) ? JSON.parse(step.next_steps) : []
+        }))
       });
+    } else {
+      // Reset for new workflow creation
+      setWorkflowData({ name: '', description: '', is_active: true, steps: [] });
+      setNewStep({ name: '', description: '', order: 0, requires_approval: false, approver_role: '', assign_to: '', next_steps: [] });
+      setEditingStepIndex(null);
     }
   }, [existingWorkflow]);
 
-  // Função para atualizar o workflow
   const handleWorkflowChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setWorkflowData({
-      ...workflowData,
-      [name]: type === 'checkbox' ? checked : value
-    });
+    setWorkflowData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
-  // Função para adicionar um novo passo
   const handleAddStep = () => {
     if (!newStep.name.trim()) {
-      alert('O nome do passo é obrigatório');
+      toast.warn('O nome do passo é obrigatório.');
       return;
     }
-
-    const updatedSteps = [...workflowData.steps];
-    const stepToAdd = {
-      ...newStep,
-      order: workflowData.steps.length + 1,
-      id: `temp-${Date.now()}` // ID temporário até salvar no backend
-    };
-    
-    updatedSteps.push(stepToAdd);
-    
-    setWorkflowData({
-      ...workflowData,
-      steps: updatedSteps
-    });
-    
-    // Resetar o formulário de novo passo
-    setNewStep({
-      name: '',
-      description: '',
-      order: workflowData.steps.length + 1,
-      requires_approval: false,
-      approver_role: '',
-      assign_to: '',
-      next_steps: []
-    });
+    const stepToAdd = { ...newStep, order: workflowData.steps.length + 1, id: `temp-${Date.now()}` };
+    setWorkflowData(prev => ({ ...prev, steps: [...prev.steps, stepToAdd] }));
+    setNewStep({ name: '', description: '', order: workflowData.steps.length + 2, requires_approval: false, approver_role: '', assign_to: '', next_steps: [] });
   };
 
-  // Função para atualizar um passo
   const handleStepChange = (index, field, value) => {
     const updatedSteps = [...workflowData.steps];
-    updatedSteps[index] = {
-      ...updatedSteps[index],
-      [field]: value
-    };
-    
-    setWorkflowData({
-      ...workflowData,
-      steps: updatedSteps
-    });
+    updatedSteps[index] = { ...updatedSteps[index], [field]: value };
+    setWorkflowData(prev => ({ ...prev, steps: updatedSteps }));
   };
 
-  // Função para remover um passo
-  const handleRemoveStep = (index) => {
+  const handleRemoveStep = (indexToRemove) => {
     if (window.confirm('Tem certeza que deseja remover este passo?')) {
-      const updatedSteps = workflowData.steps.filter((_, i) => i !== index);
+      const updatedSteps = workflowData.steps.filter((_, i) => i !== indexToRemove)
+        .map((step, i) => ({ ...step, order: i + 1 })); // Reorder
       
-      // Reordenar os passos restantes
-      updatedSteps.forEach((step, i) => {
-        step.order = i + 1;
-      });
-      
-      setWorkflowData({
-        ...workflowData,
-        steps: updatedSteps
-      });
-      
-      if (editingStepIndex === index) {
-        setEditingStepIndex(null);
-      }
+      // Update next_steps arrays for all steps to remove references to the deleted step
+      const deletedStepId = workflowData.steps[indexToRemove].id;
+      const finalSteps = updatedSteps.map(step => ({
+          ...step,
+          next_steps: (step.next_steps || []).filter(id => id !== deletedStepId)
+      }));
+
+      setWorkflowData(prev => ({ ...prev, steps: finalSteps }));
+      if (editingStepIndex === indexToRemove) setEditingStepIndex(null);
+      else if (editingStepIndex > indexToRemove) setEditingStepIndex(editingStepIndex - 1);
     }
   };
 
-  // Função para mover um passo para cima
-  const moveStepUp = (index) => {
-    if (index === 0) return; // Já está no topo
-    
+  const moveStep = (index, direction) => {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= workflowData.steps.length) return;
+
     const updatedSteps = [...workflowData.steps];
-    const temp = updatedSteps[index];
-    updatedSteps[index] = updatedSteps[index - 1];
-    updatedSteps[index - 1] = temp;
-    
-    // Atualizar a ordem
-    updatedSteps.forEach((step, i) => {
-      step.order = i + 1;
-    });
-    
-    setWorkflowData({
-      ...workflowData,
-      steps: updatedSteps
-    });
-    
-    if (editingStepIndex === index) {
-      setEditingStepIndex(index - 1);
-    } else if (editingStepIndex === index - 1) {
-      setEditingStepIndex(index);
-    }
+    [updatedSteps[index], updatedSteps[newIndex]] = [updatedSteps[newIndex], updatedSteps[index]]; // Swap
+    const reorderedSteps = updatedSteps.map((step, i) => ({ ...step, order: i + 1 })); // Reorder
+
+    setWorkflowData(prev => ({ ...prev, steps: reorderedSteps }));
+
+    if (editingStepIndex === index) setEditingStepIndex(newIndex);
+    else if (editingStepIndex === newIndex) setEditingStepIndex(index);
   };
 
-  // Função para mover um passo para baixo
-  const moveStepDown = (index) => {
-    if (index === workflowData.steps.length - 1) return; // Já está embaixo
-    
-    const updatedSteps = [...workflowData.steps];
-    const temp = updatedSteps[index];
-    updatedSteps[index] = updatedSteps[index + 1];
-    updatedSteps[index + 1] = temp;
-    
-    // Atualizar a ordem
-    updatedSteps.forEach((step, i) => {
-      step.order = i + 1;
-    });
-    
-    setWorkflowData({
-      ...workflowData,
-      steps: updatedSteps
-    });
-    
-    if (editingStepIndex === index) {
-      setEditingStepIndex(index + 1);
-    } else if (editingStepIndex === index + 1) {
-      setEditingStepIndex(index);
-    }
-  };
-
-  // Função para atualizar as conexões entre passos
   const updateStepConnections = (stepIndex, nextStepIds) => {
     const updatedSteps = [...workflowData.steps];
-    updatedSteps[stepIndex] = {
-      ...updatedSteps[stepIndex],
-      next_steps: nextStepIds
-    };
-    
-    setWorkflowData({
-      ...workflowData,
-      steps: updatedSteps
-    });
+    updatedSteps[stepIndex] = { ...updatedSteps[stepIndex], next_steps: nextStepIds };
+    setWorkflowData(prev => ({ ...prev, steps: updatedSteps }));
   };
 
-  // Função para salvar o workflow
-  const handleSaveWorkflow = async () => {
+  const handleSaveWorkflow = () => {
     if (!workflowData.name.trim()) {
-      alert('O nome do workflow é obrigatório');
+      toast.error('O nome do workflow é obrigatório.');
       return;
     }
-
     if (workflowData.steps.length === 0) {
-      alert('O workflow precisa ter pelo menos um passo');
+      toast.warn('O workflow precisa ter pelo menos um passo.');
       return;
     }
-
-    // Formatar dados para salvar
-    const workflowToSave = {
-      ...workflowData,
-      // Garantir que cada passo tenha os campos corretos para o backend
-      steps: workflowData.steps.map(step => ({
-        ...step,
-        next_steps: Array.isArray(step.next_steps) ? step.next_steps : [],
-        workflow: existingWorkflow?.id // Associar ao workflow
-      }))
-    };
-    
-    // Se onSave foi fornecido como prop, use-o
-    if (typeof onSave === 'function') {
-      onSave(workflowToSave);
-    } else {
-      // Caso contrário, salve diretamente usando a API
-      try {
-        // Primeiro, criar o workflow principal
-        const response = await api.post('/workflow-definitions/', {
-          name: workflowToSave.name,
-          description: workflowToSave.description,
-          is_active: workflowToSave.is_active
-        });
-        
-        const workflowId = response.data.id;
-        
-        // Depois, criar cada passo do workflow
-        for (const step of workflowToSave.steps) {
-          await api.post('/workflow-steps/', {
-            ...step,
-            workflow: workflowId,
-            next_steps: JSON.stringify(step.next_steps) // Serializar para JSON
-          });
-        }
-        
-        toast.success('Workflow criado com sucesso!');
-        navigate('/workflow-management'); // Redirecionar para a página de gerenciamento
-      } catch (error) {
-        console.error('Erro ao salvar workflow:', error);
-        toast.error('Falha ao salvar workflow. Por favor tente novamente.');
-      }
-    }
+    onSave(workflowData);
   };
 
-  // Da mesma forma, modifique onCancel
-  const handleCancel = () => {
-    if (typeof onCancel === 'function') {
-      onCancel();
-    } else {
-      navigate('/workflow-management'); // Voltar para a página de gerenciamento
-    }
-  };
-
-  // Calculando possíveis próximos passos para conexões
   const getPossibleNextSteps = (currentStepIndex) => {
-    return workflowData.steps.filter((step, index) => 
-      index !== currentStepIndex && index > currentStepIndex
-    );
+    return workflowData.steps.filter((_, index) => index !== currentStepIndex); // Allow connections to any other step
   };
 
-  // Função para alternar a edição de um passo
-  const toggleEditStep = (index) => {
-    setEditingStepIndex(editingStepIndex === index ? null : index);
-  };
-
-  // Função para atualizar o novo passo
+  const toggleEditStep = (index) => setEditingStepIndex(editingStepIndex === index ? null : index);
   const handleNewStepChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setNewStep({
-      ...newStep,
-      [name]: type === 'checkbox' ? checked : value
-    });
+    setNewStep(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
+  const inputStyle = { width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' };
+  const labelStyle = { display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' };
+  const buttonStyle = (variant = 'primary') => ({
+    padding: '0.75rem 1.5rem',
+    border: `1px solid rgba(${variant === 'danger' ? '239,68,68' : variant === 'success' ? '52,211,153' : '59,130,246'},0.3)`,
+    background: `rgba(${variant === 'danger' ? '239,68,68' : variant === 'success' ? '52,211,153' : '59,130,246'},0.2)`,
+    borderRadius: '8px', color: 'white', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', gap: '0.5rem'
+  });
+
   return (
-    <div className="main">
-      <Header>
-        <div className="p-6 bg-white-100 min-h-screen" style={{ marginLeft: "3%" }}>
-          <div className="bg-white p-6 rounded-lg shadow-lg">
-            <h2 className="text-xl font-semibold mb-6 flex items-center">
-              <Settings className="mr-2 text-blue-600" size={22} />
-              {existingWorkflow ? 'Editar Workflow' : 'Criar Novo Workflow'}
-            </h2>
-            
-            {/* Detalhes básicos do workflow */}
-            <div className="mb-6 bg-white-50 p-4 rounded-md">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-gray-700 mb-2">Nome do Workflow *</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={workflowData.name}
-                    onChange={handleWorkflowChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                    placeholder="Ex: Declaração IVA Mensal"
-                    required
-                  />
-                </div>
-                <div className="flex items-center mt-8">
-                  <input
-                    type="checkbox"
-                    id="is_active"
-                    name="is_active"
-                    checked={workflowData.is_active}
-                    onChange={handleWorkflowChange}
-                    className="h-4 w-4 text-blue-600 rounded"
-                  />
-                  <label htmlFor="is_active" className="ml-2 text-gray-700">
-                    Workflow Ativo
-                  </label>
-                </div>
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Descrição</label>
-                <textarea
-                  name="description"
-                  value={workflowData.description}
-                  onChange={handleWorkflowChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                  placeholder="Descreva o propósito deste workflow"
-                  rows="2"
-                />
-              </div>
-            </div>
-            
-            {/* Lista de passos existentes */}
-            <div className="mb-6">
-              <h3 className="text-lg font-medium mb-4 flex items-center">
-                <ArrowRight className="mr-2 text-blue-600" size={20} />
-                Passos do Workflow
-              </h3>
-              
-              {workflowData.steps.length === 0 ? (
-                <div className="text-center py-8 bg-white-50 rounded-lg border border-dashed border-gray-300">
-                  <p className="text-gray-500 mb-2">Nenhum passo definido</p>
-                  <p className="text-sm text-gray-400">
-                    Adicione passos para construir seu workflow
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {workflowData.steps.map((step, index) => (
-                    <div key={step.id || index} className="border border-gray-200 rounded-lg overflow-hidden">
-                      {/* Cabeçalho do passo */}
-                      <div className="bg-white-50 p-4 flex justify-between items-center border-b border-gray-200">
-                        <div className="flex items-center">
-                          <div className="bg-blue-100 text-blue-800 h-7 w-7 rounded-full flex items-center justify-center mr-3 font-semibold">
-                            {index + 1}
-                          </div>
-                          <div>
-                            <h4 className="font-medium">{step.name}</h4>
-                            {step.description && (
-                              <p className="text-sm text-gray-500">{step.description}</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => moveStepUp(index)}
-                            disabled={index === 0}
-                            className={`p-1 rounded ${index === 0 ? 'text-gray-300' : 'text-gray-600 hover:bg-white-100'}`}
-                            title="Mover para cima"
-                          >
-                            <ChevronUp size={18} />
-                          </button>
-                          <button
-                            onClick={() => moveStepDown(index)}
-                            disabled={index === workflowData.steps.length - 1}
-                            className={`p-1 rounded ${index === workflowData.steps.length - 1 ? 'text-gray-300' : 'text-gray-600 hover:bg-white-100'}`}
-                            title="Mover para baixo"
-                          >
-                            <ChevronDown size={18} />
-                          </button>
-                          <button
-                            onClick={() => toggleEditStep(index)}
-                            className="p-1 rounded text-blue-600 hover:bg-blue-50"
-                            title="Editar passo"
-                          >
-                            <Settings size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleRemoveStep(index)}
-                            className="p-1 rounded text-red-600 hover:bg-red-50"
-                            title="Remover passo"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Detalhes do passo (expandido/colapsado) */}
-                      <AnimatePresence>
-                        {editingStepIndex === index && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="p-4 bg-white">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                  <label className="block text-gray-700 mb-2">Nome do Passo</label>
-                                  <input
-                                    type="text"
-                                    value={step.name}
-                                    onChange={(e) => handleStepChange(index, 'name', e.target.value)}
-                                    className="w-full p-2 border border-gray-300 rounded-md"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-gray-700 mb-2">Atribuir a</label>
-                                  <select
-                                    value={step.assign_to || ''}
-                                    onChange={(e) => handleStepChange(index, 'assign_to', e.target.value)}
-                                    className="w-full p-2 border border-gray-300 rounded-md"
-                                  >
-                                    <option value="">Selecione um responsável (opcional)</option>
-                                    {effectiveUsers.map(user => (
-                                      <option key={user.id} value={user.id}>
-                                        {user.username}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              </div>
-                              
-                              <div className="mb-4">
-                                <label className="block text-gray-700 mb-2">Descrição</label>
-                                <textarea
-                                  value={step.description || ''}
-                                  onChange={(e) => handleStepChange(index, 'description', e.target.value)}
-                                  className="w-full p-2 border border-gray-300 rounded-md"
-                                  rows="2"
-                                />
-                              </div>
-                              
-                              <div className="flex items-center mb-4">
-                                <input
-                                  type="checkbox"
-                                  id={`requires_approval_${index}`}
-                                  checked={step.requires_approval || false}
-                                  onChange={(e) => handleStepChange(index, 'requires_approval', e.target.checked)}
-                                  className="h-4 w-4 text-blue-600 rounded"
-                                />
-                                <label htmlFor={`requires_approval_${index}`} className="ml-2 text-gray-700">
-                                  Requer aprovação
-                                </label>
-                              </div>
-                              
-                              {step.requires_approval && (
-                                <div className="mb-4 ml-6">
-                                  <label className="block text-gray-700 mb-2">Papel do Aprovador</label>
-                                  <input
-                                    type="text"
-                                    value={step.approver_role || ''}
-                                    onChange={(e) => handleStepChange(index, 'approver_role', e.target.value)}
-                                    className="w-full p-2 border border-gray-300 rounded-md"
-                                    placeholder="Ex: Gestor, Sócio, Revisor"
-                                  />
-                                </div>
-                              )}
-                              
-                              {/* Próximos passos possíveis */}
-                              <div className="mt-4">
-                                <h5 className="font-medium text-gray-700 mb-2">Próximos Passos Possíveis</h5>
-                                <div className="bg-white-50 p-3 rounded-md">
-                                  {getPossibleNextSteps(index).length === 0 ? (
-                                    <p className="text-sm text-gray-500">
-                                      Não há passos subsequentes disponíveis.
-                                    </p>
-                                  ) : (
-                                    <div className="space-y-2">
-                                      {getPossibleNextSteps(index).map(nextStep => (
-                                        <div key={nextStep.id} className="flex items-center">
-                                          <input
-                                            type="checkbox"
-                                            id={`next_${index}_${nextStep.id}`}
-                                            checked={(step.next_steps || []).includes(nextStep.id)}
-                                            onChange={(e) => {
-                                              const currentNextSteps = [...(step.next_steps || [])];
-                                              if (e.target.checked) {
-                                                currentNextSteps.push(nextStep.id);
-                                              } else {
-                                                const stepIndex = currentNextSteps.indexOf(nextStep.id);
-                                                if (stepIndex !== -1) {
-                                                  currentNextSteps.splice(stepIndex, 1);
-                                                }
-                                              }
-                                              updateStepConnections(index, currentNextSteps);
-                                            }}
-                                            className="h-4 w-4 text-blue-600 rounded"
-                                          />
-                                          <label htmlFor={`next_${index}_${nextStep.id}`} className="ml-2 text-gray-700">
-                                            {nextStep.order}. {nextStep.name}
-                                          </label>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* Formulário para adicionar novo passo */}
-            <div className="mb-6 bg-blue-50 p-4 rounded-md border border-blue-100">
-              <h3 className="text-lg font-medium mb-4 flex items-center text-blue-800">
-                <PlusCircle className="mr-2 text-blue-600" size={20} />
-                Adicionar Novo Passo
-              </h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-gray-700 mb-2">Nome do Passo *</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={newStep.name}
-                    onChange={handleNewStepChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                    placeholder="Ex: Preparação da Declaração"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-700 mb-2">Atribuir a</label>
-                  <select
-                    name="assign_to"
-                    value={newStep.assign_to}
-                    onChange={handleNewStepChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                  >
-                    <option value="">Selecione um responsável (opcional)</option>
-                    {effectiveUsers.map(user => (
-                      <option key={user.id} value={user.id}>
-                        {user.username}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">Descrição</label>
-                <textarea
-                  name="description"
-                  value={newStep.description}
-                  onChange={handleNewStepChange}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                  placeholder="Descreva o que deve ser feito neste passo"
-                  rows="2"
-                />
-              </div>
-              
-              <div className="flex items-center mb-4">
-                <input
-                  type="checkbox"
-                  id="requires_approval_new"
-                  name="requires_approval"
-                  checked={newStep.requires_approval}
-                  onChange={handleNewStepChange}
-                  className="h-4 w-4 text-blue-600 rounded"
-                />
-                <label htmlFor="requires_approval_new" className="ml-2 text-gray-700">
-                  Requer aprovação
-                </label>
-              </div>
-              
-              {newStep.requires_approval && (
-                <div className="mb-4 ml-6">
-                  <label className="block text-gray-700 mb-2">Papel do Aprovador</label>
-                  <input
-                    type="text"
-                    name="approver_role"
-                    value={newStep.approver_role}
-                    onChange={handleNewStepChange}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                    placeholder="Ex: Gestor, Sócio, Revisor"
-                  />
-                </div>
-              )}
-              
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleAddStep}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
-                >
-                  <PlusCircle size={18} className="mr-2" />
-                  Adicionar Passo
-                </button>
-              </div>
-            </div>
-            
-            {/* Visualização do fluxo */}
-            {workflowData.steps.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-lg font-medium mb-4">Visualização do Fluxo</h3>
-                <div className="p-4 bg-white-50 rounded-lg overflow-x-auto">
-                  <div className="flex items-center min-w-max">
-                    {workflowData.steps.map((step, index) => (
-                      <React.Fragment key={step.id || index}>
-                        <div className="flex flex-col items-center">
-                          <div className={`p-3 rounded-lg border ${step.requires_approval ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'} min-w-[150px]`}>
-                            <div className="font-medium text-gray-800">{step.name}</div>
-                            {step.assign_to && (
-                              <div className="text-xs text-gray-500 flex items-center mt-1">
-                                <Users size={12} className="mr-1" />
-                                {effectiveUsers.find(u => u.id === step.assign_to)?.username || 'Assignee'}
-                              </div>
-                            )}
-                            {step.requires_approval && (
-                              <div className="text-xs text-yellow-700 flex items-center mt-1">
-                                <AlertTriangle size={12} className="mr-1" />
-                                Requer aprovação
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* Exibir conexões para próximos passos */}
-                          {(step.next_steps || []).length > 0 && (
-                            <div className="mt-2 text-xs text-gray-500">
-                              Próximos: {(step.next_steps || []).map(nextId => {
-                                const nextStep = workflowData.steps.find(s => s.id === nextId);
-                                return nextStep ? nextStep.name : '';
-                              }).filter(Boolean).join(', ')}
-                            </div>
-                          )}
-                        </div>
-                        
-                        {index < workflowData.steps.length - 1 && (
-                          <div className="mx-4 text-gray-400">
-                            <ArrowRight size={20} />
-                          </div>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Botões de ação */}
-            <div className="flex justify-end space-x-3 mt-8">
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-white-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveWorkflow}
-                className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-md flex items-center"
-              >
-                <Save size={18} className="mr-2" />
-                Salvar Workflow
-              </button>
-            </div>
-            
-            {/* Dica de uso */}
-            <div className="mt-6 bg-blue-50 p-3 rounded-lg flex items-start border border-blue-100">
-              <HelpCircle className="text-blue-500 mr-2 mt-0.5" size={18} />
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">Dicas para criar um bom workflow:</p>
-                <ul className="list-disc ml-5 space-y-1">
-                  <li>Comece definindo todos os passos necessários em ordem cronológica</li>
-                  <li>Identifique onde aprovações são necessárias e quem deve aprovar</li>
-                  <li>Defina caminhos alternativos para casos de rejeição ou exceções</li>
-                  <li>Atribua responsáveis para cada etapa sempre que possível</li>
-                </ul>
-              </div>
-            </div>
+    <motion.div style={{ ...glassStyle, padding: '2rem' }} variants={itemVariants}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+        <div style={{ padding: '0.5rem', backgroundColor: 'rgba(147,51,234,0.2)', borderRadius: '12px' }}><Network style={{ color: 'rgb(147,51,234)' }} size={24} /></div>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
+            {existingWorkflow ? 'Editar Workflow' : 'Criar Novo Workflow'}
+          </h2>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>Defina os detalhes e passos do seu fluxo de trabalho.</p>
+        </div>
+      </div>
+      
+      {/* Detalhes básicos do workflow */}
+      <motion.div variants={itemVariants} style={{ ...glassStyle, background: 'rgba(255,255,255,0.03)', padding: '1.5rem', marginBottom: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1.5rem', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <div>
+            <label htmlFor="workflowName" style={labelStyle}>Nome do Workflow *</label>
+            <input id="workflowName" type="text" name="name" value={workflowData.name} onChange={handleWorkflowChange} style={inputStyle} placeholder="Ex: Processo de Onboarding Cliente" required />
+          </div>
+          <div style={{alignSelf: 'flex-end', paddingBottom: '0.2rem'}}>
+            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: 0 }}>
+              <input type="checkbox" id="is_active" name="is_active" checked={workflowData.is_active} onChange={handleWorkflowChange} style={{ width: '18px', height: '18px', accentColor: 'rgb(52,211,153)' }} />
+              Workflow Ativo
+            </label>
           </div>
         </div>
-      </Header>
-    </div>
+        <div>
+          <label htmlFor="workflowDescription" style={labelStyle}>Descrição</label>
+          <textarea id="workflowDescription" name="description" value={workflowData.description} onChange={handleWorkflowChange} style={{...inputStyle, minHeight: '80px', resize: 'vertical'}} placeholder="Descreva o propósito e âmbito deste workflow" />
+        </div>
+      </motion.div>
+      
+      {/* Lista de passos existentes */}
+      <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
+        <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MoveVertical size={20}/>Passos do Workflow</h3>
+        {workflowData.steps.length === 0 ? (
+          <div style={{ ...glassStyle, background: 'rgba(0,0,0,0.1)', padding: '2rem', textAlign: 'center', borderStyle: 'dashed' }}>
+            <p style={{ color: 'rgba(255,255,255,0.7)', marginBottom: '0.5rem' }}>Nenhum passo definido.</p>
+            <p style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.5)' }}>Use o formulário abaixo para adicionar o primeiro passo.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {workflowData.steps.map((step, index) => (
+              <motion.div key={step.id || index} style={{ ...glassStyle, background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }} variants={itemVariants}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ padding: '0.25rem 0.6rem', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '50%', fontSize: '0.75rem', fontWeight: '600' }}>{index + 1}</span>
+                    <h4 style={{ margin: 0, fontWeight: '600', color: 'white' }}>{step.name}</h4>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <motion.button type="button" whileHover={{scale:1.1}} whileTap={{scale:0.9}} onClick={() => moveStep(index, -1)} disabled={index === 0} style={{...buttonStyle('secondary'), padding: '0.5rem', background: index === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(147,51,234,0.2)', borderColor: index === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(147,51,234,0.3)'}} title="Mover para cima"><ChevronUp size={16}/></motion.button>
+                    <motion.button type="button" whileHover={{scale:1.1}} whileTap={{scale:0.9}} onClick={() => moveStep(index, 1)} disabled={index === workflowData.steps.length - 1} style={{...buttonStyle('secondary'), padding: '0.5rem', background: index === workflowData.steps.length - 1 ? 'rgba(255,255,255,0.05)' : 'rgba(147,51,234,0.2)', borderColor: index === workflowData.steps.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(147,51,234,0.3)'}} title="Mover para baixo"><ChevronDown size={16}/></motion.button>
+                    <motion.button type="button" whileHover={{scale:1.1}} whileTap={{scale:0.9}} onClick={() => toggleEditStep(index)} style={{...buttonStyle(), padding: '0.5rem'}} title="Editar passo"><SettingsIcon size={16}/></motion.button>
+                    <motion.button type="button" whileHover={{scale:1.1}} whileTap={{scale:0.9}} onClick={() => handleRemoveStep(index)} style={{...buttonStyle('danger'), padding: '0.5rem'}} title="Remover passo"><Trash2 size={16}/></motion.button>
+                  </div>
+                </div>
+                <AnimatePresence>
+                  {editingStepIndex === index && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }}>
+                      <div style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.1)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                          <div>
+                            <label style={labelStyle}>Nome do Passo</label>
+                            <input type="text" value={step.name} onChange={(e) => handleStepChange(index, 'name', e.target.value)} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Atribuir a (Utilizador)</label>
+                            <select value={step.assign_to || ''} onChange={(e) => handleStepChange(index, 'assign_to', e.target.value)} style={inputStyle}>
+                              <option value="">Ninguém (Geral)</option>
+                              {effectiveUsers.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{marginBottom: '1rem'}}>
+                          <label style={labelStyle}>Descrição do Passo</label>
+                          <textarea value={step.description || ''} onChange={(e) => handleStepChange(index, 'description', e.target.value)} style={{...inputStyle, minHeight: '60px'}} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                           <label style={{...labelStyle, display:'flex', alignItems:'center', gap:'0.5rem', cursor:'pointer', marginBottom:0}}>
+                              <input type="checkbox" checked={step.requires_approval || false} onChange={(e) => handleStepChange(index, 'requires_approval', e.target.checked)} style={{width:'18px', height:'18px', accentColor: 'rgb(251,191,36)'}} />
+                              Requer Aprovação <ShieldCheck size={16} style={{color: 'rgb(251,191,36)'}}/>
+                           </label>
+                           {step.requires_approval && (
+                              <div style={{flexGrow: 1}}>
+                                 <label style={labelStyle}>Papel do Aprovador</label>
+                                 <input type="text" value={step.approver_role || ''} onChange={(e) => handleStepChange(index, 'approver_role', e.target.value)} style={inputStyle} placeholder="Ex: Gestor de Conta"/>
+                              </div>
+                           )}
+                        </div>
+                        <div>
+                          <label style={{...labelStyle, display: 'flex', alignItems: 'center', gap: '0.5rem'}}><Link2 size={16} />Próximos Passos Possíveis</label>
+                          <div style={{...glassStyle, background: 'rgba(0,0,0,0.2)', padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.5rem' }}>
+                            {getPossibleNextSteps(index).length === 0 ? <p style={{fontSize:'0.875rem', color:'rgba(255,255,255,0.6)'}}>Não há outros passos para conectar.</p> :
+                             getPossibleNextSteps(index).map(nextPossibleStep => (
+                              <label key={nextPossibleStep.id} style={{...labelStyle, display:'flex', alignItems:'center', gap:'0.5rem', cursor:'pointer', fontWeight:'normal', marginBottom:0}}>
+                                <input type="checkbox" checked={(step.next_steps || []).includes(nextPossibleStep.id)}
+                                  onChange={(e) => {
+                                    const currentNext = [...(step.next_steps || [])];
+                                    if (e.target.checked) currentNext.push(nextPossibleStep.id);
+                                    else currentNext.splice(currentNext.indexOf(nextPossibleStep.id), 1);
+                                    updateStepConnections(index, currentNext);
+                                  }} style={{width:'16px', height:'16px', accentColor: 'rgb(52,211,153)'}}/>
+                                {nextPossibleStep.order}. {nextPossibleStep.name}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+      
+      {/* Formulário para adicionar novo passo */}
+      <motion.div variants={itemVariants} style={{ ...glassStyle, background: 'rgba(59,130,246,0.05)', border:'1px solid rgba(59,130,246,0.2)', padding: '1.5rem', marginBottom: '2rem' }}>
+        <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color:'rgb(139,194,255)' }}><PlusCircle size={20}/>Adicionar Novo Passo</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div>
+            <label style={labelStyle}>Nome do Passo *</label>
+            <input type="text" name="name" value={newStep.name} onChange={handleNewStepChange} style={inputStyle} placeholder="Nome breve e descritivo" required />
+          </div>
+          <div>
+            <label style={labelStyle}>Atribuir a (Utilizador)</label>
+            <select name="assign_to" value={newStep.assign_to} onChange={handleNewStepChange} style={inputStyle}>
+              <option value="">Ninguém (Geral)</option>
+              {effectiveUsers.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom: '1rem'}}>
+          <label style={labelStyle}>Descrição do Passo</label>
+          <textarea name="description" value={newStep.description} onChange={handleNewStepChange} style={{...inputStyle, minHeight: '60px'}} placeholder="Instruções ou detalhes adicionais"/>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+            <label style={{...labelStyle, display:'flex', alignItems:'center', gap:'0.5rem', cursor:'pointer', marginBottom:0}}>
+              <input type="checkbox" name="requires_approval" checked={newStep.requires_approval} onChange={handleNewStepChange} style={{width:'18px', height:'18px', accentColor: 'rgb(251,191,36)'}} />
+              Requer Aprovação <ShieldCheck size={16} style={{color: 'rgb(251,191,36)'}}/>
+            </label>
+            {newStep.requires_approval && (
+              <div style={{flexGrow: 1}}>
+                <label style={labelStyle}>Papel do Aprovador</label>
+                <input type="text" name="approver_role" value={newStep.approver_role} onChange={handleNewStepChange} style={inputStyle} placeholder="Ex: Gestor de Conta"/>
+              </div>
+            )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <motion.button type="button" whileHover={{scale:1.05}} whileTap={{scale:0.95}} onClick={handleAddStep} style={buttonStyle()}>
+            <PlusCircle size={18} /> Adicionar Passo à Lista
+          </motion.button>
+        </div>
+      </motion.div>
+      
+      {/* Visualização do fluxo */}
+      {workflowData.steps.length > 0 && (
+        <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Network size={20}/>Visualização do Fluxo</h3>
+          <div style={{ ...glassStyle, background: 'rgba(0,0,0,0.1)', padding: '1.5rem', overflowX: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', minWidth: 'max-content' }}>
+              {workflowData.steps.map((step, index) => (
+                <React.Fragment key={`flow-view-${step.id || index}`}>
+                  <div style={{ textAlign: 'center', marginRight: (step.next_steps || []).length > 0 ? '1rem' : '0' }}>
+                    <div style={{
+                      padding: '0.75rem 1rem', borderRadius: '8px',
+                      border: `1px solid ${step.requires_approval ? 'rgba(251,191,36,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                      background: step.requires_approval ? 'rgba(251,191,36,0.1)' : 'rgba(59,130,246,0.1)',
+                      minWidth: '150px', marginBottom: '0.5rem'
+                    }}>
+                      <div style={{ fontWeight: '600', fontSize: '0.875rem' }}>{step.name}</div>
+                      {step.assign_to && <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.25rem' }}>
+                          <Users size={12} style={{display:'inline', marginRight:'0.25rem'}}/>{effectiveUsers.find(u=>u.id === step.assign_to)?.username || 'Utilizador'}
+                      </div>}
+                      {step.requires_approval && <div style={{ fontSize: '0.75rem', color: 'rgb(251,191,36)', marginTop: '0.25rem' }}>
+                          <ShieldCheck size={12} style={{display:'inline', marginRight:'0.25rem'}}/>Aprovação
+                      </div>}
+                    </div>
+                    {/* Lines to next steps could be complex to draw here without a library. Keeping it simple. */}
+                  </div>
+                  {(step.next_steps || []).length > 0 && index < workflowData.steps.length - 1 && (
+                     <div style={{ margin: '1rem 0.5rem 0 0.5rem', color: 'rgba(255,255,255,0.4)', alignSelf: 'center' }}>
+                        <ArrowRight size={20} />
+                     </div>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+      
+      <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
+        <motion.button type="button" whileHover={{scale:1.05}} whileTap={{scale:0.95}} onClick={onCancel} style={{...buttonStyle('danger'), background: 'rgba(255,255,255,0.1)', borderColor: 'rgba(255,255,255,0.2)'}}>
+          <XCircle size={18}/> Cancelar
+        </motion.button>
+        <motion.button type="button" whileHover={{scale:1.05}} whileTap={{scale:0.95}} onClick={handleSaveWorkflow} style={buttonStyle('success')} disabled={isSaving}>
+          {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18}/>}
+          {existingWorkflow ? 'Salvar Alterações' : 'Criar Workflow'}
+        </motion.button>
+      </motion.div>
+      
+      <motion.div variants={itemVariants} style={{ ...glassStyle, background:'rgba(59,130,246,0.05)', border:'1px solid rgba(59,130,246,0.2)', padding: '1.5rem', marginTop: '2.5rem' }}>
+        <div style={{display:'flex', alignItems:'flex-start', gap:'0.75rem'}}>
+          <HelpCircle style={{color:'rgb(139,194,255)', flexShrink:0, marginTop:'0.125rem'}} size={20}/>
+          <div>
+            <h4 style={{margin:'0 0 0.5rem 0', fontSize:'0.875rem', fontWeight:'600'}}>Dicas para Workflows Eficazes:</h4>
+            <ul style={{margin:0, paddingLeft:'1.25rem', fontSize:'0.875rem', color:'rgba(255,255,255,0.8)', lineHeight:1.6, display:'flex', flexDirection:'column', gap:'0.25rem'}}>
+              <li>Mantenha os nomes dos passos curtos e claros.</li>
+              <li>Use descrições para detalhar tarefas ou critérios.</li>
+              <li>Defina quem é responsável por cada passo, se aplicável.</li>
+              <li>Considere todos os caminhos possíveis, incluindo aprovações e rejeições.</li>
+              <li>Teste o workflow simulando um processo real antes de o ativar.</li>
+            </ul>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 };
 

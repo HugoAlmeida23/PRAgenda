@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval 
+from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
+import json
+from django.db import models
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -126,6 +128,55 @@ class TaskCategorySerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class WorkflowDefinitionSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    
+    class Meta:
+        model = WorkflowDefinition
+        fields = ['id', 'name', 'description', 'created_by', 'created_by_name',
+                  'created_at', 'updated_at', 'is_active']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class WorkflowStepSerializer(serializers.ModelSerializer):
+    workflow_name = serializers.ReadOnlyField(source='workflow.name')
+    assign_to_name = serializers.ReadOnlyField(source='assign_to.username')
+    
+    # Informações adicionais
+    time_entries_count = serializers.SerializerMethodField()
+    total_time_spent = serializers.SerializerMethodField()
+    is_approved = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = WorkflowStep
+        fields = ['id', 'workflow', 'workflow_name', 'name', 'description', 
+                  'order', 'assign_to', 'assign_to_name', 'requires_approval', 
+                  'approver_role', 'next_steps', 'previous_steps',
+                  'time_entries_count', 'total_time_spent', 'is_approved']
+        read_only_fields = ['id']
+    
+    def get_time_entries_count(self, obj):
+        """Conta as entradas de tempo para este passo"""
+        return obj.time_entries.count()
+    
+    def get_total_time_spent(self, obj):
+        """Calcula o tempo total gasto neste passo"""
+        return obj.time_entries.aggregate(
+            total=models.Sum('minutes_spent')
+        )['total'] or 0
+    
+    def get_is_approved(self, obj):
+        """Verifica se o passo foi aprovado (se requer aprovação)"""
+        if not obj.requires_approval:
+            return None
+            
+        # Verifica se há aprovações para tarefas que estão neste passo
+        return TaskApproval.objects.filter(
+            workflow_step=obj,
+            approved=True
+        ).exists()
+
+
 class TaskSerializer(serializers.ModelSerializer):
     client_name = serializers.ReadOnlyField(source='client.name')
     category_name = serializers.ReadOnlyField(source='category.name')
@@ -133,32 +184,75 @@ class TaskSerializer(serializers.ModelSerializer):
     created_by_name = serializers.ReadOnlyField(source='created_by.username')
     workflow_name = serializers.ReadOnlyField(source='workflow.name')
     current_workflow_step_name = serializers.ReadOnlyField(source='current_workflow_step.name')
+    
+    # Informações adicionais do workflow
+    workflow_progress = serializers.SerializerMethodField()
+    available_next_steps = serializers.SerializerMethodField()
+    workflow_step_assignee = serializers.ReadOnlyField(source='current_workflow_step.assign_to.username')
+    
     class Meta:
         model = Task
         fields = ['id', 'title', 'description', 'client', 'client_name', 
                   'category', 'category_name', 'assigned_to', 'assigned_to_name', 
                   'created_by', 'created_by_name', 'status', 'priority', 
                   'deadline', 'estimated_time_minutes', 'created_at', 
-                  'updated_at', 'completed_at','workflow', 'workflow_name', 'current_workflow_step', 
-                'current_workflow_step_name', 'workflow_comment']
+                  'updated_at', 'completed_at','workflow', 'workflow_name', 
+                  'current_workflow_step', 'current_workflow_step_name', 
+                  'workflow_comment', 'workflow_progress', 'available_next_steps',
+                  'workflow_step_assignee']
         read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at']
+    
+    def get_workflow_progress(self, obj):
+        """Calcula o progresso do workflow"""
+        if not obj.workflow or not obj.current_workflow_step:
+            return None
+            
+        total_steps = obj.workflow.steps.count()
+        current_order = obj.current_workflow_step.order
+        
+        return {
+            'current_step': current_order,
+            'total_steps': total_steps,
+            'percentage': (current_order / total_steps) * 100 if total_steps > 0 else 0
+        }
+    
+    def get_available_next_steps(self, obj):
+        """Retorna os próximos passos disponíveis"""
+        if not obj.current_workflow_step:
+            return []
+            
+        try:
+            next_step_ids = obj.current_workflow_step.next_steps
+            if isinstance(next_step_ids, str):
+                next_step_ids = json.loads(next_step_ids)
+            
+            next_steps = WorkflowStep.objects.filter(id__in=next_step_ids)
+            return [{'id': step.id, 'name': step.name, 'assign_to': step.assign_to.username if step.assign_to else None} 
+                    for step in next_steps]
+        except:
+            return []
+
 
 class TimeEntrySerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
     client_name = serializers.ReadOnlyField(source='client.name')
     task_title = serializers.ReadOnlyField(source='task.title')
     category_name = serializers.ReadOnlyField(source='category.name')
+    workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name')
     
     class Meta:
         model = TimeEntry
         fields = ['id', 'user', 'user_name', 'client', 'client_name', 
                   'task', 'task_title', 'category', 'category_name', 
+                  'workflow_step', 'workflow_step_name',
                   'description', 'minutes_spent', 'date', 'start_time', 
-                  'end_time', 'created_at', 'original_text', 'task_status_after'] 
+                  'end_time', 'created_at', 'original_text', 'task_status_after',
+                  'advance_workflow', 'workflow_step_completed'] 
         read_only_fields = ['id', 'created_at']
         extra_kwargs = {
             'user': {'required': False}
         }
+
 
 class ExpenseSerializer(serializers.ModelSerializer):
     client_name = serializers.ReadOnlyField(source='client.name')
@@ -198,27 +292,6 @@ class NLPProcessorSerializer(serializers.ModelSerializer):
         fields = ['id', 'pattern', 'entity_type', 'confidence', 
                   'created_at', 'updated_at', 'usage_count']
         read_only_fields = ['id', 'created_at', 'updated_at', 'usage_count']
-        
-class WorkflowDefinitionSerializer(serializers.ModelSerializer):
-    created_by_name = serializers.ReadOnlyField(source='created_by.username')
-    
-    class Meta:
-        model = WorkflowDefinition
-        fields = ['id', 'name', 'description', 'created_by', 'created_by_name',
-                  'created_at', 'updated_at', 'is_active']
-        read_only_fields = ['id', 'created_at', 'updated_at']
-
-
-class WorkflowStepSerializer(serializers.ModelSerializer):
-    workflow_name = serializers.ReadOnlyField(source='workflow.name')
-    assign_to_name = serializers.ReadOnlyField(source='assign_to.username')
-    
-    class Meta:
-        model = WorkflowStep
-        fields = ['id', 'workflow', 'workflow_name', 'name', 'description', 
-                  'order', 'assign_to', 'assign_to_name', 'requires_approval', 
-                  'approver_role', 'next_steps', 'previous_steps']
-        read_only_fields = ['id']
 
 
 class TaskApprovalSerializer(serializers.ModelSerializer):
@@ -236,3 +309,31 @@ class TaskApprovalSerializer(serializers.ModelSerializer):
         # Set the approved_by field to the current user
         validated_data['approved_by'] = self.context['request'].user
         return super().create(validated_data)
+
+
+class WorkflowNotificationSerializer(serializers.ModelSerializer):
+    user_name = serializers.ReadOnlyField(source='user.username')
+    task_title = serializers.ReadOnlyField(source='task.title')
+    workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name')
+    
+    class Meta:
+        model = WorkflowNotification
+        fields = ['id', 'user', 'user_name', 'task', 'task_title',
+                  'workflow_step', 'workflow_step_name', 'notification_type',
+                  'title', 'message', 'is_read', 'email_sent',
+                  'created_at', 'read_at']
+        read_only_fields = ['id', 'created_at', 'read_at']
+
+
+class WorkflowHistorySerializer(serializers.ModelSerializer):
+    task_title = serializers.ReadOnlyField(source='task.title')
+    from_step_name = serializers.ReadOnlyField(source='from_step.name')
+    to_step_name = serializers.ReadOnlyField(source='to_step.name')
+    changed_by_name = serializers.ReadOnlyField(source='changed_by.username')
+    
+    class Meta:
+        model = WorkflowHistory
+        fields = ['id', 'task', 'task_title', 'from_step', 'from_step_name',
+                  'to_step', 'to_step_name', 'changed_by', 'changed_by_name',
+                  'action', 'comment', 'time_spent_minutes', 'created_at']
+        read_only_fields = ['id', 'created_at']

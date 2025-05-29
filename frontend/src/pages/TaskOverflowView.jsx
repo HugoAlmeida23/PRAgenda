@@ -1,387 +1,1025 @@
-import React, { useState, useEffect } from 'react';
-import { toast } from 'react-toastify';
+import React, { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowRight, 
-  CheckCircle, 
-  AlertTriangle, 
-  Users, 
+  ArrowRight,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  Users,
   FileText,
   ChevronDown,
   ChevronUp,
-  Loader2
+  Loader2,
+  PlayCircle,
+  PauseCircle,
+  SkipForward,
+  MessageSquare,
+  Calendar,
+  Timer,
+  UserCheck,
+  Zap,
+  Activity,
+  TrendingUp,
+  Eye,
+  EyeOff,
+  Settings,
+  Bell,
+  BellOff,
+  Send,
+  Plus,
+  X
 } from 'lucide-react';
 import api from '../api';
+import { toast } from 'react-toastify';
 
-const TaskWorkflowView = ({ taskId, onWorkflowUpdate }) => {
+// Estilos glass modernos
+const glassStyle = {
+  background: 'rgba(255, 255, 255, 0.1)',
+  backdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255, 255, 255, 0.15)',
+  borderRadius: '16px'
+};
+
+// Variantes de animação
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
+  }
+};
+
+const itemVariants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: { type: "spring", stiffness: 200, damping: 20 }
+  }
+};
+
+const stepVariants = {
+  hidden: { scale: 0.9, opacity: 0 },
+  visible: { 
+    scale: 1, 
+    opacity: 1,
+    transition: { type: "spring", stiffness: 150, damping: 15 }
+  },
+  hover: { 
+    scale: 1.02, 
+    y: -2,
+    transition: { type: "spring", stiffness: 400, damping: 25 }
+  }
+};
+
+const TaskOverflowView = ({ taskId, onWorkflowUpdate, permissions }) => {
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState(null);
-  const [workflowSteps, setWorkflowSteps] = useState([]);
-  const [currentStep, setCurrentStep] = useState(null);
-  const [nextSteps, setNextSteps] = useState([]);
-  const [approvers, setApprovers] = useState([]);
+  const [workflowData, setWorkflowData] = useState(null);
   const [comment, setComment] = useState('');
+  const [selectedNextStep, setSelectedNextStep] = useState('');
   const [showHistory, setShowHistory] = useState(false);
-  const [approvalHistory, setApprovalHistory] = useState([]);
+  const [showTimeEntries, setShowTimeEntries] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
 
   useEffect(() => {
     if (taskId) {
-      fetchTaskAndWorkflow();
+      fetchWorkflowData();
     }
   }, [taskId]);
 
-  const fetchTaskAndWorkflow = async () => {
+  const fetchWorkflowData = async () => {
     try {
       setLoading(true);
+      const response = await api.get(`/tasks/${taskId}/workflow_status/`);
       
-      // Fetch task details
-      const taskResponse = await api.get(`/tasks/${taskId}/`);
-      setTask(taskResponse.data);
-      
-      // If task has a workflow, fetch the workflow steps
-      if (taskResponse.data.workflow) {
-        const workflowResponse = await api.get(`/workflow-steps/?workflow=${taskResponse.data.workflow}`);
-        // Sort steps by order
-        const sortedSteps = workflowResponse.data.sort((a, b) => a.order - b.order);
-        setWorkflowSteps(sortedSteps);
+      if (response.data.workflow) {
+        setWorkflowData(response.data.workflow);
         
-        // Determine current step
-        const current = sortedSteps.find(
-          step => step.id === taskResponse.data.current_workflow_step
-        );
-        setCurrentStep(current);
-        
-        // Get next possible steps based on current step
-        if (current) {
-          let nextStepIds = [];
-          
-          // Handle next_steps stored as JSON string or array
-          if (typeof current.next_steps === 'string') {
-            try {
-              nextStepIds = JSON.parse(current.next_steps);
-            } catch (e) {
-              console.error("Error parsing next_steps JSON:", e);
-              nextStepIds = [];
-            }
-          } else if (Array.isArray(current.next_steps)) {
-            nextStepIds = current.next_steps;
-          }
-          
-          // Find details for next steps
-          const nextStepsData = sortedSteps.filter(
-            step => nextStepIds.includes(step.id)
-          );
-          setNextSteps(nextStepsData);
-        }
-        
-        // Fetch approval history
-        try {
-          const approvalsResponse = await api.get(`/task-approvals/?task=${taskId}`);
-          setApprovalHistory(approvalsResponse.data);
-        } catch (error) {
-          console.error("Error fetching approval history:", error);
-        }
+        // Buscar dados da tarefa
+        const taskResponse = await api.get(`/tasks/${taskId}/`);
+        setTask(taskResponse.data);
+      } else {
+        setWorkflowData(null);
+        setTask(null);
       }
-      
-      // Fetch users who can approve
-      const usersResponse = await api.get("/profiles/");
-      setApprovers(usersResponse.data);
-      
     } catch (error) {
-      console.error("Error fetching task workflow:", error);
-      toast.error("Falha ao carregar informações do workflow");
+      console.error("Error fetching workflow data:", error);
+      toast.error("Falha ao carregar dados do workflow");
     } finally {
       setLoading(false);
     }
   };
 
-  const advanceWorkflow = async (nextStepId) => {
+  const handleAdvanceWorkflow = async () => {
+    if (!selectedNextStep) {
+      toast.error("Selecione o próximo passo");
+      return;
+    }
+
     try {
-      setLoading(true);
-      
-      // Update the task with the new workflow step
-      await api.patch(`/tasks/${taskId}/`, {
-        current_workflow_step: nextStepId,
-        workflow_comment: comment
+      setAdvancing(true);
+      await api.post(`/tasks/${taskId}/advance_workflow/`, {
+        next_step_id: selectedNextStep,
+        comment: comment
       });
       
-      toast.success("Tarefa avançada para o próximo passo do workflow");
-      setComment("");
+      toast.success("Workflow avançado com sucesso!");
+      setComment('');
+      setSelectedNextStep('');
+      setShowAdvanceModal(false);
+      await fetchWorkflowData();
       
-      // Refresh the task and workflow data
-      await fetchTaskAndWorkflow();
-      
-      // Notify parent component
       if (onWorkflowUpdate) {
         onWorkflowUpdate();
       }
-      
     } catch (error) {
       console.error("Error advancing workflow:", error);
-      toast.error("Falha ao avançar no workflow");
+      toast.error(error.response?.data?.error || "Falha ao avançar workflow");
     } finally {
-      setLoading(false);
+      setAdvancing(false);
     }
   };
 
-  const approveCurrentStep = async () => {
-    if (!currentStep) {
-      toast.error("Não há passo atual para aprovar");
+  const handleApproveStep = async () => {
+    if (!workflowData.current_step) {
       return;
     }
-    
+
     try {
-      setLoading(true);
-      
-      // Create an approval record
-      await api.post(`/task-approvals/`, {
+      setApproving(true);
+      await api.post('/task-approvals/', {
         task: taskId,
-        workflow_step: currentStep.id,
+        workflow_step: workflowData.current_step.id,
         approved: true,
         comment: comment
       });
       
-      toast.success("Passo aprovado com sucesso");
-      setComment("");
+      toast.success("Passo aprovado com sucesso!");
+      setComment('');
+      await fetchWorkflowData();
       
-      // Refresh the task and workflow data
-      await fetchTaskAndWorkflow();
-      
-      // Notify parent component
       if (onWorkflowUpdate) {
         onWorkflowUpdate();
       }
-      
     } catch (error) {
       console.error("Error approving step:", error);
       toast.error("Falha ao aprovar passo");
     } finally {
-      setLoading(false);
+      setApproving(false);
     }
+  };
+
+  const formatTime = (minutes) => {
+    if (!minutes) return "0h 0m";
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h ${mins}m`;
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
+    return new Date(dateString).toLocaleString('pt-PT');
+  };
+
+  const getStepStatus = (step) => {
+    if (step.is_current) return 'current';
+    if (step.is_completed) return 'completed';
+    return 'pending';
+  };
+
+  const getStepColor = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'rgb(52, 211, 153)';
+      case 'current':
+        return 'rgb(59, 130, 246)';
+      default:
+        return 'rgba(255, 255, 255, 0.4)';
+    }
+  };
+
+  const canAdvanceWorkflow = useMemo(() => {
+    if (!workflowData?.current_step || !permissions) return false;
+    
+    return (
+      permissions.isOrgAdmin ||
+      permissions.canEditAllTasks ||
+      (permissions.canEditAssignedTasks && task?.assigned_to === permissions.userId) ||
+      (workflowData.current_step.assign_to === permissions.username)
+    );
+  }, [workflowData, permissions, task]);
+
+  const canApproveStep = useMemo(() => {
+    if (!workflowData?.current_step?.requires_approval || !permissions) return false;
+    
+    return permissions.isOrgAdmin || permissions.canApproveTasks;
+  }, [workflowData, permissions]);
+
+  const availableNextSteps = useMemo(() => {
+    if (!workflowData?.current_step) return [];
+    
+    return workflowData.steps.filter(step => 
+      step.order > workflowData.current_step.order
+    );
+  }, [workflowData]);
+
+  const isStepApproved = (stepId) => {
+    return workflowData?.approvals?.some(
+      approval => approval.workflow_step === stepId && approval.approved
+    ) || false;
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center p-6">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '300px'
+      }}>
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+        >
+          <Loader2 size={32} style={{ color: 'rgb(59, 130, 246)' }} />
+        </motion.div>
       </div>
     );
   }
 
-  if (!task || !task.workflow) {
+  if (!workflowData) {
     return (
-      <div className="bg-white-100 p-4 rounded-md">
-        <p className="text-gray-500 text-sm">Esta tarefa não possui um workflow associado.</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        style={{
+          ...glassStyle,
+          padding: '2rem',
+          textAlign: 'center',
+          background: 'rgba(251, 191, 36, 0.1)',
+          border: '1px solid rgba(251, 191, 36, 0.2)'
+        }}
+      >
+        <AlertTriangle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
+        <h3 style={{ margin: '0 0 0.5rem 0', color: 'white' }}>
+          Sem Workflow Associado
+        </h3>
+        <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.8)' }}>
+          Esta tarefa não possui um workflow associado.
+        </p>
+      </motion.div>
     );
   }
-
-  // Check if step has been approved
-  const isCurrentStepApproved = () => {
-    return approvalHistory.some(
-      approval => approval.workflow_step === currentStep?.id && approval.approved
-    );
-  };
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow">
-      <h3 className="text-lg font-semibold mb-4">Progresso do Workflow</h3>
-      
-      {/* Current step information */}
-      {currentStep && (
-        <div className="mb-6">
-          <div className="flex items-center mb-2">
-            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white mr-3">
-              {workflowSteps.findIndex(step => step.id === currentStep.id) + 1}
-            </div>
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={containerVariants}
+      style={{ color: 'white' }}
+    >
+      {/* Header do Workflow */}
+      <motion.div
+        variants={itemVariants}
+        style={{
+          ...glassStyle,
+          padding: '1.5rem',
+          marginBottom: '1.5rem',
+          background: 'rgba(59, 130, 246, 0.1)',
+          border: '1px solid rgba(59, 130, 246, 0.2)'
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <motion.div
+              animate={{
+                rotate: [0, 360],
+                scale: [1, 1.1, 1]
+              }}
+              transition={{
+                rotate: { duration: 8, repeat: Infinity, ease: "linear" },
+                scale: { duration: 2, repeat: Infinity }
+              }}
+              style={{
+                padding: '0.75rem',
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                borderRadius: '12px'
+              }}
+            >
+              <Activity style={{ color: 'rgb(59, 130, 246)' }} size={24} />
+            </motion.div>
             <div>
-              <h4 className="font-medium">{currentStep.name}</h4>
-              <p className="text-sm text-gray-500">Passo Atual</p>
+              <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.25rem', fontWeight: '600' }}>
+                {workflowData.name}
+              </h2>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Passo Atual: {workflowData.current_step?.name || 'Não iniciado'}
+              </p>
             </div>
           </div>
           
-          {currentStep.description && (
-            <p className="text-sm text-gray-600 ml-11 mb-3">{currentStep.description}</p>
-          )}
-          
-          {currentStep.requires_approval && (
-            <div className="ml-11 p-3 bg-yellow-50 rounded-md mb-3">
-              <div className="flex items-center text-yellow-800 text-sm mb-1">
-                <AlertTriangle size={16} className="mr-2" />
-                <span className="font-medium">Este passo requer aprovação</span>
-              </div>
-              {currentStep.approver_role && (
-                <p className="text-sm text-yellow-700">
-                  Deve ser aprovado por: {currentStep.approver_role}
-                </p>
-              )}
-              
-              {isCurrentStepApproved() ? (
-                <div className="mt-2 flex items-center text-green-700">
-                  <CheckCircle size={16} className="mr-2" />
-                  <span>Este passo já foi aprovado</span>
-                </div>
-              ) : (
-                <div className="mt-3">
-                  <button
-                    onClick={approveCurrentStep}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center"
-                    disabled={loading}
-                  >
-                    <CheckCircle size={16} className="mr-2" />
-                    Aprovar Este Passo
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowHistory(!showHistory)}
+              style={{
+                ...glassStyle,
+                padding: '0.5rem 1rem',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: showHistory ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem'
+              }}
+            >
+              {showHistory ? <EyeOff size={16} /> : <Eye size={16} />}
+              Histórico
+            </motion.button>
+            
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowTimeEntries(!showTimeEntries)}
+              style={{
+                ...glassStyle,
+                padding: '0.5rem 1rem',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: showTimeEntries ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                color: 'white',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontSize: '0.875rem'
+              }}
+            >
+              <Timer size={16} />
+              Tempos
+            </motion.button>
+          </div>
         </div>
-      )}
-      
-      {/* Next possible steps */}
-      {nextSteps.length > 0 && (
-        <div className="mb-4">
-          <h4 className="font-medium mb-3">Avançar para o Próximo Passo</h4>
-          
-          <div className="mb-3">
-            <label className="block text-gray-700 mb-2 text-sm">
-              Comentários (Opcional)
-            </label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md text-sm"
-              rows={2}
-              placeholder="Adicione observações sobre esta transição do workflow"
+
+        {/* Progresso Geral */}
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.2)',
+          borderRadius: '8px',
+          padding: '1rem'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '0.5rem'
+          }}>
+            <span style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+              Progresso do Workflow
+            </span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '600' }}>
+              {workflowData.current_step?.order || 0} de {workflowData.steps.length}
+            </span>
+          </div>
+          <div style={{
+            width: '100%',
+            height: '8px',
+            background: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '4px',
+            overflow: 'hidden'
+          }}>
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{
+                width: `${((workflowData.current_step?.order || 0) / workflowData.steps.length) * 100}%`
+              }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              style={{
+                height: '100%',
+                background: 'linear-gradient(90deg, rgb(59, 130, 246), rgb(147, 51, 234))',
+                borderRadius: '4px'
+              }}
             />
           </div>
-          
-          <div className="space-y-3">
-            {nextSteps.map((step) => (
-              <div key={step.id} className="p-3 border border-gray-200 rounded-md hover:bg-white-50">
-                <div className="flex justify-between">
-                  <div>
-                    <h5 className="font-medium">{step.name}</h5>
-                    {step.description && (
-                      <p className="text-sm text-gray-600">{step.description}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => advanceWorkflow(step.id)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md flex items-center self-start"
-                    disabled={loading}
-                  >
-                    <ArrowRight size={16} className="mr-1" />
-                    Avançar
-                  </button>
-                </div>
-                
-                {step.assign_to_name && (
-                  <div className="flex items-center text-gray-600 text-sm mt-2">
-                    <Users size={14} className="mr-1" />
-                    <span>Será atribuído a: {step.assign_to_name}</span>
-                  </div>
-                )}
-                
-                {step.requires_approval && (
-                  <div className="flex items-center text-yellow-600 text-sm mt-1">
-                    <AlertTriangle size={14} className="mr-1" />
-                    <span>Requer aprovação por {step.approver_role || 'aprovador'}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
         </div>
-      )}
-      
-      {/* Workflow visualization */}
-      <div className="mt-6">
-        <h4 className="font-medium mb-3">Passos do Workflow</h4>
-        <div className="flex overflow-x-auto pb-3">
-          {workflowSteps.map((step, index) => (
-            <React.Fragment key={step.id}>
-              <div className={`flex flex-col items-center ${
-                step.id === currentStep?.id 
-                  ? 'scale-110 transform transition-transform' 
-                  : ''
-              }`}>
-                <div 
-                  className={`p-2 rounded-md text-sm font-medium ${
-                    step.id === currentStep?.id
-                      ? "bg-blue-100 text-blue-800 border border-blue-300"
-                      : approvalHistory.some(a => a.workflow_step === step.id && a.approved)
-                        ? "bg-green-100 text-green-800 border border-green-300"
-                        : "bg-white-100 text-gray-800"
-                  }`}
-                >
-                  {index + 1}. {step.name}
-                </div>
-                
-                {approvalHistory.some(a => a.workflow_step === step.id && a.approved) && (
-                  <div className="mt-1">
-                    <CheckCircle size={12} className="text-green-500" />
-                  </div>
-                )}
-              </div>
-              {index < workflowSteps.length - 1 && (
-                <ArrowRight
-                  size={16}
-                  className={`mx-2 self-center ${
-                    currentStep && 
-                    index >= workflowSteps.findIndex(s => s.id === currentStep.id)
-                      ? 'text-gray-300'
-                      : 'text-blue-500'
-                  }`}
-                />
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-      
-      {/* Approval History */}
-      {approvalHistory.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center text-blue-600 text-sm"
-          >
-            {showHistory ? (
-              <ChevronUp size={16} className="mr-1" />
-            ) : (
-              <ChevronDown size={16} className="mr-1" />
-            )}
-            {showHistory ? "Ocultar Histórico de Aprovações" : "Mostrar Histórico de Aprovações"}
-          </button>
-          
-          {showHistory && (
-            <div className="mt-3 space-y-2">
-              {approvalHistory.map((approval) => {
-                const step = workflowSteps.find(s => s.id === approval.workflow_step);
-                return (
-                  <div key={approval.id} className="p-2 bg-white-50 rounded-md border border-gray-200 text-sm">
-                    <div className="flex items-center">
-                      <CheckCircle size={14} className="text-green-500 mr-2" />
-                      <span className="font-medium">{step?.name || 'Passo'}</span>
-                      <span className="mx-2">•</span>
-                      <span>Aprovado por {approval.approved_by_name}</span>
-                      <span className="mx-2">•</span>
-                      <span className="text-gray-500">
-                        {new Date(approval.approved_at).toLocaleString()}
-                      </span>
+      </motion.div>
+
+      {/* Visualização dos Passos */}
+      <motion.div
+        variants={itemVariants}
+        style={{
+          ...glassStyle,
+          padding: '1.5rem',
+          marginBottom: '1.5rem'
+        }}
+      >
+        <h3 style={{
+          margin: '0 0 1.5rem 0',
+          fontSize: '1.125rem',
+          fontWeight: '600',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
+          <TrendingUp size={20} />
+          Passos do Workflow
+        </h3>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {workflowData.steps.map((step, index) => {
+            const status = getStepStatus(step);
+            const stepColor = getStepColor(status);
+            const isApproved = isStepApproved(step.name);
+            
+            return (
+              <motion.div
+                key={step.id}
+                variants={stepVariants}
+                whileHover="hover"
+                style={{
+                  ...glassStyle,
+                  padding: '1.5rem',
+                  background: status === 'current' 
+                    ? 'rgba(59, 130, 246, 0.1)' 
+                    : status === 'completed'
+                    ? 'rgba(52, 211, 153, 0.1)'
+                    : 'rgba(255, 255, 255, 0.05)',
+                  border: `1px solid ${stepColor}40`,
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Indicador de status */}
+                <div style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: '4px',
+                  background: stepColor
+                }} />
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '1rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      background: `${stepColor}20`,
+                      border: `2px solid ${stepColor}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: '600',
+                      color: stepColor
+                    }}>
+                      {status === 'completed' ? (
+                        <CheckCircle size={20} />
+                      ) : status === 'current' ? (
+                        <PlayCircle size={20} />
+                      ) : (
+                        step.order
+                      )}
                     </div>
-                    {approval.comment && (
-                      <p className="mt-1 text-gray-600 ml-6">{approval.comment}</p>
+                    
+                    <div>
+                      <h4 style={{
+                        margin: '0 0 0.25rem 0',
+                        fontSize: '1rem',
+                        fontWeight: '600',
+                        color: 'white'
+                      }}>
+                        {step.name}
+                      </h4>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '1rem',
+                        fontSize: '0.875rem',
+                        color: 'rgba(255, 255, 255, 0.7)'
+                      }}>
+                        {step.assign_to && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <UserCheck size={14} />
+                            {step.assign_to}
+                          </span>
+                        )}
+                        {step.time_spent > 0 && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <Timer size={14} />
+                            {formatTime(step.time_spent)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {step.requires_approval && (
+                      <div style={{
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        background: isApproved 
+                          ? 'rgba(52, 211, 153, 0.2)' 
+                          : 'rgba(251, 191, 36, 0.2)',
+                        border: isApproved 
+                          ? '1px solid rgba(52, 211, 153, 0.3)' 
+                          : '1px solid rgba(251, 191, 36, 0.3)',
+                        color: isApproved 
+                          ? 'rgb(110, 231, 183)' 
+                          : 'rgb(251, 191, 36)'
+                      }}>
+                        {isApproved ? 'Aprovado' : 'Requer Aprovação'}
+                      </div>
+                    )}
+                    
+                    <span style={{
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '9999px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      background: `${stepColor}20`,
+                      border: `1px solid ${stepColor}40`,
+                      color: stepColor
+                    }}>
+                      {status === 'completed' ? 'Concluído' : 
+                       status === 'current' ? 'Em Andamento' : 'Pendente'}
+                    </span>
+                  </div>
+                </div>
+
+                {step.description && (
+                  <p style={{
+                    margin: '0 0 1rem 0',
+                    fontSize: '0.875rem',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    paddingLeft: '3rem'
+                  }}>
+                    {step.description}
+                  </p>
+                )}
+
+                {/* Ações do passo atual */}
+                {status === 'current' && (
+                  <div style={{
+                    display: 'flex',
+                    gap: '0.75rem',
+                    paddingLeft: '3rem',
+                    marginTop: '1rem'
+                  }}>
+                    {step.requires_approval && !isApproved && canApproveStep && (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleApproveStep}
+                        disabled={approving}
+                        style={{
+                          ...glassStyle,
+                          padding: '0.5rem 1rem',
+                          border: '1px solid rgba(52, 211, 153, 0.3)',
+                          background: 'rgba(52, 211, 153, 0.2)',
+                          color: 'white',
+                          cursor: approving ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: '0.875rem',
+                          opacity: approving ? 0.7 : 1
+                        }}
+                      >
+                        {approving ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <CheckCircle size={16} />
+                        )}
+                        Aprovar Passo
+                      </motion.button>
+                    )}
+
+                    {canAdvanceWorkflow && availableNextSteps.length > 0 && (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setShowAdvanceModal(true)}
+                        style={{
+                          ...glassStyle,
+                          padding: '0.5rem 1rem',
+                          border: '1px solid rgba(59, 130, 246, 0.3)',
+                          background: 'rgba(59, 130, 246, 0.2)',
+                          color: 'white',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        <SkipForward size={16} />
+                        Avançar Workflow
+                      </motion.button>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          )}
+                )}
+              </motion.div>
+            );
+          })}
         </div>
-      )}
-    </div>
+      </motion.div>
+
+      {/* Histórico do Workflow */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              marginBottom: '1.5rem'
+            }}
+          >
+            <h3 style={{
+              margin: '0 0 1rem 0',
+              fontSize: '1.125rem',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <FileText size={20} />
+              Histórico do Workflow
+            </h3>
+
+            {workflowData.history.length === 0 ? (
+              <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.6)' }}>
+                Nenhum histórico disponível.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {workflowData.history.map((entry, index) => (
+                  <motion.div
+                    key={entry.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    style={{
+                      ...glassStyle,
+                      padding: '1rem',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '1rem'
+                    }}
+                  >
+                    <div style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      background: 'rgb(59, 130, 246)'
+                    }} />
+                    
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: '0.875rem',
+                        fontWeight: '500',
+                        marginBottom: '0.25rem'
+                      }}>
+                        {entry.from_step && entry.to_step 
+                          ? `${entry.from_step} → ${entry.to_step}`
+                          : entry.to_step || entry.from_step || 'Workflow'
+                        }
+                      </div>
+                      <div style={{
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.6)'
+                      }}>
+                        {entry.changed_by} • {formatDate(entry.created_at)}
+                      </div>
+                      {entry.comment && (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          color: 'rgba(255, 255, 255, 0.8)',
+                          marginTop: '0.25rem',
+                          fontStyle: 'italic'
+                        }}>
+                          "{entry.comment}"
+                        </div>
+                      )}
+                    </div>
+
+                    {entry.time_spent_minutes && (
+                      <div style={{
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '4px',
+                        background: 'rgba(52, 211, 153, 0.2)',
+                        fontSize: '0.75rem',
+                        color: 'rgb(52, 211, 153)'
+                      }}>
+                        {formatTime(entry.time_spent_minutes)}
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Tempo por Passo */}
+      <AnimatePresence>
+        {showTimeEntries && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{
+              ...glassStyle,
+              padding: '1.5rem',
+              marginBottom: '1.5rem'
+            }}
+          >
+            <h3 style={{
+              margin: '0 0 1rem 0',
+              fontSize: '1.125rem',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <Timer size={20} />
+              Tempo por Passo
+            </h3>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '1rem'
+            }}>
+              {workflowData.steps.map((step) => (
+                <motion.div
+                  key={step.id}
+                  whileHover={{ scale: 1.02 }}
+                  style={{
+                    ...glassStyle,
+                    padding: '1rem',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    textAlign: 'center'
+                  }}
+                >
+                  <div style={{
+                    fontSize: '1.25rem',
+                    fontWeight: '700',
+                    color: 'rgb(59, 130, 246)',
+                    marginBottom: '0.5rem'
+                  }}>
+                    {formatTime(workflowData.time_by_step[step.id] || 0)}
+                  </div>
+                  <div style={{
+                    fontSize: '0.875rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                  }}>
+                    {step.name}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal para avançar workflow */}
+      <AnimatePresence>
+        {showAdvanceModal && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              style={{
+                ...glassStyle,
+                width: '100%',
+                maxWidth: '500px',
+                padding: '2rem',
+                color: 'white'
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '1.5rem'
+              }}>
+                <h3 style={{
+                  margin: 0,
+                  fontSize: '1.25rem',
+                  fontWeight: '600'
+                }}>
+                  Avançar Workflow
+                </h3>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowAdvanceModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <X size={24} />
+                </motion.button>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  Próximo Passo *
+                </label>
+                <select
+                  value={selectedNextStep}
+                  onChange={(e) => setSelectedNextStep(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  <option value="" style={{ background: '#1f2937', color: 'white' }}>
+                    Selecione o próximo passo
+                  </option>
+                  {availableNextSteps.map((step) => (
+                    <option 
+                      key={step.id} 
+                      value={step.id}
+                      style={{ background: '#1f2937', color: 'white' }}
+                    >
+                      {step.name} {step.assign_to ? `(${step.assign_to})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  Comentário (Opcional)
+                </label>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Adicione observações sobre esta transição..."
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '0.875rem',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{
+                display: 'flex',
+                gap: '0.75rem',
+                justifyContent: 'flex-end'
+              }}>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowAdvanceModal(false)}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  Cancelar
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleAdvanceWorkflow}
+                  disabled={advancing || !selectedNextStep}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    background: 'rgba(59, 130, 246, 0.2)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    cursor: advancing || !selectedNextStep ? 'not-allowed' : 'pointer',
+                    fontSize: '0.875rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    opacity: advancing || !selectedNextStep ? 0.7 : 1
+                  }}
+                >
+                  {advancing ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Send size={16} />
+                  )}
+                  Avançar
+                </motion.button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        select option {
+          background: #1f2937 !important;
+          color: white !important;
+        }
+        
+        textarea::placeholder, select::placeholder {
+          color: rgba(255, 255, 255, 0.5) !important;
+        }
+        
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.5);
+        }
+      `}</style>
+    </motion.div>
   );
 };
 
-export default TaskWorkflowView;
+export default TaskOverflowView;

@@ -13,7 +13,6 @@ import ClientProfitability from "./pages/ClientProfitability";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import OrganizationManagement from "./pages/OrganizationManagement";
 import TaskWorkflow from "./pages/TaskOverflow"; // Assuming TaskOverflow is correct, or TaskWorkflow
-import WorkflowDesigner from "./pages/WorkflowDesigner";
 import WorkflowManagement from "./pages/WorkflowManagement";
 import DashboardRouter from "./pages/DashboardRouter"; // This will likely be your HomePage equivalent
 import { PermissionsProvider } from './contexts/PermissionsContext';
@@ -71,7 +70,6 @@ function App() {
               <Route path="tasks" element={<TaskManagement />} />
               <Route path="organization" element={<OrganizationManagement />} />
               <Route path="task-workflow/:taskId" element={<TaskWorkflow />} />
-              <Route path="workflow-designer" element={<WorkflowDesigner />} />
               <Route path="workflow-management" element={<WorkflowManagement />} />
             </Route>
 

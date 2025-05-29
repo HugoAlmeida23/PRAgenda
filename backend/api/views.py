@@ -6,13 +6,17 @@ from django.utils import timezone
 import json
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import PermissionDenied
-from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowStep
+from .models import (Organization, Client, TaskCategory, Task, TimeEntry, Expense, 
+                    ClientProfitability, Profile, AutoTimeTracking, WorkflowStep,
+                    NLPProcessor, WorkflowDefinition, TaskApproval, WorkflowNotification, 
+                    WorkflowHistory)
 from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializer,
                          TimeEntrySerializer, ExpenseSerializer, ClientProfitabilitySerializer,
-                         ProfileSerializer, AutoTimeTrackingSerializer, OrganizationSerializer)
-from .models import NLPProcessor, WorkflowDefinition, TaskApproval
+                         ProfileSerializer, AutoTimeTrackingSerializer, OrganizationSerializer,
+                         UserSerializer, NLPProcessorSerializer, WorkflowDefinitionSerializer, 
+                         WorkflowStepSerializer, TaskApprovalSerializer, WorkflowNotificationSerializer,
+                         WorkflowHistorySerializer)
 from django.contrib.auth.models import User
-from .serializers import UserSerializer, NLPProcessorSerializer, WorkflowDefinitionSerializer, WorkflowStepSerializer, TaskApprovalSerializer
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
@@ -388,6 +392,207 @@ class TaskViewSet(viewsets.ModelViewSet):
             
         except Profile.DoesNotExist:
             raise PermissionDenied("Perfil de usuário não encontrado")
+
+    @action(detail=True, methods=['post'])
+    def advance_workflow(self, request, pk=None):
+        """Avança manualmente o workflow para o próximo passo"""
+        task = self.get_object()
+        
+        if not task.workflow or not task.current_workflow_step:
+            return Response(
+                {"error": "Esta tarefa não possui workflow ativo"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        next_step_id = request.data.get('next_step_id')
+        comment = request.data.get('comment', '')
+        
+        if not next_step_id:
+            return Response(
+                {"error": "ID do próximo passo é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            # Verificar permissões
+            can_advance = (
+                profile.is_org_admin or 
+                profile.can_edit_all_tasks or 
+                (profile.can_edit_assigned_tasks and task.assigned_to == request.user) or
+                (task.current_workflow_step.assign_to == request.user)
+            )
+            
+            if not can_advance:
+                raise PermissionDenied("Você não tem permissão para avançar este workflow")
+            
+            # Verificar se o próximo passo é válido
+            current_step = task.current_workflow_step
+            next_step_ids = current_step.next_steps
+            
+            if isinstance(next_step_ids, str):
+                next_step_ids = json.loads(next_step_ids)
+            
+            if next_step_id not in next_step_ids:
+                return Response(
+                    {"error": "Passo inválido para esta transição"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            next_step = WorkflowStep.objects.get(id=next_step_id)
+            
+            # Verificar se o passo atual requer aprovação
+            if current_step.requires_approval:
+                # Verificar se já foi aprovado
+                approval_exists = TaskApproval.objects.filter(
+                    task=task,
+                    workflow_step=current_step,
+                    approved=True
+                ).exists()
+                
+                if not approval_exists:
+                    return Response(
+                        {"error": "Este passo requer aprovação antes de avançar"}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Avançar o workflow
+            task.current_workflow_step = next_step
+            task.workflow_comment = comment
+            task.save()
+            
+            # Registrar no histórico
+            WorkflowHistory.objects.create(
+                task=task,
+                from_step=current_step,
+                to_step=next_step,
+                changed_by=request.user,
+                action='step_completed',
+                comment=comment
+            )
+            
+            # Criar notificação para o responsável pelo próximo passo
+            if next_step.assign_to:
+                WorkflowNotification.objects.create(
+                    user=next_step.assign_to,
+                    task=task,
+                    workflow_step=next_step,
+                    notification_type='step_ready',
+                    title=f"Novo passo pronto: {next_step.name}",
+                    message=f"A tarefa '{task.title}' chegou ao passo '{next_step.name}' e está pronta para ser trabalhada."
+                )
+            
+            return Response(
+                {"success": True, "message": "Workflow avançado com sucesso"}, 
+                status=status.HTTP_200_OK
+            )
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil de usuário não encontrado")
+        except WorkflowStep.DoesNotExist:
+            return Response(
+                {"error": "Passo do workflow não encontrado"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=True, methods=['get'])
+    def workflow_status(self, request, pk=None):
+        """Retorna o status atual do workflow da tarefa"""
+        task = self.get_object()
+        
+        if not task.workflow:
+            return Response({"workflow": None})
+        
+        # Buscar todos os passos do workflow
+        workflow_steps = WorkflowStep.objects.filter(
+            workflow=task.workflow
+        ).order_by('order')
+        
+        # Buscar histórico
+        workflow_history = WorkflowHistory.objects.filter(
+            task=task
+        ).order_by('-created_at')
+        
+        # Buscar aprovações
+        approvals = TaskApproval.objects.filter(
+            task=task
+        ).select_related('workflow_step', 'approved_by')
+        
+        # Calcular tempo gasto por passo
+        time_by_step = {}
+        for step in workflow_steps:
+            time_entries = TimeEntry.objects.filter(
+                task=task,
+                workflow_step=step
+            ).aggregate(total=models.Sum('minutes_spent'))
+            time_by_step[str(step.id)] = time_entries['total'] or 0
+        
+        response_data = {
+            'workflow': {
+                'id': task.workflow.id,
+                'name': task.workflow.name,
+                'current_step': {
+                    'id': task.current_workflow_step.id,
+                    'name': task.current_workflow_step.name,
+                    'order': task.current_workflow_step.order,
+                    'assign_to': task.current_workflow_step.assign_to.username if task.current_workflow_step.assign_to else None,
+                    'requires_approval': task.current_workflow_step.requires_approval,
+                    'approver_role': task.current_workflow_step.approver_role
+                } if task.current_workflow_step else None,
+                'steps': [],
+                'history': [],
+                'approvals': [],
+                'time_by_step': time_by_step
+            }
+        }
+        
+        # Adicionar informações dos passos
+        for step in workflow_steps:
+            step_data = {
+                'id': step.id,
+                'name': step.name,
+                'description': step.description,
+                'order': step.order,
+                'assign_to': step.assign_to.username if step.assign_to else None,
+                'requires_approval': step.requires_approval,
+                'approver_role': step.approver_role,
+                'is_current': task.current_workflow_step and step.id == task.current_workflow_step.id,
+                'is_completed': False,
+                'time_spent': time_by_step.get(str(step.id), 0)
+            }
+            
+            # Verificar se o passo foi concluído
+            if task.current_workflow_step:
+                step_data['is_completed'] = step.order < task.current_workflow_step.order
+            
+            response_data['workflow']['steps'].append(step_data)
+        
+        # Adicionar histórico
+        for history in workflow_history[:10]:  # Últimos 10 registros
+            response_data['workflow']['history'].append({
+                'id': history.id,
+                'from_step': history.from_step.name if history.from_step else None,
+                'to_step': history.to_step.name if history.to_step else None,
+                'changed_by': history.changed_by.username if history.changed_by else None,
+                'action': history.action,
+                'comment': history.comment,
+                'time_spent_minutes': history.time_spent_minutes,
+                'created_at': history.created_at
+            })
+        
+        # Adicionar aprovações
+        for approval in approvals:
+            response_data['workflow']['approvals'].append({
+                'id': approval.id,
+                'workflow_step': approval.workflow_step.name,
+                'approved_by': approval.approved_by.username if approval.approved_by else None,
+                'approved': approval.approved,
+                'comment': approval.comment,
+                'approved_at': approval.approved_at
+            })
+        
+        return Response(response_data)
              
 class CreateUserView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -460,14 +665,12 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
 
     
     def perform_create(self, serializer):
-        # Verificar se o usuário tem permissão para registrar tempo
         try:
             profile = Profile.objects.get(user=self.request.user)
             
             if not profile.can_log_time:
                 raise PermissionDenied("Você não tem permissão para registrar tempo")
-                
-            # Verificar se o cliente está acessível para o usuário
+            
             client_id = self.request.data.get('client')
             if client_id:
                 client = Client.objects.get(id=client_id)
@@ -477,15 +680,169 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             # Salvar o time entry
             time_entry = serializer.save(user=self.request.user)
             
+            # Processar workflow se necessário
+            self._process_workflow_step(time_entry)
+            
             # Atualizar status da tarefa se especificado
             self._update_task_status_if_needed(time_entry)
             
         except Profile.DoesNotExist:
-            # Se não houver perfil, permitir apenas para o próprio usuário
             time_entry = serializer.save(user=self.request.user)
+            self._process_workflow_step(time_entry)
             self._update_task_status_if_needed(time_entry)
         except Client.DoesNotExist:
             raise PermissionDenied("Cliente não encontrado")
+
+    def _process_workflow_step(self, time_entry):
+        """Processa avanços no workflow baseado no time entry"""
+        if not time_entry.task or not time_entry.task.workflow:
+            return
+            
+        task = time_entry.task
+        
+        # Se o time entry está associado a um passo específico
+        if time_entry.workflow_step:
+            # Registrar no histórico
+            WorkflowHistory.objects.create(
+                task=task,
+                from_step=time_entry.workflow_step,
+                to_step=time_entry.workflow_step,
+                changed_by=time_entry.user,
+                action='step_started' if not time_entry.workflow_step_completed else 'step_completed',
+                comment=f"Tempo registrado: {time_entry.minutes_spent} minutos",
+                time_spent_minutes=time_entry.minutes_spent
+            )
+            
+            # Se o passo foi marcado como concluído
+            if time_entry.workflow_step_completed:
+                self._complete_workflow_step(task, time_entry.workflow_step, time_entry.user)
+        
+        # Se deve avançar automaticamente o workflow
+        if time_entry.advance_workflow and task.current_workflow_step:
+            self._auto_advance_workflow(task, time_entry.user)
+    
+    def _complete_workflow_step(self, task, workflow_step, user):
+        """Marca um passo do workflow como concluído"""
+        # Verificar se requer aprovação
+        if workflow_step.requires_approval:
+            # Criar notificação para aprovação
+            self._create_approval_notification(task, workflow_step)
+        else:
+            # Avançar automaticamente para o próximo passo
+            self._advance_to_next_step(task, workflow_step, user)
+    
+    def _auto_advance_workflow(self, task, user):
+        """Avança automaticamente para o próximo passo"""
+        current_step = task.current_workflow_step
+        
+        if not current_step or not current_step.next_steps:
+            return
+            
+        try:
+            next_step_ids = current_step.next_steps
+            if isinstance(next_step_ids, str):
+                next_step_ids = json.loads(next_step_ids)
+            
+            # Se há apenas um próximo passo, avançar automaticamente
+            if len(next_step_ids) == 1:
+                next_step = WorkflowStep.objects.get(id=next_step_ids[0])
+                self._advance_to_next_step(task, current_step, user, next_step)
+            
+        except (WorkflowStep.DoesNotExist, json.JSONDecodeError):
+            pass
+    
+    def _advance_to_next_step(self, task, from_step, user, to_step=None):
+        """Avança a tarefa para o próximo passo"""
+        if to_step:
+            # Atualizar a tarefa
+            task.current_workflow_step = to_step
+            task.save()
+            
+            # Registrar no histórico
+            WorkflowHistory.objects.create(
+                task=task,
+                from_step=from_step,
+                to_step=to_step,
+                changed_by=user,
+                action='step_completed',
+                comment=f"Passo avançado automaticamente"
+            )
+            
+            # Criar notificação para o responsável pelo próximo passo
+            if to_step.assign_to:
+                WorkflowNotification.objects.create(
+                    user=to_step.assign_to,
+                    task=task,
+                    workflow_step=to_step,
+                    notification_type='step_ready',
+                    title=f"Novo passo pronto: {to_step.name}",
+                    message=f"A tarefa '{task.title}' chegou ao passo '{to_step.name}' e está pronta para ser trabalhada."
+                )
+                
+                # Enviar email de notificação
+                self._send_workflow_email(to_step.assign_to, task, to_step, 'step_ready')
+    
+    def _create_approval_notification(self, task, workflow_step):
+        """Cria notificação para aprovação de passo"""
+        # Buscar usuários que podem aprovar (baseado no papel)
+        if workflow_step.approver_role:
+            # Procurar usuários com o papel específico
+            approvers = Profile.objects.filter(
+                organization=task.client.organization,
+                role__icontains=workflow_step.approver_role
+            )
+        else:
+            # Usar admins da organização
+            approvers = Profile.objects.filter(
+                organization=task.client.organization,
+                is_org_admin=True
+            )
+        
+        for approver_profile in approvers:
+            WorkflowNotification.objects.create(
+                user=approver_profile.user,
+                task=task,
+                workflow_step=workflow_step,
+                notification_type='approval_needed',
+                title=f"Aprovação necessária: {workflow_step.name}",
+                message=f"O passo '{workflow_step.name}' da tarefa '{task.title}' precisa de aprovação."
+            )
+            
+            # Enviar email
+            self._send_workflow_email(approver_profile.user, task, workflow_step, 'approval_needed')
+    
+    def _send_workflow_email(self, user, task, workflow_step, notification_type):
+        """Envia email de notificação de workflow"""
+        from django.core.mail import send_mail
+        from django.conf import settings
+        
+        if not user.email:
+            return
+            
+        subject_map = {
+            'step_ready': f"Nova tarefa pronta: {task.title}",
+            'approval_needed': f"Aprovação necessária: {task.title}",
+            'step_completed': f"Passo concluído: {task.title}",
+            'workflow_completed': f"Workflow concluído: {task.title}"
+        }
+        
+        message_map = {
+            'step_ready': f"A tarefa '{task.title}' chegou ao passo '{workflow_step.name}' e está pronta para ser trabalhada.",
+            'approval_needed': f"O passo '{workflow_step.name}' da tarefa '{task.title}' precisa de sua aprovação.",
+            'step_completed': f"O passo '{workflow_step.name}' da tarefa '{task.title}' foi concluído.",
+            'workflow_completed': f"O workflow da tarefa '{task.title}' foi concluído com sucesso."
+        }
+        
+        try:
+            send_mail(
+                subject=subject_map.get(notification_type, f"Atualização de workflow: {task.title}"),
+                message=message_map.get(notification_type, f"Atualização no workflow da tarefa '{task.title}'."),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=True
+            )
+        except Exception as e:
+            logger.error(f"Erro ao enviar email de workflow: {e}")
 
     def _update_task_status_if_needed(self, time_entry):
         """Atualiza o status da tarefa baseado na configuração do time entry"""
@@ -1269,7 +1626,97 @@ class TaskApprovalViewSet(viewsets.ModelViewSet):
         return queryset
     
     def perform_create(self, serializer):
-        serializer.save(approved_by=self.request.user)
+        approval = serializer.save(approved_by=self.request.user)
+        
+        # Se foi aprovado, verificar se pode avançar o workflow
+        if approval.approved:
+            task = approval.task
+            workflow_step = approval.workflow_step
+            
+            # Verificar se este é o passo atual da tarefa
+            if task.current_workflow_step == workflow_step:
+                # Registrar no histórico
+                WorkflowHistory.objects.create(
+                    task=task,
+                    from_step=workflow_step,
+                    to_step=workflow_step,
+                    changed_by=self.request.user,
+                    action='step_approved',
+                    comment=approval.comment or "Passo aprovado"
+                )
+                
+                # Criar notificação para o responsável do passo
+                if workflow_step.assign_to:
+                    WorkflowNotification.objects.create(
+                        user=workflow_step.assign_to,
+                        task=task,
+                        workflow_step=workflow_step,
+                        notification_type='approval_completed',
+                        title=f"Passo aprovado: {workflow_step.name}",
+                        message=f"O passo '{workflow_step.name}' da tarefa '{task.title}' foi aprovado e pode ser avançado."
+                    )
+
+class WorkflowStepDetailViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = WorkflowStepSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        workflow_id = self.request.query_params.get('workflow')
+        
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            queryset = WorkflowStep.objects.select_related(
+                'workflow', 'assign_to'
+            ).prefetch_related(
+                'time_entries',
+                'task_approvals'
+            )
+            
+            if workflow_id:
+                queryset = queryset.filter(workflow=workflow_id)
+            
+            # Filtrar por permissões
+            if not (profile.is_org_admin or profile.can_view_all_tasks):
+                # Usuários só veem passos de workflows de tarefas que podem acessar
+                visible_client_ids = list(profile.visible_clients.values_list('id', flat=True))
+                queryset = queryset.filter(
+                    workflow__tasks__client_id__in=visible_client_ids
+                ).distinct()
+            
+            return queryset.order_by('workflow', 'order')
+            
+        except Profile.DoesNotExist:
+            return WorkflowStep.objects.none()
+    
+    @action(detail=True, methods=['get'])
+    def time_entries(self, request, pk=None):
+        """Retorna todas as entradas de tempo para este passo"""
+        workflow_step = self.get_object()
+        
+        time_entries = TimeEntry.objects.filter(
+            workflow_step=workflow_step
+        ).select_related(
+            'user', 'task', 'client'
+        ).order_by('-date', '-created_at')
+        
+        serializer = TimeEntrySerializer(time_entries, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def current_tasks(self, request, pk=None):
+        """Retorna tarefas que estão atualmente neste passo"""
+        workflow_step = self.get_object()
+        
+        current_tasks = Task.objects.filter(
+            current_workflow_step=workflow_step
+        ).select_related(
+            'client', 'assigned_to', 'created_by'
+        )
+        
+        serializer = TaskSerializer(current_tasks, many=True)
+        return Response(serializer.data)
         
 class OrganizationViewSet(viewsets.ModelViewSet):
     """
@@ -2082,3 +2529,75 @@ def dashboard_summary(request):
             'can_view_analytics': False,
             'can_view_profitability': False,
         })
+
+class WorkflowNotificationViewSet(viewsets.ModelViewSet):
+    serializer_class = WorkflowNotificationSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Filtros opcionais
+        is_read = self.request.query_params.get('is_read')
+        notification_type = self.request.query_params.get('type')
+        
+        queryset = WorkflowNotification.objects.filter(user=user).select_related(
+            'task', 'workflow_step', 'task__client'
+        )
+        
+        if is_read is not None:
+            queryset = queryset.filter(is_read=is_read.lower() == 'true')
+            
+        if notification_type:
+            queryset = queryset.filter(notification_type=notification_type)
+            
+        return queryset.order_by('-created_at')
+    
+    @action(detail=True, methods=['post'])
+    def mark_as_read(self, request, pk=None):
+        """Marca uma notificação específica como lida"""
+        notification = self.get_object()
+        notification.mark_as_read()
+        return Response({'status': 'marked_as_read'})
+    
+    @action(detail=False, methods=['post'])
+    def mark_all_as_read(self, request):
+        """Marca todas as notificações do usuário como lidas"""
+        count = self.get_queryset().filter(is_read=False).update(
+            is_read=True,
+            read_at=timezone.now()
+        )
+        return Response({'status': 'marked_as_read', 'count': count})
+
+
+class WorkflowHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = WorkflowHistorySerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        task_id = self.request.query_params.get('task')
+        
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            base_queryset = WorkflowHistory.objects.select_related(
+                'task', 'from_step', 'to_step', 'changed_by'
+            )
+            
+            if task_id:
+                base_queryset = base_queryset.filter(task_id=task_id)
+            
+            # Aplicar filtros de permissão
+            if profile.is_org_admin or profile.can_view_all_tasks:
+                return base_queryset.filter(task__client__organization=profile.organization)
+            else:
+                # Usuários só veem histórico de tarefas que podem acessar
+                visible_client_ids = list(profile.visible_clients.values_list('id', flat=True))
+                return base_queryset.filter(
+                    Q(task__client_id__in=visible_client_ids) | 
+                    Q(task__assigned_to=user)
+                ).distinct()
+                
+        except Profile.DoesNotExist:
+            return WorkflowHistory.objects.none()

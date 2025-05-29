@@ -1,730 +1,502 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  List,
+  ListChecks, // Changed from List for better semantics
   Plus,
   Trash2,
-  Edit,
-  Settings,
-  CheckSquare,
+  Edit3, // Changed from Edit
+  Settings2, // Changed from Settings
+  Eye,
+  XCircle, // For closing modal
   AlertTriangle,
-  Copy,
   RotateCcw,
   Search,
-  Filter,
+  Filter as FilterIcon, // Renamed to avoid conflict
   Loader2,
-  Eye,
-  ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Brain,
+  Network, // For workflow icon
+  Info,
+  ArrowRightLeft // For workflow steps connection
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api';
-import WorkflowDesigner from './WorkflowDesigner';
+import WorkflowDesigner from './WorkflowDesigner'; // Assuming this is correctly pathed
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
+import BackgroundElements from "../components/HeroSection/BackgroundElements";
+import { toast, ToastContainer } from 'react-toastify';
 
-// Componente para visualizar workflows
-const WorkflowViewer = ({ workflow, onClose }) => {
+// Estilos glass
+const glassStyle = {
+  background: 'rgba(255, 255, 255, 0.05)',
+  backdropFilter: 'blur(12px)',
+  border: '1px solid rgba(255, 255, 255, 0.15)',
+  borderRadius: '16px',
+};
+
+// Variantes de animação
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
+  }
+};
+
+const itemVariants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: { type: "spring", stiffness: 120, damping: 15 }
+  }
+};
+
+const modalOverlayVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1 },
+  exit: { opacity: 0 }
+};
+
+const modalContentVariants = {
+  hidden: { scale: 0.9, opacity: 0 },
+  visible: { scale: 1, opacity: 1, transition: { type: "spring", stiffness: 260, damping: 20 } },
+  exit: { scale: 0.9, opacity: 0, transition: { duration: 0.2 } }
+};
+
+
+// Componente para visualizar workflows (MODAL)
+const WorkflowViewerModal = ({ workflow, onClose }) => {
   const [workflowSteps, setWorkflowSteps] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingSteps, setLoadingSteps] = useState(true);
 
   useEffect(() => {
     const fetchSteps = async () => {
+      if (!workflow?.id) return;
       try {
-        setLoading(true);
+        setLoadingSteps(true);
         const response = await api.get(`/workflow-steps/?workflow=${workflow.id}`);
-        // Ordenar os passos pela ordem
         const sortedSteps = response.data.sort((a, b) => a.order - b.order);
         setWorkflowSteps(sortedSteps);
       } catch (error) {
         console.error('Error fetching workflow steps:', error);
+        toast.error("Falha ao carregar passos do workflow.");
       } finally {
-        setLoading(false);
+        setLoadingSteps(false);
       }
     };
-
     fetchSteps();
-  }, [workflow.id]);
-
-  // Obter permissões do contexto
-  const permissions = usePermissions();
-
-  // Verificar permissões para mostrar mensagem de acesso restrito
-  if (permissions.loading) {
-    return (
-      <div className="main">
-        <Header>
-          <div className="flex justify-center items-center min-h-screen">
-            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
-          </div>
-        </Header>
-      </div>
-    );
-  }
-
-  // Verificar se usuário pode gerenciar workflows
-  const canManageWorkflows = permissions.isOrgAdmin ||
-    permissions.canCreateWorkflows ||
-    permissions.canEditWorkflows;
-
-  if (!canManageWorkflows) {
-    return (
-      <div className="main">
-        <Header>
-          <div className="flex flex-col items-center justify-center min-h-screen p-4">
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
-              <div className="flex items-start">
-                <AlertCircle className="h-6 w-6 mr-2" />
-                <div>
-                  <p className="font-bold">Acesso Restrito</p>
-                  <p>Você não possui permissões para gerenciar workflows.</p>
-                </div>
-              </div>
-            </div>
-            <p className="text-gray-600">
-              Entre em contato com o administrador da sua organização para solicitar acesso.
-            </p>
-          </div>
-        </Header>
-      </div>
-    );
-  }
+  }, [workflow?.id]);
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-lg">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold flex items-center">
-          <Eye className="mr-2 text-blue-600" size={22} />
-          Visualizar Workflow: {workflow.name}
-        </h2>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-gray-700"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+    <motion.div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', zIndex: 1000, padding: '1rem'
+      }}
+      variants={modalOverlayVariants} initial="hidden" animate="visible" exit="exit"
+    >
+      <motion.div
+        style={{ ...glassStyle, width: '100%', maxWidth: '4xl', maxHeight: '90vh', display: 'flex', flexDirection: 'column', color: 'white', padding: 0 }}
+        variants={modalContentVariants}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Eye size={24} style={{ color: 'rgb(59,130,246)' }} />
+            <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
+              Visualizar Workflow: {workflow.name}
+            </h2>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}
+            aria-label="Fechar modal"
+          >
+            <XCircle size={24} />
+          </motion.button>
         </div>
-      ) : (
-        <>
-          <div className="mb-6 bg-white-50 p-4 rounded-md">
-            <h3 className="font-medium text-gray-700 mb-2">Detalhes do Workflow</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-500">Nome:</p>
-                <p className="font-medium">{workflow.name}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Status:</p>
-                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${workflow.is_active ? 'bg-green-100 text-green-800' : 'bg-white-100 text-gray-800'}`}>
-                  {workflow.is_active ? 'Ativo' : 'Inativo'}
-                </span>
-              </div>
-              {workflow.description && (
-                <div className="md:col-span-2">
-                  <p className="text-sm text-gray-500">Descrição:</p>
-                  <p>{workflow.description}</p>
-                </div>
-              )}
-              <div>
-                <p className="text-sm text-gray-500">Criado por:</p>
-                <p>{workflow.created_by_name || 'Não especificado'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Data de criação:</p>
-                <p>{new Date(workflow.created_at).toLocaleDateString()}</p>
-              </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+          {loadingSteps ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+              <Loader2 size={32} className="animate-spin" style={{ color: 'rgb(59,130,246)' }} />
             </div>
-          </div>
-
-          <h3 className="text-lg font-medium mb-4">Passos do Workflow</h3>
-
-          {/* Visualização do fluxo */}
-          <div className="p-4 bg-white-50 rounded-lg overflow-x-auto mb-6">
-            <div className="flex items-center min-w-max">
-              {workflowSteps.map((step, index) => (
-                <React.Fragment key={step.id}>
-                  <div className="flex flex-col items-center">
-                    <div className={`p-3 rounded-lg border ${step.requires_approval ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'} min-w-[150px]`}>
-                      <div className="font-medium text-gray-800">{step.name}</div>
-                      {step.assign_to_name && (
-                        <div className="text-xs text-gray-500 flex items-center mt-1">
-                          <span>Responsável: {step.assign_to_name}</span>
-                        </div>
-                      )}
-                      {step.requires_approval && (
-                        <div className="text-xs text-yellow-700 flex items-center mt-1">
-                          <AlertTriangle size={12} className="mr-1" />
-                          Aprovação: {step.approver_role || 'Necessária'}
-                        </div>
-                      )}
-                    </div>
+          ) : (
+            <>
+              <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Info size={18} />Detalhes do Workflow</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', fontSize: '0.875rem' }}>
+                  <div><strong style={{ color: 'rgba(255,255,255,0.7)' }}>Nome:</strong> {workflow.name}</div>
+                  <div><strong style={{ color: 'rgba(255,255,255,0.7)' }}>Status:</strong>
+                    <span style={{
+                      padding: '0.25rem 0.75rem', marginLeft: '0.5rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: '600',
+                      background: workflow.is_active ? 'rgba(52,211,153,0.2)' : 'rgba(239,68,68,0.2)',
+                      border: workflow.is_active ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(239,68,68,0.3)',
+                      color: workflow.is_active ? 'rgb(110,231,183)' : 'rgb(252,165,165)'
+                    }}>
+                      {workflow.is_active ? 'Ativo' : 'Inativo'}
+                    </span>
                   </div>
-
-                  {index < workflowSteps.length - 1 && (
-                    <div className="mx-4 text-gray-400">
-                      <ChevronRight size={20} />
-                    </div>
-                  )}
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-
-          {/* Lista detalhada de passos */}
-          <div className="space-y-3">
-            {workflowSteps.map((step, index) => (
-              <div key={step.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center mb-2">
-                  <div className="bg-blue-100 text-blue-800 h-7 w-7 rounded-full flex items-center justify-center mr-3 font-semibold">
-                    {step.order}
-                  </div>
-                  <h4 className="font-medium">{step.name}</h4>
+                  {workflow.description && <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: 'rgba(255,255,255,0.7)' }}>Descrição:</strong> {workflow.description}</div>}
+                  <div><strong style={{ color: 'rgba(255,255,255,0.7)' }}>Criado por:</strong> {workflow.created_by_name || 'N/A'}</div>
+                  <div><strong style={{ color: 'rgba(255,255,255,0.7)' }}>Data de Criação:</strong> {new Date(workflow.created_at).toLocaleDateString('pt-PT')}</div>
                 </div>
+              </motion.div>
 
-                {step.description && (
-                  <p className="text-gray-600 ml-10 mb-3">{step.description}</p>
-                )}
-
-                <div className="ml-10 space-y-2">
-                  {step.assign_to_name && (
-                    <div className="text-sm">
-                      <span className="text-gray-500">Responsável:</span> {step.assign_to_name}
-                    </div>
-                  )}
-
-                  {step.requires_approval && (
-                    <div className="text-sm">
-                      <span className="text-gray-500">Requer aprovação de:</span> {step.approver_role || 'Não especificado'}
-                    </div>
-                  )}
-
-                  {step.next_steps && step.next_steps.length > 0 && (
-                    <div className="text-sm">
-                      <span className="text-gray-500">Próximos passos possíveis:</span>
-                      <div className="ml-4 mt-1">
-                        {/* Renderizar os próximos passos possíveis */}
-                        {Array.isArray(step.next_steps)
-                          ? step.next_steps.map(nextStepId => {
-                            const nextStep = workflowSteps.find(s => s.id === nextStepId);
-                            return nextStep ? (
-                              <div key={nextStepId} className="text-sm text-blue-600">
-                                {nextStep.order}. {nextStep.name}
-                              </div>
-                            ) : null;
-                          })
-                          : typeof step.next_steps === 'string' && step.next_steps.startsWith('[')
-                            ? JSON.parse(step.next_steps).map(nextStepId => {
-                              const nextStep = workflowSteps.find(s => s.id === nextStepId);
-                              return nextStep ? (
-                                <div key={nextStepId} className="text-sm text-blue-600">
-                                  {nextStep.order}. {nextStep.name}
-                                </div>
-                              ) : null;
-                            })
-                            : <div className="text-sm text-gray-500">Nenhum passo subsequente definido</div>
-                        }
+              <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ArrowRightLeft size={20}/>Passos do Workflow</h3>
+              
+              {/* Visualização do fluxo simplificada */}
+              <div style={{ ...glassStyle, padding: '1rem', background: 'rgba(0,0,0,0.1)', marginBottom: '1.5rem', overflowX: 'auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', minWidth: 'max-content' }}>
+                  {workflowSteps.map((step, index) => (
+                    <React.Fragment key={`flow-${step.id}`}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                        <div style={{
+                           padding: '0.75rem 1rem', borderRadius: '8px',
+                           border: `1px solid ${step.requires_approval ? 'rgba(251,191,36,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                           background: step.requires_approval ? 'rgba(251,191,36,0.1)' : 'rgba(59,130,246,0.1)',
+                           minWidth: '150px', color: 'white'
+                        }}>
+                          <div style={{ fontWeight: '600', fontSize: '0.875rem' }}>{step.name}</div>
+                          {step.assign_to_name && <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: '0.25rem' }}>Resp: {step.assign_to_name}</div>}
+                          {step.requires_approval && <div style={{ fontSize: '0.75rem', color: 'rgb(251,191,36)', marginTop: '0.25rem' }}><AlertTriangle size={12} style={{display: 'inline', marginRight: '0.25rem'}}/>Aprovação: {step.approver_role || 'Necessária'}</div>}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                      {index < workflowSteps.length - 1 && (
+                        <div style={{ margin: '0 1rem', color: 'rgba(255,255,255,0.4)' }}>
+                          <ChevronRight size={24} />
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                   {workflowSteps.length === 0 && <p style={{color: 'rgba(255,255,255,0.6)'}}>Nenhum passo definido para este workflow.</p>}
                 </div>
               </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+            </>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
   );
 };
 
-// Componente principal de gerenciamento de workflows
+
 const WorkflowManagement = () => {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
 
-  // Estados locais
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState(null);
   const [viewingWorkflow, setViewingWorkflow] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({
-    isActive: true,
-  });
+  const [filters, setFilters] = useState({ isActive: true }); // Default to show active
 
-  // Consultas React Query
   const {
-    data: workflows = [],
-    isLoading: isWorkflowsLoading,
-    isError: isWorkflowsError,
-    error: workflowsError,
-    refetch: refetchWorkflows
+    data: workflows = [], isLoading: isWorkflowsLoading, isError: isWorkflowsError,
+    error: workflowsError, refetch: refetchWorkflows
   } = useQuery({
     queryKey: ['workflows'],
-    queryFn: async () => {
-      try {
-        const response = await api.get('/workflow-definitions/');
-        return response.data;
-      } catch (error) {
-        console.error('Error fetching workflows:', error);
-        throw new Error('Failed to load workflows');
-      }
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    queryFn: async () => api.get('/workflow-definitions/').then(res => res.data),
+    staleTime: 5 * 60 * 1000,
   });
 
-  const {
-    data: users = [],
-    isLoading: isUsersLoading
-  } = useQuery({
+  const { data: users = [], isLoading: isUsersLoading } = useQuery({
     queryKey: ['users'],
-    queryFn: async () => {
-      try {
-        const response = await api.get('/profiles/');
-        return response.data;
-      } catch (error) {
-        console.error('Error fetching users:', error);
-        throw new Error('Failed to load users');
-      }
-    },
-    staleTime: 10 * 60 * 1000, // 10 minutos
+    queryFn: async () => api.get('/profiles/').then(res => res.data),
+    staleTime: 10 * 60 * 1000,
   });
 
-  // Mutações React Query
-  const createWorkflowMutation = useMutation({
-    mutationFn: async (newWorkflow) => {
-      // Primeiro, criar o workflow principal
-      const response = await api.post('/workflow-definitions/', {
-        name: newWorkflow.name,
-        description: newWorkflow.description,
-        is_active: newWorkflow.is_active
-      });
-
-      const workflowId = response.data.id;
-
-      // Depois, criar cada passo do workflow
-      for (const step of newWorkflow.steps) {
-        await api.post('/workflow-steps/', {
-          ...step,
-          workflow: workflowId,
-          next_steps: JSON.stringify(step.next_steps) // Serializar para JSON
-        });
-      }
-
-      return response.data;
-    },
+  const mutationOptions = (action) => ({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflows'] });
-      setShowCreateForm(false);
+      toast.success(`Workflow ${action} com sucesso!`);
+      if (action === "criado") setShowCreateForm(false);
+      if (action === "atualizado") setEditingWorkflow(null);
     },
     onError: (error) => {
-      console.error('Error creating workflow:', error);
-      alert('Falha ao criar workflow. Por favor, tente novamente.');
+      console.error(`Error ${action} workflow:`, error);
+      toast.error(`Falha ao ${action.replace(/o$/, 'ar')} workflow: ${error.response?.data?.detail || error.message}`);
     }
+  });
+
+  const createWorkflowMutation = useMutation({
+    mutationFn: async (newWorkflow) => {
+      const response = await api.post('/workflow-definitions/', {
+        name: newWorkflow.name, description: newWorkflow.description, is_active: newWorkflow.is_active
+      });
+      const workflowId = response.data.id;
+      for (const step of newWorkflow.steps) {
+        await api.post('/workflow-steps/', { ...step, workflow: workflowId, next_steps: JSON.stringify(step.next_steps || []) });
+      }
+      return response.data;
+    },
+    ...mutationOptions("criado")
   });
 
   const updateWorkflowMutation = useMutation({
     mutationFn: async (updatedWorkflow) => {
-      // Primeiro, atualizar o workflow principal
       await api.put(`/workflow-definitions/${updatedWorkflow.id}/`, {
-        name: updatedWorkflow.name,
-        description: updatedWorkflow.description,
-        is_active: updatedWorkflow.is_active
+        name: updatedWorkflow.name, description: updatedWorkflow.description, is_active: updatedWorkflow.is_active
       });
-
-      // Obter os passos existentes
       const stepsResponse = await api.get(`/workflow-steps/?workflow=${updatedWorkflow.id}`);
       const existingSteps = stepsResponse.data;
 
-      // Para cada passo no workflow atualizado...
       for (const step of updatedWorkflow.steps) {
+        const payload = { ...step, workflow: updatedWorkflow.id, next_steps: JSON.stringify(step.next_steps || []) };
         if (step.id && existingSteps.some(s => s.id === step.id)) {
-          // Atualizar passo existente
-          await api.put(`/workflow-steps/${step.id}/`, {
-            ...step,
-            workflow: updatedWorkflow.id,
-            next_steps: JSON.stringify(step.next_steps)
-          });
+          await api.put(`/workflow-steps/${step.id}/`, payload);
         } else {
-          // Criar novo passo
-          await api.post('/workflow-steps/', {
-            ...step,
-            workflow: updatedWorkflow.id,
-            next_steps: JSON.stringify(step.next_steps)
-          });
+          await api.post('/workflow-steps/', payload);
         }
       }
-
-      // Excluir passos que não estão mais presentes
       for (const existingStep of existingSteps) {
         if (!updatedWorkflow.steps.some(s => s.id === existingStep.id)) {
           await api.delete(`/workflow-steps/${existingStep.id}/`);
         }
       }
-
       return updatedWorkflow;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflows'] });
-      setEditingWorkflow(null);
-    },
-    onError: (error) => {
-      console.error('Error updating workflow:', error);
-      alert('Falha ao atualizar workflow. Por favor, tente novamente.');
-    }
+    ...mutationOptions("atualizado")
   });
 
   const deleteWorkflowMutation = useMutation({
-    mutationFn: async (workflowId) => {
-      await api.delete(`/workflow-definitions/${workflowId}/`);
-      return workflowId;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflows'] });
-    },
-    onError: (error) => {
-      console.error('Error deleting workflow:', error);
-      alert('Falha ao excluir workflow. Por favor, tente novamente.');
-    }
+    mutationFn: (workflowId) => api.delete(`/workflow-definitions/${workflowId}/`),
+    ...mutationOptions("excluído")
   });
 
-  // Função para filtragem de workflows
-  const filteredWorkflows = workflows.filter(workflow => {
-    // Aplicar filtro de pesquisa
-    const matchesSearch =
-      !searchTerm ||
+  const filteredWorkflows = useMemo(() => workflows.filter(workflow => {
+    const matchesSearch = !searchTerm ||
       workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (workflow.description && workflow.description.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    // Aplicar filtro de status
-    const matchesStatus =
-      !filters.isActive || workflow.is_active === true;
-
+    const matchesStatus = filters.isActive ? workflow.is_active === true : true; // If not filtering by active, show all
     return matchesSearch && matchesStatus;
-  });
+  }), [workflows, searchTerm, filters.isActive]);
 
-  // Manipuladores de eventos
-  const handleSaveWorkflow = (workflowData) => {
+  const handleSaveWorkflow = useCallback((workflowData) => {
     if (editingWorkflow) {
-      updateWorkflowMutation.mutate({
-        ...workflowData,
-        id: editingWorkflow.id
-      });
+      updateWorkflowMutation.mutate({ ...workflowData, id: editingWorkflow.id });
     } else {
       createWorkflowMutation.mutate(workflowData);
     }
-  };
+  }, [editingWorkflow, createWorkflowMutation, updateWorkflowMutation]);
 
-  const handleDeleteWorkflow = (workflowId) => {
+  const handleDeleteWorkflow = useCallback((workflowId) => {
     if (window.confirm('Tem certeza que deseja excluir este workflow? Esta ação não pode ser desfeita.')) {
       deleteWorkflowMutation.mutate(workflowId);
     }
-  };
+  }, [deleteWorkflowMutation]);
 
-  const handleEditWorkflow = async (workflow) => {
+  const handleEditWorkflow = useCallback(async (workflow) => {
     try {
-      // Buscar os passos do workflow para edição
       const response = await api.get(`/workflow-steps/?workflow=${workflow.id}`);
       const steps = response.data.map(step => ({
         ...step,
-        next_steps: Array.isArray(step.next_steps)
-          ? step.next_steps
-          : (typeof step.next_steps === 'string' && step.next_steps.startsWith('['))
-            ? JSON.parse(step.next_steps)
-            : []
+        next_steps: Array.isArray(step.next_steps) ? step.next_steps :
+          (typeof step.next_steps === 'string' && step.next_steps.startsWith('[')) ? JSON.parse(step.next_steps) : []
       }));
-
-      // Configurar o workflow para edição com seus passos
-      setEditingWorkflow({
-        ...workflow,
-        steps
-      });
+      setEditingWorkflow({ ...workflow, steps });
+      setShowCreateForm(false); // Ensure only one form is open
+      setViewingWorkflow(null);
     } catch (error) {
       console.error('Error fetching workflow steps for editing:', error);
-      alert('Falha ao carregar passos do workflow. Por favor, tente novamente.');
+      toast.error('Falha ao carregar passos do workflow para edição.');
     }
-  };
+  }, []);
 
-  const handleViewWorkflow = (workflow) => {
+  const handleViewWorkflow = useCallback((workflow) => {
     setViewingWorkflow(workflow);
-  };
+    setShowCreateForm(false);
+    setEditingWorkflow(null);
+  }, []);
 
-  const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
-  };
+  const handleSearchChange = (e) => setSearchTerm(e.target.value);
+  const handleFilterChange = (e) => setFilters({ ...filters, [e.target.name]: e.target.checked });
 
-  const handleFilterChange = (e) => {
-    setFilters({
-      ...filters,
-      [e.target.name]: e.target.checked
-    });
-  };
+  const isLoadingOverall = isWorkflowsLoading || isUsersLoading;
 
-  // Verificar estado de carregamento global
-  const isLoading = isWorkflowsLoading || isUsersLoading ||
-    createWorkflowMutation.isPending ||
-    updateWorkflowMutation.isPending ||
-    deleteWorkflowMutation.isPending;
-
-    const permissions = usePermissions();
-
-  // Verificar permissões para mostrar mensagem de acesso restrito
-  if (permissions.loading) {
+  if (permissions.loading || isLoadingOverall) {
     return (
-      <div className="main">
-        <Header>
-          <div className="flex justify-center items-center min-h-screen">
-            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
-          </div>
-        </Header>
+      <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+        <BackgroundElements businessStatus="optimal" />
+        <motion.div animate={{ rotate: 360, scale: [1, 1.1, 1] }} transition={{ rotate: { duration: 2, repeat: Infinity, ease: "linear" }, scale: { duration: 1, repeat: Infinity } }}>
+          <Brain size={48} style={{ color: 'rgb(147, 51, 234)' }} />
+        </motion.div>
+        <p style={{ marginLeft: '1rem', fontSize: '1rem' }}>A carregar gestão de workflows...</p>
       </div>
     );
   }
-
-  // Verificar se usuário pode ver dados de rentabilidade
-  const canManageWorkflows = permissions.canManageWorkflows;
-  console.log("Permissões do usuário:", permissions);
+  
+  const canManageWorkflows = permissions.isOrgAdmin || permissions.canManageWorkflows || permissions.canCreateWorkflows || permissions.canEditWorkflows;
 
   if (!canManageWorkflows) {
     return (
-      <div className="main">
-        <Header>
-          <div className="flex flex-col items-center justify-center min-h-screen p-4">
-            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 max-w-lg">
-              <div className="flex items-start">
-                <AlertCircle className="h-6 w-6 mr-2" />
-                <div>
-                  <p className="font-bold">Acesso Restrito</p>
-                  <p>Você não possui permissões para gerir os workflows!</p>
-                </div>
-              </div>
-            </div>
-            <p className="text-gray-600">
-              Entre em contato com o administrador da sua organização para solicitar acesso.
-            </p>
-          </div>
-        </Header>
+      <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: 'white' }}>
+        <BackgroundElements businessStatus="optimal" />
+        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ ...glassStyle, padding: '2rem', textAlign: 'center', maxWidth: '500px' }}>
+          <AlertTriangle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
+          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>Acesso Restrito</h2>
+          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255,255,255,0.8)' }}>Você não possui permissões para gerir workflows.</p>
+        </motion.div>
       </div>
     );
   }
+
+  const currentActionText = showCreateForm ? "Criar Novo Workflow" : editingWorkflow ? "Editar Workflow" : "Gestão de Workflows";
+
   return (
-    <div className="main">
-      <Header>
-        <div className="p-6 bg-white-100 min-h-screen" style={{ marginLeft: "3%" }}>
-          <div className="max-w-6xl mx-auto">
-            {/* Cabeçalho da página */}
-            <div className="flex justify-between items-center mb-6">
-              <h1 className="text-2xl font-bold">Gestão de Workflows</h1>
+    <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
+      <BackgroundElements businessStatus="optimal" />
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }} theme="dark" />
 
-              {!showCreateForm && !editingWorkflow && !viewingWorkflow &&
-                (permissions.isOrgAdmin || permissions.canCreateWorkflows) && (
-                  <button
-                    onClick={() => setShowCreateForm(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
-                    disabled={isLoading}
-                  >
-                    <Plus size={18} className="mr-2" />
-                    Novo Workflow
-                  </button>
-                )}
-            </div>
+      <motion.div initial="hidden" animate="visible" variants={containerVariants} style={{ position: 'relative', zIndex: 10, padding: '2rem', paddingTop: '1rem' }}>
+        <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0 0 0.5rem 0', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              {currentActionText}
+            </h1>
+            <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>Crie, edite e gira os fluxos de trabalho da sua organização.</p>
+          </div>
+          {!showCreateForm && !editingWorkflow && (permissions.isOrgAdmin || permissions.canCreateWorkflows) && (
+            <motion.button
+              whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }}
+              onClick={() => { setShowCreateForm(true); setEditingWorkflow(null); setViewingWorkflow(null); }}
+              style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.2)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}
+              disabled={createWorkflowMutation.isPending || updateWorkflowMutation.isPending}
+            >
+              <Plus size={18} /> Novo Workflow
+            </motion.button>
+          )}
+        </motion.div>
 
-            {/* Formulário de designer de workflow (criação/edição) */}
-            {(showCreateForm || editingWorkflow) && (
+        <AnimatePresence mode="wait">
+          {showCreateForm || editingWorkflow ? (
+            <motion.div key="designer" variants={itemVariants}>
               <WorkflowDesigner
                 existingWorkflow={editingWorkflow}
                 users={users}
                 onSave={handleSaveWorkflow}
-                onCancel={() => {
-                  setShowCreateForm(false);
-                  setEditingWorkflow(null);
-                }}
+                onCancel={() => { setShowCreateForm(false); setEditingWorkflow(null); }}
+                isSaving={createWorkflowMutation.isPending || updateWorkflowMutation.isPending}
               />
-            )}
-
-            {/* Visualizador de workflow */}
-            {viewingWorkflow && (
-              <WorkflowViewer
-                workflow={viewingWorkflow}
-                onClose={() => setViewingWorkflow(null)}
-              />
-            )}
-
-            {/* Filtros e pesquisa */}
-            {!showCreateForm && !editingWorkflow && !viewingWorkflow && (
-              <div className="bg-white p-6 rounded-lg shadow mb-6">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
-                  <h2 className="text-lg font-semibold mb-4 md:mb-0">Workflows</h2>
-
-                  <div className="w-full md:w-1/3 mb-4 md:mb-0">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Pesquisar workflows..."
-                        value={searchTerm}
-                        onChange={handleSearchChange}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md"
-                      />
-                      <Search
-                        className="absolute left-3 top-2.5 text-gray-400"
-                        size={18}
-                      />
-                    </div>
+            </motion.div>
+          ) : (
+            <motion.div key="list" variants={itemVariants}>
+              {/* Filtros e pesquisa */}
+              <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ position: 'relative', flexGrow: 1, minWidth: '250px' }}>
+                    <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.5)' }} />
+                    <input
+                      type="text" placeholder="Pesquisar workflows..." value={searchTerm} onChange={handleSearchChange}
+                      style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}
+                    />
                   </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)' }}>
+                    <input type="checkbox" name="isActive" checked={filters.isActive} onChange={handleFilterChange} style={{ width: '18px', height: '18px', accentColor: 'rgb(59,130,246)' }} />
+                    Mostrar apenas ativos
+                  </label>
+                </div>
+              </motion.div>
 
-                  <div className="flex items-center">
-                    <label className="flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="isActive"
-                        checked={filters.isActive}
-                        onChange={handleFilterChange}
-                        className="h-4 w-4 text-blue-600 rounded"
-                      />
-                      <span className="ml-2 text-gray-700">
-                        Mostrar apenas ativos
-                      </span>
-                    </label>
+              {/* Lista de workflows */}
+              <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><ListChecks style={{ color: 'rgb(52,211,153)' }} size={20} /></div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Workflows Definidos</h3>
+                    <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{filteredWorkflows.length} workflows encontrados</p>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Lista de workflows */}
-            {!showCreateForm && !editingWorkflow && !viewingWorkflow && (
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <h2 className="text-xl font-semibold p-6 border-b">Lista de Workflows</h2>
-
                 {isWorkflowsLoading ? (
-                  <div className="p-6 flex justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                  </div>
+                  <div style={{ padding: '3rem', textAlign: 'center' }}><Loader2 size={32} className="animate-spin" style={{ color: 'rgb(59,130,246)' }} /></div>
                 ) : isWorkflowsError ? (
-                  <div className="p-6 text-center">
-                    <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-                    <p className="text-red-500">Erro ao carregar workflows</p>
-                    <button
-                      onClick={() => refetchWorkflows()}
-                      className="mt-2 text-blue-600 hover:text-blue-800 flex items-center mx-auto"
-                    >
-                      <RotateCcw size={16} className="mr-1" />
-                      Tentar novamente
-                    </button>
+                  <div style={{ padding: '3rem', textAlign: 'center', color: 'rgb(239,68,68)' }}>
+                    <AlertTriangle size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+                    <p>Erro ao carregar workflows: {workflowsError?.message}</p>
+                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => refetchWorkflows()}
+                      style={{ ...glassStyle, padding: '0.5rem 1rem', marginTop: '1rem', border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.2)', color: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <RotateCcw size={16} /> Tentar Novamente
+                    </motion.button>
                   </div>
                 ) : filteredWorkflows.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">
-                    {searchTerm || !filters.isActive
-                      ? "Nenhum workflow encontrado com os filtros aplicados."
-                      : "Nenhum workflow cadastrado. Crie o primeiro!"}
+                  <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
+                    <Network size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+                    <p>{searchTerm || !filters.isActive ? "Nenhum workflow encontrado com os filtros aplicados." : "Nenhum workflow cadastrado. Crie o primeiro!"}</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-white-50">
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Nome
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Descrição
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Status
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Criado por
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Data de Criação
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Ações
-                          </th>
+                          {['Nome', 'Status', 'Criado por', 'Data de Criação', 'Ações'].map(header => (
+                            <th key={header} style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '0.875rem', fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>{header}</th>
+                          ))}
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredWorkflows.map((workflow) => (
-                          <tr key={workflow.id} className="hover:bg-white-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="font-medium text-gray-900">
-                                {workflow.name}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="text-gray-500 truncate max-w-xs">
-                                {workflow.description || "Sem descrição"}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${workflow.is_active ? 'bg-green-100 text-green-800' : 'bg-white-100 text-gray-800'}`}>
+                      <tbody>
+                        {filteredWorkflows.map((workflow, index) => (
+                          <motion.tr key={workflow.id} initial={{ opacity: 0, y:10 }} animate={{ opacity:1, y:0 }} transition={{delay: index * 0.03}}
+                            style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }} whileHover={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{workflow.name}</td>
+                            <td style={{ padding: '1rem' }}>
+                              <span style={{
+                                padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: '600',
+                                background: workflow.is_active ? 'rgba(52,211,153,0.2)' : 'rgba(239,68,68,0.2)',
+                                border: workflow.is_active ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(239,68,68,0.3)',
+                                color: workflow.is_active ? 'rgb(110,231,183)' : 'rgb(252,165,165)'
+                              }}>
                                 {workflow.is_active ? 'Ativo' : 'Inativo'}
                               </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              {workflow.created_by_name || "Não especificado"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              {new Date(workflow.created_at).toLocaleDateString()}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  onClick={() => handleViewWorkflow(workflow)}
-                                  className="text-blue-600 hover:text-blue-900 flex items-center"
-                                  title="Visualizar workflow"
-                                >
-                                  <Eye size={18} />
-                                </button>
-                                <button
-                                  onClick={() => handleEditWorkflow(workflow)}
-                                  className="text-indigo-600 hover:text-indigo-900 flex items-center"
-                                  title="Editar workflow"
-                                >
-                                  <Edit size={18} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteWorkflow(workflow.id)}
-                                  className="text-red-600 hover:text-red-900 flex items-center"
-                                  title="Excluir workflow"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
+                            <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{workflow.created_by_name || 'N/A'}</td>
+                            <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{new Date(workflow.created_at).toLocaleDateString('pt-PT')}</td>
+                            <td style={{ padding: '1rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleViewWorkflow(workflow)} title="Visualizar" style={{ background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '6px', padding: '0.5rem', color: 'rgb(59,130,246)', cursor: 'pointer' }}><Eye size={16} /></motion.button>
+                                {(permissions.isOrgAdmin || permissions.canEditWorkflows) &&
+                                  <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleEditWorkflow(workflow)} title="Editar" style={{ background: 'rgba(147,51,234,0.2)', border: '1px solid rgba(147,51,234,0.3)', borderRadius: '6px', padding: '0.5rem', color: 'rgb(147,51,234)', cursor: 'pointer' }}><Edit3 size={16} /></motion.button>
+                                }
+                                {(permissions.isOrgAdmin || permissions.canDeleteWorkflows) &&
+                                  <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => handleDeleteWorkflow(workflow.id)} title="Excluir" style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '0.5rem', color: 'rgb(239,68,68)', cursor: 'pointer' }} disabled={deleteWorkflowMutation.isPending}><Trash2 size={16} /></motion.button>
+                                }
                               </div>
                             </td>
-                          </tr>
+                          </motion.tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 )}
-              </div>
-            )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
-            {/* Dicas e informações sobre workflows */}
-            {!showCreateForm && !editingWorkflow && !viewingWorkflow && (
-              <div className="mt-6 bg-blue-50 p-4 rounded-lg border border-blue-100">
-                <h3 className="font-medium text-blue-800 mb-2">Sobre Workflows</h3>
-                <p className="text-blue-700 mb-2">
-                  Workflows permitem padronizar processos do escritório, definindo:
-                </p>
-                <ul className="list-disc ml-6 text-blue-700 space-y-1">
-                  <li>Sequência de passos para cada tipo de processo</li>
-                  <li>Responsáveis por cada etapa</li>
-                  <li>Requisitos de aprovação</li>
-                  <li>Fluxos alternativos para casos específicos</li>
-                </ul>
-                <p className="text-blue-700 mt-2">
-                  Uma vez definidos, os workflows podem ser aplicados às tarefas para garantir consistência e qualidade.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </Header>
+      <AnimatePresence>
+        {viewingWorkflow && (
+          <WorkflowViewerModal
+            workflow={viewingWorkflow}
+            onClose={() => setViewingWorkflow(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <style jsx>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+        input::placeholder { color: rgba(255,255,255,0.5) !important; }
+        select option { background: #1f2937 !important; color: white !important; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
+        * { transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease; }
+        button:focus, input:focus, select:focus, textarea:focus { outline: 2px solid rgba(59,130,246,0.5); outline-offset: 2px; }
+      `}</style>
     </div>
   );
 };

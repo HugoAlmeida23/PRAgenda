@@ -22,7 +22,6 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
     { path: "/timeentry", icon: Clock, label: "Registo de Tempos", category: "main" },
     { path: "/clients", icon: Users, label: "Clientes", category: "main" },
     { path: "/organization", icon: Briefcase, label: "Organização", category: "settings" },
-    { path: "/workflow-designer", icon: GitPullRequest, label: "Workflow Designer", category: "advanced" },
     { path: "/workflow-management", icon: Settings, label: "Gerir Workflows", category: "advanced" },
     { path: "/profile", icon: User2, label: "Perfil", category: "main" }
   ];
