@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import { useNavigate } from 'react-router-dom';
+import {
     Brain, 
     ArrowRight, 
     Sparkles, 
@@ -9,37 +10,53 @@ import {
     ChevronRight,
     Play,
     Pause,
-    BarChart3,
-    Zap
+    BarChart3
 } from 'lucide-react';
 
 const AIInsightsPanel = ({ insights = [], businessStatus }) => {
     const [currentInsight, setCurrentInsight] = useState(0);
     const [isAutoRotating, setIsAutoRotating] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
+    
+    // Debug logs
     console.log("🔍 AI Insights Panel Data Recebido (AIInsightsPanel.jsx):", insights);
+    console.log("📊 Business Status:", businessStatus);
+    console.log("🎯 Component mounted and rendering");
+
     // Auto-rotate insights every 5 seconds
     useEffect(() => {
-        if (!isAutoRotating || isPaused || insights.length <= 1) return;
+        console.log("⏰ Auto-rotation effect triggered", { isAutoRotating, isPaused, insightsLength: insights.length });
+        
+        if (!isAutoRotating || isPaused || insights.length <= 1) {
+            console.log("❌ Auto-rotation stopped");
+            return;
+        }
 
         const interval = setInterval(() => {
+            console.log("🔄 Auto-rotating to next insight");
             setCurrentInsight((prev) => (prev + 1) % insights.length);
         }, 5000);
 
-        return () => clearInterval(interval);
+        return () => {
+            console.log("🧹 Cleaning up auto-rotation interval");
+            clearInterval(interval);
+        };
     }, [isAutoRotating, isPaused, insights.length]);
 
     const handlePrevious = () => {
+        console.log("⬅️ Previous insight clicked");
         setCurrentInsight((prev) => 
             prev === 0 ? insights.length - 1 : prev - 1
         );
     };
 
     const handleNext = () => {
+        console.log("➡️ Next insight clicked");
         setCurrentInsight((prev) => (prev + 1) % insights.length);
     };
 
     const handlePauseToggle = () => {
+        console.log("⏸️ Pause toggle clicked", { currentState: isPaused });
         setIsPaused(!isPaused);
     };
 
@@ -108,7 +125,9 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         }
     };
 
-    const currentInsightData = insights[currentInsight];
+    // Safely get current insight data
+    const currentInsightData = insights && insights.length > 0 ? insights[currentInsight] : null;
+    console.log("📋 Current insight data:", currentInsightData);
 
     const containerStyle = {
         background: 'rgba(255, 255, 255, 0.1)',
@@ -117,7 +136,9 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         padding: '1.5rem',
         height: '100%',
         minHeight: '320px',
-        border: '1px solid rgba(255, 255, 255, 0.1)'
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        position: 'relative', // Add position for debugging
+        zIndex: 1 // Add z-index for debugging
     };
 
     const headerStyle = {
@@ -201,9 +222,10 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         fontSize: '0.875rem',
         fontWeight: '500',
         cursor: 'pointer',
-        marginTop: '1rem',
+        marginTop: '2rem',
         alignSelf: 'flex-start',
-        transition: 'background-color 0.2s'
+        transition: 'background-color 0.2s',
+        marginLeft: '-1.5rem',
     };
 
     const actionButtonHoverStyle = {
@@ -242,7 +264,7 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
     const statsGridStyle = {
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
-        marginTop: '3rem',
+        marginTop: '5rem',
     };
 
     const statItemStyle = {
@@ -261,7 +283,9 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         height: '4px'
     };
 
-    if (!insights.length) {
+    // Debug: Check if insights array is empty or invalid
+    if (!insights || !Array.isArray(insights) || insights.length === 0) {
+        console.log("❌ No insights available, showing loading state");
         return (
             <motion.div 
                 style={containerStyle}
@@ -283,14 +307,31 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         );
     }
 
+    console.log("✅ Rendering full insights panel with", insights.length, "insights");
+
+
+    const useInsightAction = () => {
+        const navigate = useNavigate();
+        return (insight) => {
+            if (!insight || !insight.type) return;
+            if (insight.type === "urgent_tasks") {
+                navigate("/tasks");
+            } else if (insight.type === "profit_optimization") {
+                navigate("/clientprofitability");
+            }
+        };
+    };
+
+    const insightAction = useInsightAction();
     return (
         <motion.div 
             style={containerStyle}
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-/*             onMouseEnter={() => setIsPaused(true)}
-            onMouseLeave={() => setIsPaused(false)} */
+            // Add debugging props
+            data-testid="ai-insights-panel"
+            data-insights-count={insights.length}
         >
             {/* Header */}
             <div style={headerStyle}>
@@ -326,8 +367,6 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                         </p>
                     </div>
                 </div>
-
-            
 
                 {/* Controls */}
                 <div style={controlsStyle}>
@@ -368,7 +407,8 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                     </motion.button>
                 </div>
             </div>
-    {/* Progress Bar for Auto-rotation */}
+
+            {/* Progress Bar for Auto-rotation */}
             {isAutoRotating && !isPaused && insights.length > 1 && (
                 <div style={progressBarContainerStyle}>
                     <div style={progressBarStyle}>
@@ -390,6 +430,7 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                     </div>
                 </div>
             )}
+
             {/* Main Insight Display */}
             <div style={insightContainerStyle}>
                 <AnimatePresence mode="wait">
@@ -407,10 +448,11 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                                     <div style={insightHeaderStyle}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                             <div style={insightIconStyle}>
-                                                <currentInsightData.icon 
-                                                    style={{ color: currentInsightData.color }} 
-                                                    size={20} 
-                                                />
+                                                {/* Safe icon rendering */}
+                                                {currentInsightData.icon && React.createElement(currentInsightData.icon, {
+                                                    style: { color: currentInsightData.color || 'white' },
+                                                    size: 20
+                                                })}
                                             </div>
                                             <div>
                                                 <h4 style={{ 
@@ -418,7 +460,7 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                                                     fontWeight: '500',
                                                     margin: 0 
                                                 }}>
-                                                    {currentInsightData.title}
+                                                    {currentInsightData.title || 'Insight sem título'}
                                                 </h4>
                                                 <div style={{ 
                                                     display: 'flex', 
@@ -428,9 +470,9 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                                                 }}>
                                                     <span style={{
                                                         fontSize: '0.875rem',
-                                                        color: getConfidenceColor(currentInsightData.confidence)
+                                                        color: getConfidenceColor(currentInsightData.confidence || 0)
                                                     }}>
-                                                        {Math.round(currentInsightData.confidence * 100)}% confiança
+                                                        {Math.round((currentInsightData.confidence || 0) * 100)}% confiança
                                                     </span>
                                                     <div style={{
                                                         padding: '0.25rem 0.5rem',
@@ -453,20 +495,21 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                                         lineHeight: 1.6,
                                         margin: 0 
                                     }}>
-                                        {currentInsightData.message}
+                                        {currentInsightData.message || 'Nenhuma mensagem disponível'}
                                     </p>
                                 </div>
 
-                                <motion.button
-                                    style={actionButtonStyle}
-                                    whileHover={{ scale: 1.02, x: 5 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    onMouseEnter={(e) => e.target.style.backgroundColor = actionButtonHoverStyle.backgroundColor}
-                                    onMouseLeave={(e) => e.target.style.backgroundColor = actionButtonStyle.backgroundColor}
-                                >
-                                    <span>Tomar Ação</span>
-                                    <ArrowRight size={14} />
-                                </motion.button>
+                                                                                <motion.button
+                                                                                    style={actionButtonStyle}
+                                                                                    whileHover={{ scale: 1.02, x: 5 }}
+                                                                                    whileTap={{ scale: 0.98 }}
+                                                                                    onMouseEnter={(e) => e.target.style.backgroundColor = actionButtonHoverStyle.backgroundColor}
+                                                                                    onMouseLeave={(e) => e.target.style.backgroundColor = actionButtonStyle.backgroundColor}
+                                                                                    onClick={() => insightAction(currentInsightData)}
+                                                                                >
+                                                                                    <span>Tomar Ação</span>
+                                                                                    <ArrowRight size={14} />
+                                                                                </motion.button>
                             </>
                         )}
                     </motion.div>
@@ -475,11 +518,14 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
 
             {/* Insights Navigation Dots */}
             <div style={dotsContainerStyle}>
-                {insights.map((_, index) => (
+                {insights.map((insight, index) => (
                     <motion.button
-                        key={index}
+                        key={`insight-dot-${index}`}
                         style={index === currentInsight ? activeDotStyle : inactiveDotStyle}
-                        onClick={() => setCurrentInsight(index)}
+                        onClick={() => {
+                            console.log("🔘 Dot clicked for insight index:", index);
+                            setCurrentInsight(index);
+                        }}
                         whileHover={{ scale: 1.2 }}
                         whileTap={{ scale: 0.9 }}
                         onMouseEnter={(e) => {
@@ -504,7 +550,8 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                             display: 'flex', 
                             alignItems: 'center', 
                             justifyContent: 'center', 
-                            marginBottom: '0.5rem' 
+                            marginBottom: '0.5rem',
+                            
                         }}>
                             <Sparkles style={{ color: 'rgb(251, 191, 36)' }} size={16} />
                         </div>
@@ -540,7 +587,7 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                             fontSize: '0.875rem',
                             margin: 0 
                         }}>
-                            {Math.round((insights.reduce((acc, insight) => acc + insight.confidence, 0) / insights.length) * 100)}%
+                            {insights.length > 0 ? Math.round((insights.reduce((acc, insight) => acc + (insight.confidence || 0), 0) / insights.length) * 100) : 0}%
                         </p>
                         <p style={{ 
                             color: 'rgb(191, 219, 254)', 
@@ -578,8 +625,6 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                     </div>
                 </div>
             )}
-
-            
         </motion.div>
     );
 };

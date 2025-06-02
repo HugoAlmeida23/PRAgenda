@@ -172,18 +172,7 @@ const DashboardPages = ({ dashboardData }) => {
             color: 'rgba(59, 130, 246, 0.8)',
             action: '/tasks'
         });
-
-        // Ação de voz para entrada rápida
-        actions.push({
-            type: 'voice_entry',
-            label: 'Entrada por Voz',
-            subtitle: 'Descrever trabalho feito',
-            icon: FileText,
-            color: 'rgba(147, 51, 234, 0.8)',
-            action: 'voice' // Não é uma URL, será tratado diferentemente
-        });
-
-        return actions.slice(0, 4); // Limitar a 4 ações
+        return actions.slice(0, 3); // Limitar a 4 ações
     };
 
     // Estilos uniformes para ambas as páginas

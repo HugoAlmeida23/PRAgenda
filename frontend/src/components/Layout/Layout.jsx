@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import api from '../../api';
 import BackgroundElements from '../HeroSection/BackgroundElements';
+import './Layout.css'; 
 
 // AI Navigation Service
 class AINavigationService {
@@ -245,17 +246,17 @@ const AISearchBar = ({ onNavigate }) => {
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+    <div style={{ position: 'relative', width: '100%' }}>
       <motion.div
-        whileHover={{ scale: 1.02 }}
+        whileHover={{ scale: 1.05 }}
         style={{
           display: 'flex',
           alignItems: 'center',
           background: 'rgba(255, 255, 255, 0.15)',
-          borderRadius: '24px',
-          padding: '0.75rem 1.5rem',
+          borderRadius: '44px',
+          padding: '0.7rem 2rem',
           border: '1px solid rgba(255, 255, 255, 0.2)',
-          width: '100%'
+          width: '130%',
         }}
       >
         <Search
@@ -320,6 +321,7 @@ const AISearchBar = ({ onNavigate }) => {
             style={{
               position: 'absolute',
               top: '100%',
+              width: '130%',
               left: 0,
               right: 0,
               marginTop: '0.5rem',
@@ -378,16 +380,6 @@ const AISearchBar = ({ onNavigate }) => {
                       fontSize: '0.9rem'
                     }}>
                       {getIntentText(suggestion.type)} {suggestion.route.label}
-                    </span>
-                    <span style={{
-                      background: `rgba(147, 51, 234, ${suggestion.confidence})`,
-                      color: 'white',
-                      padding: '0.125rem 0.5rem',
-                      borderRadius: '8px',
-                      fontSize: '0.7rem',
-                      fontWeight: '600'
-                    }}>
-                      {Math.round(suggestion.confidence * 100)}%
                     </span>
                   </div>
                   <div style={{
@@ -579,11 +571,12 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
             </div>
             
             {/* Menu Items */}
-            <div style={{
+            <div className="navigation-menu-scrollable" style={{
               flex: 1,
               padding: '1rem 0',
               overflowX: 'hidden',
               overflowY: 'auto'
+              
             }}>
               {menuItems.map((item, index) => {
                 const IconComponent = item.icon;
