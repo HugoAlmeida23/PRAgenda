@@ -63,20 +63,23 @@ const itemVariants = {
 
 const stepVariants = {
   hidden: { scale: 0.9, opacity: 0 },
-  visible: { 
-    scale: 1, 
+  visible: {
+    scale: 1,
     opacity: 1,
     transition: { type: "spring", stiffness: 150, damping: 15 }
   },
-  hover: { 
-    scale: 1.02, 
+  hover: {
+    scale: 1.02,
     y: -2,
     transition: { type: "spring", stiffness: 400, damping: 25 }
   }
 };
 
 // Componente de Step do Workflow
-const WorkflowStepCard = ({ step, isActive, isCompleted, onClick, timeSpent = 0 }) => {
+const WorkflowStepCard = ({ step, isSelected, onClick, timeSpent = 0 }) => {
+  const isActive = step.is_current;
+  const isCompleted = step.is_completed;
+
   const getStepColor = () => {
     if (isCompleted) return 'rgb(52, 211, 153)';
     if (isActive) return 'rgb(59, 130, 246)';
@@ -99,12 +102,12 @@ const WorkflowStepCard = ({ step, isActive, isCompleted, onClick, timeSpent = 0 
         ...glassStyle,
         padding: '1rem',
         cursor: 'pointer',
-        background: isActive 
-          ? 'rgba(59, 130, 246, 0.15)' 
+        background: isActive
+          ? 'rgba(59, 130, 246, 0.15)'
           : isCompleted
-          ? 'rgba(52, 211, 153, 0.1)'
-          : 'rgba(255, 255, 255, 0.05)',
-        border: `1px solid ${getStepColor()}40`,
+            ? 'rgba(52, 211, 153, 0.1)'
+            : 'rgba(255, 255, 255, 0.05)',
+        border: `1px solid ${isSelected ? 'rgb(147, 51, 234)' : getStepColor() + '40'}`, // Destaque se selecionado
         position: 'relative',
         overflow: 'hidden'
       }}
@@ -147,7 +150,7 @@ const WorkflowStepCard = ({ step, isActive, isCompleted, onClick, timeSpent = 0 
               step.order
             )}
           </div>
-          
+
           <div>
             <h4 style={{
               margin: '0 0 0.25rem 0',
@@ -194,7 +197,7 @@ const WorkflowStepCard = ({ step, isActive, isCompleted, onClick, timeSpent = 0 
               Aprovação
             </div>
           )}
-          
+
           <span style={{
             padding: '0.25rem 0.5rem',
             borderRadius: '9999px',
@@ -204,8 +207,8 @@ const WorkflowStepCard = ({ step, isActive, isCompleted, onClick, timeSpent = 0 
             border: `1px solid ${getStepColor()}40`,
             color: getStepColor()
           }}>
-            {isCompleted ? 'Concluído' : 
-             isActive ? 'Atual' : 'Pendente'}
+            {isCompleted ? 'Concluído' :
+              isActive ? 'Atual' : 'Pendente'}
           </span>
         </div>
       </div>
@@ -225,14 +228,14 @@ const WorkflowStepCard = ({ step, isActive, isCompleted, onClick, timeSpent = 0 
 };
 
 // Componente principal TimeEntryForms
-const TimeEntryForms = ({ 
-  onTimeEntryCreated, 
-  initialClientId = null, 
+const TimeEntryForms = ({
+  onTimeEntryCreated,
+  initialClientId = null,
   initialTaskId = null,
   permissions = {}
 }) => {
   const queryClient = useQueryClient();
-  
+
   // Estados
   const [showForm, setShowForm] = useState(false);
   const [isNaturalLanguageMode, setIsNaturalLanguageMode] = useState(false);
@@ -243,7 +246,7 @@ const TimeEntryForms = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedEntries, setExtractedEntries] = useState(null);
   const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
-  
+
   const [formData, setFormData] = useState({
     client: initialClientId || "",
     task: initialTaskId || "",
@@ -258,7 +261,7 @@ const TimeEntryForms = ({
     advance_workflow: false,
     workflow_step_completed: false
   });
-  
+
   const [naturalLanguageInput, setNaturalLanguageInput] = useState("");
 
   // Queries para buscar dados
@@ -294,14 +297,23 @@ const TimeEntryForms = ({
 
   const fetchWorkflowData = async () => {
     if (!formData.task) return;
-    
+
     try {
       const response = await api.get(`/tasks/${formData.task}/workflow_status/`);
-      
+
       if (response.data.workflow) {
+        // 🔍 DEBUG: Log dos dados do workflow
+        console.log('📋 TimeEntryForms - Workflow Data:', response.data.workflow);
+        console.log('📋 Steps received:', response.data.workflow.steps?.map(s => ({
+          name: s.name,
+          id: s.id,
+          is_completed: s.is_completed,
+          is_current: s.is_current
+        })));
+
         setWorkflowData(response.data.workflow);
         setShowWorkflowSteps(true);
-        
+
         // Se há um step atual, selecioná-lo por padrão
         if (response.data.workflow.current_step) {
           setSelectedWorkflowStep(response.data.workflow.current_step.id);
@@ -382,10 +394,13 @@ const TimeEntryForms = ({
   }, [tasks]);
 
   const handleWorkflowStepSelect = useCallback((stepId) => {
-    setSelectedWorkflowStep(stepId);
+    setSelectedWorkflowStep(stepId); // Estado local para UI
     setFormData(prev => ({
       ...prev,
-      workflow_step: stepId
+      workflow_step: stepId, // ID do passo para enviar ao backend
+      // Resetar opções de conclusão/avanço se o passo mudar
+      workflow_step_completed: false,
+      advance_workflow: false
     }));
   }, []);
 
@@ -418,14 +433,14 @@ const TimeEntryForms = ({
       toast.error("Por favor insira uma descrição da sua atividade");
       return;
     }
-    
+
     setIsProcessing(true);
     try {
       const response = await api.post("/gemini-nlp/process_text/", {
         text: naturalLanguageInput,
         client_id: formData.client || null,
       });
-      
+
       const extractedData = response.data;
       if (extractedData.clients.length === 0 && !formData.client) {
         toast.warning("Não consegui identificar nenhum cliente no texto. Por favor selecione um cliente manualmente.");
@@ -437,7 +452,7 @@ const TimeEntryForms = ({
         setIsProcessing(false);
         return;
       }
-      
+
       setExtractedEntries(extractedData);
       setShowConfirmationDialog(true);
     } catch (error) {
@@ -458,7 +473,7 @@ const TimeEntryForms = ({
         task_status_after: formData.task_status_after,
         task_id: formData.task || (extractedEntries?.tasks?.[0]?.id) || null,
       };
-      
+
       createNlpTimeEntryMutation.mutate(payload);
     } catch (error) {
       console.error("Erro ao criar entradas de tempo:", error);
@@ -470,7 +485,7 @@ const TimeEntryForms = ({
 
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
-    
+
     if (isNaturalLanguageMode) {
       await handleNaturalLanguageSubmit(e);
     } else {
@@ -487,11 +502,11 @@ const TimeEntryForms = ({
         toast.error("Tempo gasto deve ser maior que zero");
         return;
       }
-      
+
       const submissionData = { ...formData };
       submissionData.start_time = submissionData.start_time ? formatTimeForAPI(submissionData.start_time) : null;
       submissionData.end_time = submissionData.end_time ? formatTimeForAPI(submissionData.end_time) : null;
-      
+
       createTimeEntryMutation.mutate(submissionData);
     }
   }, [formData, isNaturalLanguageMode, createTimeEntryMutation, handleNaturalLanguageSubmit]);
@@ -504,7 +519,7 @@ const TimeEntryForms = ({
       return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
     } catch (e) {
       console.error("Erro ao formatar hora:", e);
-      return null; 
+      return null;
     }
   };
 
@@ -526,7 +541,7 @@ const TimeEntryForms = ({
   // Componente de confirmação para IA
   const ConfirmationDialog = ({ visible, extractedData, onConfirm, onCancel }) => {
     if (!visible || !extractedData) return null;
-    
+
     return (
       <div style={{
         position: 'fixed',
@@ -569,7 +584,7 @@ const TimeEntryForms = ({
               Confirmar Entradas de Tempo
             </h2>
           </div>
-          
+
           <div style={{
             flex: 1,
             overflowY: 'auto',
@@ -581,7 +596,7 @@ const TimeEntryForms = ({
             }}>
               Encontrei as seguintes informações no seu texto. Por favor verifique e confirme:
             </p>
-            
+
             {/* Informações extraídas */}
             {extractedData.clients?.length > 0 && (
               <div style={{ marginBottom: '1rem' }}>
@@ -593,7 +608,7 @@ const TimeEntryForms = ({
                 </ul>
               </div>
             )}
-            
+
             {extractedData.tasks?.length > 0 && (
               <div style={{ marginBottom: '1rem' }}>
                 <h3 style={{ fontWeight: '500', color: 'white', marginBottom: '0.5rem' }}>Tarefas:</h3>
@@ -606,7 +621,7 @@ const TimeEntryForms = ({
                 </ul>
               </div>
             )}
-            
+
             {extractedData.times?.length > 0 && (
               <div style={{ marginBottom: '1rem' }}>
                 <h3 style={{ fontWeight: '500', color: 'white', marginBottom: '0.5rem' }}>Tempos:</h3>
@@ -619,7 +634,7 @@ const TimeEntryForms = ({
                 </ul>
               </div>
             )}
-            
+
             {extractedData.activities?.length > 0 && (
               <div style={{ marginBottom: '1rem' }}>
                 <h3 style={{ fontWeight: '500', color: 'white', marginBottom: '0.5rem' }}>Atividades:</h3>
@@ -630,7 +645,7 @@ const TimeEntryForms = ({
                 </ul>
               </div>
             )}
-            
+
             {formData.task_status_after !== 'no_change' && (
               <div style={{
                 marginBottom: '1rem',
@@ -649,7 +664,7 @@ const TimeEntryForms = ({
               </div>
             )}
           </div>
-          
+
           <div style={{
             padding: '1.5rem',
             borderTop: '1px solid rgba(255,255,255,0.1)',
@@ -806,13 +821,13 @@ const TimeEntryForms = ({
                   {isNaturalLanguageMode ? 'Modo IA' : 'Modo Manual'}
                 </h3>
                 <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
-                  {isNaturalLanguageMode 
+                  {isNaturalLanguageMode
                     ? 'Descreva suas atividades em linguagem natural'
                     : 'Preencha os campos manualmente'
                   }
                 </p>
               </div>
-              
+
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)' }}>
                   Manual
@@ -870,7 +885,7 @@ const TimeEntryForms = ({
                       ))}
                     </select>
                   </div>
-                  
+
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={{
                       display: 'block',
@@ -906,7 +921,7 @@ const TimeEntryForms = ({
                       O sistema irá extrair o tempo, cliente e outras informações automaticamente.
                     </p>
                   </div>
-                  
+
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -940,7 +955,7 @@ const TimeEntryForms = ({
                         }}
                       />
                     </div>
-                    
+
                     <div>
                       <label style={{
                         display: 'block',
@@ -1246,7 +1261,7 @@ const TimeEntryForms = ({
                         }}
                       />
                     </div>
-                    
+
                     <div>
                       <label style={{
                         display: 'block',
@@ -1362,7 +1377,7 @@ const TimeEntryForms = ({
                         </p>
                       </div>
                     </div>
-                    
+
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
@@ -1389,15 +1404,13 @@ const TimeEntryForms = ({
                     {workflowData.steps.map((step) => (
                       <WorkflowStepCard
                         key={step.id}
-                        step={step}
-                        isActive={step.id === workflowData.current_step?.id}
-                        isCompleted={step.order < (workflowData.current_step?.order || 0)}
-                        onClick={() => handleWorkflowStepSelect(step.id)}
+                        step={step} // Envia o objeto completo do passo
+                        isSelected={selectedWorkflowStep === step.id} // 'selectedWorkflowStep' é o ID do passo selecionado no formulário
+                        onClick={() => handleWorkflowStepSelect(step.id)} // Atualiza 'selectedWorkflowStep' e 'formData.workflow_step'
                         timeSpent={workflowData.time_by_step?.[step.id] || 0}
                       />
                     ))}
                   </div>
-
                   {selectedWorkflowStep && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
@@ -1410,7 +1423,7 @@ const TimeEntryForms = ({
                         borderRadius: '8px'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
                         <CheckCircle size={16} style={{ color: 'rgb(59, 130, 246)' }} />
                         <span style={{
                           fontSize: '0.875rem',
@@ -1420,12 +1433,11 @@ const TimeEntryForms = ({
                           Passo selecionado: {workflowData.steps.find(s => s.id === selectedWorkflowStep)?.name}
                         </span>
                       </div>
-                      
+
                       <div style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '1rem',
-                        marginTop: '0.75rem'
+                        flexDirection: 'column',
+                        gap: '0.75rem'
                       }}>
                         <label style={{
                           display: 'flex',
@@ -1433,7 +1445,10 @@ const TimeEntryForms = ({
                           gap: '0.5rem',
                           cursor: 'pointer',
                           fontSize: '0.875rem',
-                          color: 'rgba(255, 255, 255, 0.8)'
+                          color: 'rgba(255, 255, 255, 0.8)',
+                          padding: '0.5rem',
+                          borderRadius: '6px',
+                          background: formData.workflow_step_completed ? 'rgba(52, 211, 153, 0.1)' : 'rgba(255, 255, 255, 0.05)'
                         }}>
                           <input
                             type="checkbox"
@@ -1442,26 +1457,74 @@ const TimeEntryForms = ({
                             onChange={handleInputChange}
                             style={{ width: '16px', height: '16px' }}
                           />
-                          Marcar passo como concluído
+                          <CheckCircle size={16} style={{ color: formData.workflow_step_completed ? 'rgb(52, 211, 153)' : 'rgba(255, 255, 255, 0.5)' }} />
+                          <span>Marcar este passo como concluído</span>
                         </label>
-                        
+
                         <label style={{
                           display: 'flex',
                           alignItems: 'center',
                           gap: '0.5rem',
                           cursor: 'pointer',
                           fontSize: '0.875rem',
-                          color: 'rgba(255, 255, 255, 0.8)'
+                          color: 'rgba(255, 255, 255, 0.8)',
+                          padding: '0.5rem',
+                          borderRadius: '6px',
+                          background: formData.advance_workflow ? 'rgba(147, 51, 234, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                          opacity: formData.workflow_step_completed ? 1 : 0.6
                         }}>
                           <input
                             type="checkbox"
                             name="advance_workflow"
                             checked={formData.advance_workflow}
                             onChange={handleInputChange}
+                            disabled={!formData.workflow_step_completed}
                             style={{ width: '16px', height: '16px' }}
                           />
-                          Avançar workflow automaticamente
+                          <SkipForward size={16} style={{ color: formData.advance_workflow && formData.workflow_step_completed ? 'rgb(147, 51, 234)' : 'rgba(255, 255, 255, 0.5)' }} />
+                          <span>Avançar automaticamente para o próximo passo</span>
                         </label>
+
+                        {!formData.workflow_step_completed && (
+                          <p style={{
+                            fontSize: '0.75rem',
+                            color: 'rgba(255, 255, 255, 0.6)',
+                            margin: '0.5rem 0 0 1.5rem',
+                            fontStyle: 'italic'
+                          }}>
+                            * Para avançar o workflow, primeiro marque o passo como concluído
+                          </p>
+                        )}
+
+                        {formData.workflow_step_completed && !formData.advance_workflow && (
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: 'rgba(251, 191, 36, 0.8)',
+                            margin: '0.5rem 0 0 1.5rem',
+                            padding: '0.5rem',
+                            background: 'rgba(251, 191, 36, 0.1)',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(251, 191, 36, 0.2)'
+                          }}>
+                            <Info size={12} style={{ marginRight: '0.25rem' }} />
+                            O passo será marcado como concluído, mas o workflow permanecerá no passo atual.
+                          </div>
+                        )}
+
+                        {formData.workflow_step_completed && formData.advance_workflow && (
+                          <div style={{
+                            fontSize: '0.75rem',
+                            color: 'rgba(52, 211, 153, 0.8)',
+                            margin: '0.5rem 0 0 1.5rem',
+                            padding: '0.5rem',
+                            background: 'rgba(52, 211, 153, 0.1)',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(52, 211, 153, 0.2)'
+                          }}>
+                            <Zap size={12} style={{ marginRight: '0.25rem' }} />
+                            O passo será concluído e o workflow avançará automaticamente para o próximo passo.
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}
@@ -1492,7 +1555,7 @@ const TimeEntryForms = ({
                 >
                   Cancelar
                 </motion.button>
-                
+
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}

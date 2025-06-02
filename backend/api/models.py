@@ -5,6 +5,7 @@ from django.utils import timezone
 from decimal import Decimal
 from django.db.models import JSONField
 import random
+import json
 
 
 
@@ -864,7 +865,7 @@ class WorkflowStep(models.Model):
     )
     previous_steps = models.JSONField(
         default=list, 
-        verbose_name="Passos Anteriores",
+        verbose_name="Passos Anteriores", 
         help_text="List of possible previous step IDs"
     )
     
@@ -876,6 +877,61 @@ class WorkflowStep(models.Model):
     
     def __str__(self):
         return f"{self.workflow.name} - {self.name}"
+
+    def clean(self):
+        """Validate next_steps and previous_steps are proper lists"""
+        super().clean()
+        
+        # Validate next_steps
+        if self.next_steps:
+            if isinstance(self.next_steps, str):
+                try:
+                    self.next_steps = json.loads(self.next_steps)
+                except json.JSONDecodeError:
+                    raise ValidationError("next_steps must be valid JSON array")
+            
+            if not isinstance(self.next_steps, list):
+                raise ValidationError("next_steps must be a list")
+        
+        # Validate previous_steps
+        if self.previous_steps:
+            if isinstance(self.previous_steps, str):
+                try:
+                    self.previous_steps = json.loads(self.previous_steps)
+                except json.JSONDecodeError:
+                    raise ValidationError("previous_steps must be valid JSON array")
+            
+            if not isinstance(self.previous_steps, list):
+                raise ValidationError("previous_steps must be a list")
+    
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+    
+    def get_next_steps(self):
+        """Returns next_steps as a list of step IDs"""
+        if isinstance(self.next_steps, str):
+            try:
+                return json.loads(self.next_steps) if self.next_steps else []
+            except json.JSONDecodeError:
+                return []
+        elif isinstance(self.next_steps, list):
+            return self.next_steps
+        else:
+            return []
+    
+    def get_previous_steps(self):
+        """Returns previous_steps as a list of step IDs"""
+        if isinstance(self.previous_steps, str):
+            try:
+                return json.loads(self.previous_steps) if self.previous_steps else []
+            except json.JSONDecodeError:
+                return []
+        elif isinstance(self.previous_steps, list):
+            return self.previous_steps
+        else:
+            return []
+
 
 
 class TaskApproval(models.Model):
@@ -1225,7 +1281,9 @@ class WorkflowHistory(models.Model):
         max_length=50,
         choices=[
             ('step_started', 'Passo Iniciado'),
+            ('step_work_logged', 'Trabalho Registrado no Passo'),  # NEW
             ('step_completed', 'Passo Concluído'),
+            ('step_advanced', 'Passo Avançado'),  # NEW - replaces old logic
             ('step_approved', 'Passo Aprovado'),
             ('step_rejected', 'Passo Rejeitado'),
             ('workflow_assigned', 'Workflow Atribuído'),

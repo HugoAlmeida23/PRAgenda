@@ -147,35 +147,132 @@ class WorkflowStepSerializer(serializers.ModelSerializer):
     total_time_spent = serializers.SerializerMethodField()
     is_approved = serializers.SerializerMethodField()
     
+    # Handle next_steps and previous_steps as lists
+    next_steps = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        default=list
+    )
+    previous_steps = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        default=list
+    )
+
     class Meta:
         model = WorkflowStep
-        fields = ['id', 'workflow', 'workflow_name', 'name', 'description', 
-                  'order', 'assign_to', 'assign_to_name', 'requires_approval', 
-                  'approver_role', 'next_steps', 'previous_steps',
-                  'time_entries_count', 'total_time_spent', 'is_approved']
-        read_only_fields = ['id']
+        fields = [
+            'id', 
+            'workflow', 
+            'workflow_name', 
+            'name', 
+            'description', 
+            'order', 
+            'assign_to', 
+            'assign_to_name', 
+            'requires_approval', 
+            'approver_role', 
+            'next_steps',      
+            'previous_steps',  
+            'time_entries_count', 
+            'total_time_spent',
+            'is_approved'
+        ]
+        read_only_fields = [
+            'id', 
+            'workflow_name', 
+            'assign_to_name', 
+            'time_entries_count', 
+            'total_time_spent', 
+            'is_approved'
+        ]
+
+    def validate_next_steps(self, value):
+        """Validate that next_steps is a list of valid UUIDs or strings"""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("next_steps must be a list")
+        
+        # Basic validation - you can add more specific UUID validation if needed
+        for step_id in value:
+            if not isinstance(step_id, (str, int)):
+                raise serializers.ValidationError("Each step ID must be a string or integer")
+        
+        return value
+
+    def validate_previous_steps(self, value):
+        """Validate that previous_steps is a list of valid UUIDs or strings"""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("previous_steps must be a list")
+        
+        for step_id in value:
+            if not isinstance(step_id, (str, int)):
+                raise serializers.ValidationError("Each step ID must be a string or integer")
+        
+        return value
+
+    def create(self, validated_data):
+        """Create workflow step ensuring next_steps and previous_steps are properly stored"""
+        # Ensure next_steps and previous_steps are lists
+        validated_data['next_steps'] = validated_data.get('next_steps', [])
+        validated_data['previous_steps'] = validated_data.get('previous_steps', [])
+        
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        """Update workflow step ensuring connections are properly handled"""
+        # Handle next_steps update
+        if 'next_steps' in validated_data:
+            instance.next_steps = validated_data['next_steps']
+        
+        # Handle previous_steps update
+        if 'previous_steps' in validated_data:
+            instance.previous_steps = validated_data['previous_steps']
+        
+        return super().update(instance, validated_data)
+    
+    def to_representation(self, instance):
+        """Ensure next_steps and previous_steps are returned as lists"""
+        data = super().to_representation(instance)
+        
+        # Ensure next_steps is always a list
+        next_steps = instance.next_steps
+        if isinstance(next_steps, str):
+            try:
+                data['next_steps'] = json.loads(next_steps) if next_steps else []
+            except (json.JSONDecodeError, TypeError):
+                data['next_steps'] = []
+        elif isinstance(next_steps, list):
+            data['next_steps'] = next_steps
+        else:
+            data['next_steps'] = []
+        
+        # Ensure previous_steps is always a list
+        previous_steps = instance.previous_steps
+        if isinstance(previous_steps, str):
+            try:
+                data['previous_steps'] = json.loads(previous_steps) if previous_steps else []
+            except (json.JSONDecodeError, TypeError):
+                data['previous_steps'] = []
+        elif isinstance(previous_steps, list):
+            data['previous_steps'] = previous_steps
+        else:
+            data['previous_steps'] = []
+        
+        return data
     
     def get_time_entries_count(self, obj):
-        """Conta as entradas de tempo para este passo"""
         return obj.time_entries.count()
     
     def get_total_time_spent(self, obj):
-        """Calcula o tempo total gasto neste passo"""
-        return obj.time_entries.aggregate(
-            total=models.Sum('minutes_spent')
-        )['total'] or 0
+        total_sum = obj.time_entries.aggregate(total=Sum('minutes_spent'))['total']
+        return total_sum or 0
     
     def get_is_approved(self, obj):
-        """Verifica se o passo foi aprovado (se requer aprovação)"""
         if not obj.requires_approval:
-            return None
-            
-        # Verifica se há aprovações para tarefas que estão neste passo
-        return TaskApproval.objects.filter(
-            workflow_step=obj,
-            approved=True
-        ).exists()
-
+            return None 
+        return TaskApproval.objects.filter(workflow_step=obj, approved=True).exists()
 
 class TaskSerializer(serializers.ModelSerializer):
     client_name = serializers.ReadOnlyField(source='client.name')

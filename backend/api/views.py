@@ -428,14 +428,18 @@ class TaskViewSet(viewsets.ModelViewSet):
             if not can_advance:
                 raise PermissionDenied("Você não tem permissão para avançar este workflow")
             
-            # Verificar se o próximo passo é válido
+            # FIXED: Verificar se o próximo passo é válido
             current_step = task.current_workflow_step
-            next_step_ids = current_step.next_steps
+            try:
+                next_step_ids = current_step.next_steps
+                if isinstance(next_step_ids, str):
+                    next_step_ids = json.loads(next_step_ids) if next_step_ids else []
+                elif not isinstance(next_step_ids, list):
+                    next_step_ids = []
+            except (json.JSONDecodeError, TypeError):
+                next_step_ids = []
             
-            if isinstance(next_step_ids, str):
-                next_step_ids = json.loads(next_step_ids)
-            
-            if next_step_id not in next_step_ids:
+            if str(next_step_id) not in [str(id) for id in next_step_ids]:
                 return Response(
                     {"error": "Passo inválido para esta transição"}, 
                     status=status.HTTP_400_BAD_REQUEST
@@ -443,7 +447,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             
             next_step = WorkflowStep.objects.get(id=next_step_id)
             
-            # Verificar se o passo atual requer aprovação
+            # FIXED: Verificar se o passo atual requer aprovação
             if current_step.requires_approval:
                 # Verificar se já foi aprovado
                 approval_exists = TaskApproval.objects.filter(
@@ -458,19 +462,36 @@ class TaskViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
             
+            # FIXED: Mark current step as completed if not already
+            step_completed = WorkflowHistory.objects.filter(
+                task=task,
+                from_step=current_step,
+                action='step_completed'
+            ).exists()
+            
+            if not step_completed:
+                WorkflowHistory.objects.create(
+                    task=task,
+                    from_step=current_step,
+                    to_step=None,
+                    changed_by=request.user,
+                    action='step_completed',
+                    comment=comment or f"Passo '{current_step.name}' concluído manualmente"
+                )
+            
             # Avançar o workflow
             task.current_workflow_step = next_step
             task.workflow_comment = comment
             task.save()
             
-            # Registrar no histórico
+            # FIXED: Registrar no histórico a transição correta
             WorkflowHistory.objects.create(
                 task=task,
                 from_step=current_step,
                 to_step=next_step,
                 changed_by=request.user,
-                action='step_completed',
-                comment=comment
+                action='step_advanced',
+                comment=comment or f"Workflow avançado de '{current_step.name}' para '{next_step.name}'"
             )
             
             # Criar notificação para o responsável pelo próximo passo
@@ -496,105 +517,200 @@ class TaskViewSet(viewsets.ModelViewSet):
                 {"error": "Passo do workflow não encontrado"}, 
                 status=status.HTTP_404_NOT_FOUND
             )
-    
+
     @action(detail=True, methods=['get'])
     def workflow_status(self, request, pk=None):
-        """Retorna o status atual do workflow da tarefa"""
         task = self.get_object()
         
         if not task.workflow:
             return Response({"workflow": None})
         
-        # Buscar todos os passos do workflow
-        workflow_steps = WorkflowStep.objects.filter(
-            workflow=task.workflow
-        ).order_by('order')
+        workflow_definition = task.workflow
+        all_steps_qs = WorkflowStep.objects.filter(workflow=workflow_definition).order_by('order')
         
-        # Buscar histórico
-        workflow_history = WorkflowHistory.objects.filter(
-            task=task
+        history_qs = WorkflowHistory.objects.filter(task=task).select_related(
+            'from_step', 'to_step', 'changed_by'
         ).order_by('-created_at')
         
-        # Buscar aprovações
-        approvals = TaskApproval.objects.filter(
-            task=task
-        ).select_related('workflow_step', 'approved_by')
+        approvals_qs = TaskApproval.objects.filter(task=task).select_related(
+            'workflow_step', 'approved_by'
+        )
         
-        # Calcular tempo gasto por passo
+        # Calcular tempo por passo - CORRIGIDO
         time_by_step = {}
-        for step in workflow_steps:
-            time_entries = TimeEntry.objects.filter(
-                task=task,
-                workflow_step=step
-            ).aggregate(total=models.Sum('minutes_spent'))
-            time_by_step[str(step.id)] = time_entries['total'] or 0
-        
-        response_data = {
-            'workflow': {
-                'id': task.workflow.id,
-                'name': task.workflow.name,
-                'current_step': {
-                    'id': task.current_workflow_step.id,
-                    'name': task.current_workflow_step.name,
-                    'order': task.current_workflow_step.order,
-                    'assign_to': task.current_workflow_step.assign_to.username if task.current_workflow_step.assign_to else None,
-                    'requires_approval': task.current_workflow_step.requires_approval,
-                    'approver_role': task.current_workflow_step.approver_role
-                } if task.current_workflow_step else None,
-                'steps': [],
-                'history': [],
-                'approvals': [],
-                'time_by_step': time_by_step
-            }
-        }
-        
-        # Adicionar informações dos passos
-        for step in workflow_steps:
-            step_data = {
-                'id': step.id,
-                'name': step.name,
-                'description': step.description,
-                'order': step.order,
-                'assign_to': step.assign_to.username if step.assign_to else None,
-                'requires_approval': step.requires_approval,
-                'approver_role': step.approver_role,
-                'is_current': task.current_workflow_step and step.id == task.current_workflow_step.id,
-                'is_completed': False,
-                'time_spent': time_by_step.get(str(step.id), 0)
-            }
+        for step_obj in all_steps_qs:
+            # Buscar entradas de tempo que especificamente referenciam este passo
+            step_time_entries = TimeEntry.objects.filter(
+                task=task, 
+                workflow_step=step_obj
+            )
             
-            # Verificar se o passo foi concluído
+            # Se não há entradas específicas para o passo, mas o passo está ativo/concluído,
+            # incluir entradas de tempo gerais da tarefa durante o período deste passo
+            if not step_time_entries.exists():
+                # Buscar por histórico para determinar quando este passo estava ativo
+                step_started = history_qs.filter(
+                    to_step=step_obj,
+                    action__in=['step_advanced', 'workflow_assigned']
+                ).first()
+                
+                step_ended = history_qs.filter(
+                    from_step=step_obj,
+                    action__in=['step_completed', 'step_advanced']
+                ).first()
+                
+                if step_started or (task.current_workflow_step == step_obj):
+                    # Se é o passo atual ou teve início, incluir tempo geral da tarefa
+                    general_time_entries = TimeEntry.objects.filter(
+                        task=task,
+                        workflow_step__isnull=True  # Entradas sem passo específico
+                    )
+                    
+                    if step_started and step_ended:
+                        # Filtrar por data se tivermos início e fim
+                        general_time_entries = general_time_entries.filter(
+                            created_at__gte=step_started.created_at,
+                            created_at__lte=step_ended.created_at
+                        )
+                    elif step_started:
+                        # Apenas início definido
+                        general_time_entries = general_time_entries.filter(
+                            created_at__gte=step_started.created_at
+                        )
+                    
+                    step_time_entries = general_time_entries
+            
+            total_minutes = step_time_entries.aggregate(total=models.Sum('minutes_spent'))['total'] or 0
+            time_by_step[str(step_obj.id)] = total_minutes
+
+        # Determinar passos concluídos - CORRIGIDO
+        completed_step_ids = set()
+        workflow_is_marked_completed = history_qs.filter(action='workflow_completed').exists()
+
+        if workflow_is_marked_completed and task.current_workflow_step is None:
+            # Workflow completamente finalizado
+            for step_obj in all_steps_qs:
+                completed_step_ids.add(str(step_obj.id))
+        else:
+            # Analisar histórico para determinar passos concluídos
+            for history_entry in history_qs:
+                if history_entry.action in ['step_completed', 'step_advanced'] and history_entry.from_step_id:
+                    completed_step_ids.add(str(history_entry.from_step_id))
+            
+            # NOVO: Marcar passos anteriores ao atual como concluídos
             if task.current_workflow_step:
-                step_data['is_completed'] = step.order < task.current_workflow_step.order
+                current_order = task.current_workflow_step.order
+                for step_obj in all_steps_qs:
+                    if step_obj.order < current_order:
+                        completed_step_ids.add(str(step_obj.id))
+
+        # Construir resposta
+        response_data = {
+            'task': {
+                'id': task.id,
+                'title': task.title,
+                'status': task.status,
+                'assigned_to': task.assigned_to.id if task.assigned_to else None,
+            },
+            'workflow': {
+                'id': workflow_definition.id,
+                'name': workflow_definition.name,
+                'is_completed': workflow_is_marked_completed and task.current_workflow_step is None,
+                'steps': [],
+                'time_by_step': time_by_step,
+            },
+            'current_step': None,
+            'history': [],
+            'approvals': [],
+        }
+
+        # Passo atual
+        if task.current_workflow_step:
+            current_step_obj = task.current_workflow_step
+            response_data['current_step'] = {
+                'id': current_step_obj.id,
+                'name': current_step_obj.name,
+                'order': current_step_obj.order,
+                'assign_to': current_step_obj.assign_to.username if current_step_obj.assign_to else None,
+                'requires_approval': current_step_obj.requires_approval,
+                'approver_role': current_step_obj.approver_role,
+            }
+
+        # Processar passos
+        for step_obj in all_steps_qs:
+            step_id_str = str(step_obj.id)
+            is_current = task.current_workflow_step_id == step_obj.id
+            is_completed = step_id_str in completed_step_ids
             
-            response_data['workflow']['steps'].append(step_data)
-        
-        # Adicionar histórico
-        for history in workflow_history[:10]:  # Últimos 10 registros
-            response_data['workflow']['history'].append({
-                'id': history.id,
-                'from_step': history.from_step.name if history.from_step else None,
-                'to_step': history.to_step.name if history.to_step else None,
-                'changed_by': history.changed_by.username if history.changed_by else None,
-                'action': history.action,
-                'comment': history.comment,
-                'time_spent_minutes': history.time_spent_minutes,
-                'created_at': history.created_at
+            # CORREÇÃO: Se é o passo atual e o workflow não está completo, não deve estar marcado como concluído
+            # EXCETO se há histórico explícito de conclusão
+            if is_current and not response_data['workflow']['is_completed']:
+                step_completed_explicitly = history_qs.filter(
+                    from_step=step_obj,
+                    action='step_completed'
+                ).exists()
+                if not step_completed_explicitly:
+                    is_completed = False
+
+            # Parse next_steps e previous_steps
+            try:
+                next_steps_data = json.loads(step_obj.next_steps) if isinstance(step_obj.next_steps, str) and step_obj.next_steps else (step_obj.next_steps if isinstance(step_obj.next_steps, list) else [])
+            except (json.JSONDecodeError, TypeError):
+                next_steps_data = []
+            
+            try:
+                previous_steps_data = json.loads(step_obj.previous_steps) if isinstance(step_obj.previous_steps, str) and step_obj.previous_steps else (step_obj.previous_steps if isinstance(step_obj.previous_steps, list) else [])
+            except (json.JSONDecodeError, TypeError):
+                previous_steps_data = []
+
+            response_data['workflow']['steps'].append({
+                'id': step_obj.id,
+                'name': step_obj.name,
+                'description': step_obj.description,
+                'order': step_obj.order,
+                'assign_to': step_obj.assign_to.id if step_obj.assign_to else None,
+                'assign_to_name': step_obj.assign_to.username if step_obj.assign_to else None,
+                'requires_approval': step_obj.requires_approval,
+                'approver_role': step_obj.approver_role,
+                'next_steps': next_steps_data,
+                'previous_steps': previous_steps_data,
+                'is_current': is_current,
+                'is_completed': is_completed,
+                'time_spent': time_by_step.get(step_id_str, 0),
             })
         
-        # Adicionar aprovações
-        for approval in approvals:
-            response_data['workflow']['approvals'].append({
-                'id': approval.id,
-                'workflow_step': approval.workflow_step.name,
-                'approved_by': approval.approved_by.username if approval.approved_by else None,
-                'approved': approval.approved,
-                'comment': approval.comment,
-                'approved_at': approval.approved_at
+        # Histórico - MELHORADO
+        for history_entry in history_qs[:50]:  # Limitar a 50 entradas mais recentes
+            response_data['history'].append({
+                'id': history_entry.id,
+                'from_step': history_entry.from_step.name if history_entry.from_step else None,
+                'from_step_name': history_entry.from_step.name if history_entry.from_step else None,
+                'from_step_id': history_entry.from_step_id,
+                'to_step': history_entry.to_step.name if history_entry.to_step else None,
+                'to_step_name': history_entry.to_step.name if history_entry.to_step else None,
+                'to_step_id': history_entry.to_step_id,
+                'changed_by': history_entry.changed_by.username if history_entry.changed_by else None,
+                'changed_by_username': history_entry.changed_by.username if history_entry.changed_by else None,
+                'action': history_entry.action,
+                'comment': history_entry.comment,
+                'time_spent_minutes': history_entry.time_spent_minutes or 0,
+                'created_at': history_entry.created_at
             })
-        
+
+        # Aprovações
+        for approval_entry in approvals_qs:
+            response_data['approvals'].append({
+                'id': approval_entry.id,
+                'workflow_step': approval_entry.workflow_step.name,
+                'workflow_step_id': approval_entry.workflow_step_id,
+                'approved_by': approval_entry.approved_by.username if approval_entry.approved_by else None,
+                'approved': approval_entry.approved,
+                'comment': approval_entry.comment,
+                'approved_at': approval_entry.approved_at
+            })
+            
         return Response(response_data)
-             
+
 class CreateUserView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -701,57 +817,253 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             
         task = time_entry.task
         
-        # Se o time entry está associado a um passo específico
-        if time_entry.workflow_step:
-            # Registrar no histórico
+        # Determinar o passo sendo trabalhado
+        step_being_worked_on = time_entry.workflow_step
+        
+        # Se não foi especificado um passo, usar o passo atual da tarefa
+        if not step_being_worked_on and task.current_workflow_step:
+            step_being_worked_on = task.current_workflow_step
+            time_entry.workflow_step = step_being_worked_on
+            time_entry.save()
+        
+        if not step_being_worked_on:
+            logger.warning(f"Nenhum passo de workflow determinado para time entry {time_entry.id} da tarefa {task.id}")
+            return
+
+        # 1. SEMPRE registrar que trabalho foi feito neste passo
+        WorkflowHistory.objects.create(
+            task=task,
+            from_step=step_being_worked_on, 
+            to_step=None, 
+            changed_by=time_entry.user,
+            action='step_work_logged',
+            comment=f"Tempo registrado: {time_entry.minutes_spent} minutos no passo '{step_being_worked_on.name}'. Descrição: {time_entry.description}",
+            time_spent_minutes=time_entry.minutes_spent
+        )
+        
+        logger.info(f"Trabalho registrado no passo {step_being_worked_on.name} da tarefa {task.id}: {time_entry.minutes_spent} minutos")
+        
+        # 2. Se o passo foi marcado como concluído
+        if time_entry.workflow_step_completed:
+            # Verificar se o passo já não foi marcado como concluído para evitar duplicados
+            already_completed = WorkflowHistory.objects.filter(
+                task=task,
+                from_step=step_being_worked_on,
+                action='step_completed'
+            ).exists()
+
+            if not already_completed:
+                WorkflowHistory.objects.create(
+                    task=task,
+                    from_step=step_being_worked_on,
+                    to_step=None, 
+                    changed_by=time_entry.user,
+                    action='step_completed',
+                    comment=f"Passo '{step_being_worked_on.name}' marcado como concluído via registro de tempo."
+                )
+                
+                logger.info(f"Passo {step_being_worked_on.name} da tarefa {task.id} marcado como concluído")
+            
+            # 3. Se também foi marcado para avançar o workflow
+            if time_entry.advance_workflow:
+                # Só avançar se o passo trabalhado é o passo atual da tarefa
+                if task.current_workflow_step == step_being_worked_on:
+                    self._advance_workflow_step(task, step_being_worked_on, time_entry.user, time_entry.description)
+                else:
+                    logger.warning(f"Tentativa de avançar workflow para tarefa {task.id} a partir do passo {step_being_worked_on.name}, mas o passo atual da tarefa é {task.current_workflow_step.name if task.current_workflow_step else 'Nenhum'}. Avanço ignorado.")
+    
+    def _advance_workflow_step(self, task, completed_step, user, comment_for_advance=""):
+        """Avança o workflow para o próximo passo após conclusão do completed_step."""
+        
+        logger.info(f"Iniciando avanço do workflow da tarefa {task.id} a partir do passo {completed_step.name}")
+        
+        # Verificar se requer aprovação
+        if completed_step.requires_approval:
+            is_approved = TaskApproval.objects.filter(
+                task=task,
+                workflow_step=completed_step,
+                approved=True
+            ).exists()
+            
+            if not is_approved:
+                logger.info(f"Passo {completed_step.name} da tarefa {task.id} requer aprovação. Criando notificação.")
+                self._create_approval_notification(task, completed_step)
+                return
+
+        # Determinar próximos passos
+        try:
+            next_step_ids_str = completed_step.next_steps
+            if isinstance(next_step_ids_str, list):
+                next_step_ids = [str(sid) for sid in next_step_ids_str]
+            elif next_step_ids_str:
+                next_step_ids = [str(sid) for sid in json.loads(next_step_ids_str)]
+            else:
+                next_step_ids = []
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"Erro ao decodificar next_steps para o passo {completed_step.id} ({completed_step.name}): {e}. Conteúdo: '{completed_step.next_steps}'")
+            next_step_ids = []
+
+        if not next_step_ids:
+            # Sem próximos passos definidos, workflow concluído
+            task.current_workflow_step = None
+            task.status = 'completed'
+            task.completed_at = timezone.now()
+            task.save()
+            
             WorkflowHistory.objects.create(
                 task=task,
-                from_step=time_entry.workflow_step,
-                to_step=time_entry.workflow_step,
-                changed_by=time_entry.user,
-                action='step_started' if not time_entry.workflow_step_completed else 'step_completed',
-                comment=f"Tempo registrado: {time_entry.minutes_spent} minutos",
-                time_spent_minutes=time_entry.minutes_spent
+                from_step=completed_step,
+                to_step=None,
+                changed_by=user,
+                action='workflow_completed',
+                comment=f"Workflow concluído após passo: {completed_step.name}. {comment_for_advance}".strip()
             )
+            logger.info(f"Workflow concluído para tarefa {task.id} após passo {completed_step.name}.")
+            return
+
+        if len(next_step_ids) == 1:
+            try:
+                next_step = WorkflowStep.objects.get(id=next_step_ids[0])
+                
+                # Atualizar tarefa
+                task.current_workflow_step = next_step
+                task.save()
+                
+                # Registrar no histórico
+                WorkflowHistory.objects.create(
+                    task=task,
+                    from_step=completed_step,
+                    to_step=next_step,
+                    changed_by=user,
+                    action='step_advanced',
+                    comment=f"Avançado automaticamente de '{completed_step.name}' para '{next_step.name}'. {comment_for_advance}".strip()
+                )
+                
+                # Criar notificação
+                if next_step.assign_to:
+                    WorkflowNotification.objects.create(
+                        user=next_step.assign_to,
+                        task=task,
+                        workflow_step=next_step,
+                        notification_type='step_ready',
+                        title=f"Novo passo pronto: {next_step.name}",
+                        message=f"A tarefa '{task.title}' chegou ao passo '{next_step.name}' e está pronta para ser trabalhada."
+                    )
+                
+                logger.info(f"Workflow para tarefa {task.id} avançado de {completed_step.name} para {next_step.name}.")
+                    
+            except WorkflowStep.DoesNotExist:
+                logger.error(f"Próximo passo com ID {next_step_ids[0]} não encontrado para tarefa {task.id}.")
+        else:
+            # Múltiplos próximos passos - requer escolha manual
+            logger.info(f"Múltiplos próximos passos disponíveis para tarefa {task.id} a partir do passo {completed_step.name}. Escolha manual necessária.")
             
-            # Se o passo foi marcado como concluído
-            if time_entry.workflow_step_completed:
-                self._complete_workflow_step(task, time_entry.workflow_step, time_entry.user)
-        
-        # Se deve avançar automaticamente o workflow
-        if time_entry.advance_workflow and task.current_workflow_step:
-            self._auto_advance_workflow(task, time_entry.user)
-    
+            if task.assigned_to:
+                WorkflowNotification.objects.create(
+                    user=task.assigned_to,
+                    task=task,
+                    workflow_step=completed_step,
+                    notification_type='manual_advance_needed',
+                    title=f"Escolha o próximo passo para: {task.title}",
+                    message=f"A tarefa '{task.title}' completou o passo '{completed_step.name}' e tem múltiplos caminhos. Por favor, avance manualmente."
+                )
+
     def _complete_workflow_step(self, task, workflow_step, user):
-        """Marca um passo do workflow como concluído"""
+        """Marca um passo do workflow como concluído e avança se possível"""
         # Verificar se requer aprovação
         if workflow_step.requires_approval:
-            # Criar notificação para aprovação
+            # Criar notificação para aprovação - NÃO avançar ainda
             self._create_approval_notification(task, workflow_step)
         else:
-            # Avançar automaticamente para o próximo passo
-            self._advance_to_next_step(task, workflow_step, user)
-    
-    def _auto_advance_workflow(self, task, user):
-        """Avança automaticamente para o próximo passo"""
-        current_step = task.current_workflow_step
+            # Tentar avançar automaticamente para o próximo passo
+            self._advance_to_next_step_if_possible(task, workflow_step, user)
+
+    def _advance_to_next_step_if_possible(self, task, from_step, user):
+        """Avança a tarefa para o próximo passo se existir"""
         
-        if not current_step or not current_step.next_steps:
-            return
+        # Verificar se há próximos passos definidos
+        if not from_step.next_steps:
+            # Não há próximos passos - workflow concluído
+            task.current_workflow_step = None
+            task.save()
             
+            WorkflowHistory.objects.create(
+                task=task,
+                from_step=from_step,
+                to_step=None,
+                changed_by=user,
+                action='workflow_completed',
+                comment=f"Workflow concluído. Último passo: {from_step.name}"
+            )
+            return
+        
         try:
-            next_step_ids = current_step.next_steps
+            next_step_ids = from_step.next_steps
             if isinstance(next_step_ids, str):
                 next_step_ids = json.loads(next_step_ids)
             
             # Se há apenas um próximo passo, avançar automaticamente
             if len(next_step_ids) == 1:
-                next_step = WorkflowStep.objects.get(id=next_step_ids[0])
-                self._advance_to_next_step(task, current_step, user, next_step)
+                try:
+                    next_step = WorkflowStep.objects.get(id=next_step_ids[0])
+                    
+                    # Atualizar a tarefa para o próximo passo
+                    task.current_workflow_step = next_step
+                    task.save()
+                    
+                    # Registrar a transição no histórico
+                    WorkflowHistory.objects.create(
+                        task=task,
+                        from_step=from_step,
+                        to_step=next_step,
+                        changed_by=user,
+                        action='step_completed',  # from_step foi concluído
+                        comment=f"Avançado automaticamente de {from_step.name} para {next_step.name}"
+                    )
+                    
+                    # Criar notificação para o responsável pelo próximo passo
+                    if next_step.assign_to:
+                        WorkflowNotification.objects.create(
+                            user=next_step.assign_to,
+                            task=task,
+                            workflow_step=next_step,
+                            notification_type='step_ready',
+                            title=f"Novo passo pronto: {next_step.name}",
+                            message=f"A tarefa '{task.title}' chegou ao passo '{next_step.name}' e está pronta para ser trabalhada."
+                        )
+                        
+                except WorkflowStep.DoesNotExist:
+                    # Next step doesn't exist - treat as workflow completed
+                    task.current_workflow_step = None
+                    task.save()
+                    
+                    WorkflowHistory.objects.create(
+                        task=task,
+                        from_step=from_step,
+                        to_step=None,
+                        changed_by=user,
+                        action='workflow_completed',
+                        comment=f"Workflow concluído. Próximo passo não encontrado após: {from_step.name}"
+                    )
             
-        except (WorkflowStep.DoesNotExist, json.JSONDecodeError):
-            pass
-    
+            elif len(next_step_ids) > 1:
+                # Múltiplos próximos passos possíveis - não avançar automaticamente
+                # O usuário deve escolher manualmente o próximo passo
+                pass
+                
+        except (json.JSONDecodeError, ValueError) as e:
+            # Erro ao processar next_steps - log e não avançar
+            logger.error(f"Erro ao processar next_steps para {from_step}: {e}")
+
+    def _auto_advance_workflow(self, task, user):
+        """Avança automaticamente para o próximo passo se marcado para avançar"""
+        current_step = task.current_workflow_step
+        
+        if not current_step:
+            return
+            
+        # Usar a mesma lógica de avanço
+        self._advance_to_next_step_if_possible(task, current_step, user)
     def _advance_to_next_step(self, task, from_step, user, to_step=None):
         """Avança a tarefa para o próximo passo"""
         if to_step:
@@ -759,14 +1071,14 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             task.current_workflow_step = to_step
             task.save()
             
-            # Registrar no histórico
+            # FIXED: Registrar no histórico a transição correta
             WorkflowHistory.objects.create(
                 task=task,
-                from_step=from_step,
-                to_step=to_step,
+                from_step=from_step,  # Passo que foi concluído
+                to_step=to_step,      # Passo para onde avançou
                 changed_by=user,
-                action='step_completed',
-                comment=f"Passo avançado automaticamente"
+                action='step_completed',  # O from_step foi concluído
+                comment=f"Passo avançado automaticamente de {from_step.name} para {to_step.name}"
             )
             
             # Criar notificação para o responsável pelo próximo passo
@@ -782,7 +1094,21 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
                 
                 # Enviar email de notificação
                 self._send_workflow_email(to_step.assign_to, task, to_step, 'step_ready')
-    
+        else:
+            # Se não há próximo passo, o workflow foi concluído
+            task.current_workflow_step = None
+            task.save()
+            
+            # Registrar conclusão do workflow
+            WorkflowHistory.objects.create(
+                task=task,
+                from_step=from_step,
+                to_step=None,
+                changed_by=user,
+                action='workflow_completed',
+                comment=f"Workflow concluído. Último passo: {from_step.name}"
+            )
+
     def _create_approval_notification(self, task, workflow_step):
         """Cria notificação para aprovação de passo"""
         # Buscar usuários que podem aprovar (baseado no papel)
