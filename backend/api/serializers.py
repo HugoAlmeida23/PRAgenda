@@ -4,6 +4,9 @@ from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense
 import json
 from django.db import models
 from django.db.models import Sum
+import logging
+
+logger = logging.getLogger(__name__)
 
 class OrganizationSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
@@ -298,21 +301,137 @@ class TaskSerializer(serializers.ModelSerializer):
                   'workflow_comment', 'workflow_progress', 'available_next_steps',
                   'workflow_step_assignee']
         read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at']
-    
+
     def get_workflow_progress(self, obj):
-        """Calcula o progresso do workflow"""
-        if not obj.workflow or not obj.current_workflow_step:
-            return None
-            
-        total_steps = obj.workflow.steps.count()
-        current_order = obj.current_workflow_step.order
         
-        return {
-            'current_step': current_order,
+        """
+        Calcula o progresso do workflow - CORRIGIDO para não retornar null quando sem current_workflow_step
+        """
+        logger.info(f"=== GET_WORKFLOW_PROGRESS PARA TASK {obj.id} ===")
+        logger.info(f"Task: {obj.title}")
+        logger.info(f"Workflow: {obj.workflow}")
+        logger.info(f"Current workflow step: {obj.current_workflow_step}")
+        
+        if not obj.workflow:
+            logger.info(f"Task {obj.id} não tem workflow")
+            return None
+        
+        # CORREÇÃO: Não retornar None se não há current_workflow_step
+        # Pode ser que o workflow ainda não foi iniciado ou foi concluído
+        
+        from .models import WorkflowHistory
+        
+        # Buscar todos os passos do workflow ordenados
+        all_steps = obj.workflow.steps.order_by('order')
+        total_steps = all_steps.count()
+        
+        logger.info(f"Workflow '{obj.workflow.name}' tem {total_steps} passos")
+        
+        if total_steps == 0:
+            logger.warning(f"Workflow sem passos para task {obj.id}")
+            return {
+                'current_step': 0,
+                'completed_steps': 0,
+                'total_steps': 0,
+                'percentage': 0,
+                'is_completed': False
+            }
+        
+        # Log todos os passos
+        for step in all_steps:
+            logger.info(f"  Passo {step.order}: {step.name} (ID: {step.id})")
+        
+        # Determinar passos concluídos baseado no histórico
+        completed_step_ids = set()
+        
+        # Buscar histórico de passos concluídos
+        completed_histories = WorkflowHistory.objects.filter(
+            task=obj,
+            action__in=['step_completed', 'step_advanced']
+        )
+        
+        logger.info(f"Encontradas {completed_histories.count()} entradas de histórico")
+        
+        for history in completed_histories:
+            logger.info(f"  História: {history.action} - From: {history.from_step} - To: {history.to_step}")
+            if history.from_step_id:
+                completed_step_ids.add(history.from_step_id)
+        
+        # Verificar se workflow foi marcado como completo
+        workflow_completed = WorkflowHistory.objects.filter(
+            task=obj,
+            action='workflow_completed'
+        ).exists()
+        
+        logger.info(f"Workflow marcado como completo: {workflow_completed}")
+        
+        # NOVA LÓGICA: Calcular progresso baseado no estado atual
+        if workflow_completed:
+            # Workflow completamente finalizado
+            completed_count = total_steps
+            current_step_number = total_steps
+            percentage = 100.0
+            logger.info("Workflow completo - todos os passos concluídos")
+            
+        elif obj.current_workflow_step:
+            # Workflow em progresso com passo atual definido
+            current_order = obj.current_workflow_step.order
+            logger.info(f"Passo atual tem order: {current_order}")
+            
+            # Marcar passos anteriores como concluídos
+            for step in all_steps:
+                if step.order < current_order:
+                    completed_step_ids.add(step.id)
+                    logger.info(f"  Marcando passo {step.name} (order {step.order}) como concluído")
+            
+            completed_count = len(completed_step_ids)
+            current_step_number = current_order
+            percentage = (completed_count / total_steps) * 100 if total_steps > 0 else 0
+            
+        else:
+            # NOVA CONDIÇÃO: Workflow existe mas não há passo atual
+            # Isso pode significar que o workflow ainda não foi iniciado
+            # OU que foi concluído e o current_workflow_step foi limpo
+            
+            logger.info("Sem current_workflow_step - analisando histórico")
+            
+            if completed_step_ids:
+                # Há passos concluídos no histórico
+                completed_count = len(completed_step_ids)
+                
+                # Tentar determinar onde estamos baseado no histórico
+                last_history = WorkflowHistory.objects.filter(
+                    task=obj,
+                    action__in=['step_completed', 'step_advanced', 'workflow_assigned']
+                ).order_by('-created_at').first()
+                
+                if last_history and last_history.to_step:
+                    current_step_number = last_history.to_step.order
+                else:
+                    current_step_number = completed_count + 1
+                    
+                percentage = (completed_count / total_steps) * 100
+                
+            else:
+                # Nenhum histórico - workflow não iniciado
+                completed_count = 0
+                current_step_number = 1  # Próximo passo seria o primeiro
+                percentage = 0.0
+                logger.info("Workflow não iniciado - sem histórico")
+        
+        result = {
+            'current_step': current_step_number,
+            'completed_steps': completed_count,
             'total_steps': total_steps,
-            'percentage': (current_order / total_steps) * 100 if total_steps > 0 else 0
+            'percentage': round(percentage, 1),
+            'is_completed': workflow_completed
         }
-    
+        
+        logger.info(f"RESULTADO WORKFLOW PROGRESS: {result}")
+        logger.info(f"=== FIM GET_WORKFLOW_PROGRESS ===")
+        
+        return result
+
     def get_available_next_steps(self, obj):
         """Retorna os próximos passos disponíveis"""
         if not obj.current_workflow_step:

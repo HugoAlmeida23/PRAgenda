@@ -41,7 +41,11 @@ import {
   Eye,
   EyeOff,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Building,
+  Euro,
+  UserCheck,
+  X
 } from "lucide-react";
 import { usePermissions } from "../contexts/PermissionsContext";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -556,7 +560,7 @@ const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onC
 };
 
 // Modal de detalhes do cliente
-const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
+const ClientDetailsModal = ({ client, onClose, onSave, permissions, users }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(false);
   const [timeEntries, setTimeEntries] = useState([]);
@@ -564,6 +568,8 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
   const [profitabilityData, setProfitabilityData] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [formData, setFormData] = useState({ ...client });
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   // Estilos glass
   const glassStyle = {
@@ -597,6 +603,17 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
     fetchClientDetails();
   }, [client.id]);
 
+  // 5. CORRIGIR A FUNÇÃO formatCurrency NO MODAL (substituir dentro do ClientDetailsModal)
+  const formatCurrency = (value) => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return "0,00 €";
+
+    return new Intl.NumberFormat("pt-PT", {
+      style: "currency",
+      currency: "EUR",
+    }).format(numValue);
+  };
+
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData({
@@ -613,12 +630,6 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
   const { isOrgAdmin, canEditClients } = permissions;
   const canEdit = isOrgAdmin || canEditClients;
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat("pt-PT", {
-      style: "currency",
-      currency: "EUR",
-    }).format(value || 0);
-  };
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -875,77 +886,465 @@ const ClientDetailsModal = ({ client, onClose, onSave, permissions }) => {
                   )}
                 </div>
               )}
+{activeTab === 'profitability' && (
+  <div>
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '1rem',
+      flexWrap: 'wrap',
+      gap: '1rem'
+    }}>
+      <h3 style={{ color: 'white', margin: 0 }}>
+        Análise de Rentabilidade
+      </h3>
+      
+      {/* Seletor de Período */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem'
+      }}>
+        <select
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+          style={{
+            padding: '0.5rem',
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '6px',
+            color: 'white',
+            fontSize: '0.875rem'
+          }}
+        >
+          {Array.from({ length: 12 }, (_, i) => {
+            const monthNum = i + 1;
+            const monthName = new Date(2024, i).toLocaleDateString('pt-PT', { month: 'long' });
+            return (
+              <option key={monthNum} value={monthNum}>
+                {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
+              </option>
+            );
+          })}
+        </select>
+        
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+          style={{
+            padding: '0.5rem',
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '6px',
+            color: 'white',
+            fontSize: '0.875rem'
+          }}
+        >
+          {Array.from({ length: 3 }, (_, i) => {
+            const year = new Date().getFullYear() - i;
+            return (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            );
+          })}
+        </select>
+        
+        {/* Botão para voltar ao mês atual */}
+        {(selectedMonth !== new Date().getMonth() + 1 || selectedYear !== new Date().getFullYear()) && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              setSelectedMonth(new Date().getMonth() + 1);
+              setSelectedYear(new Date().getFullYear());
+            }}
+            style={{
+              padding: '0.5rem',
+              background: 'rgba(59, 130, 246, 0.2)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: '6px',
+              color: 'white',
+              fontSize: '0.75rem',
+              cursor: 'pointer'
+            }}
+            title="Voltar ao mês atual"
+          >
+            Atual
+          </motion.button>
+        )}
+      </div>
+    </div>
+    
+    {(() => {
+      // USAR selectedMonth e selectedYear em vez de data atual
+      const currentDate = new Date();
+      const currentYear = selectedYear;
+      const currentMonth = selectedMonth;
+      const isCurrentMonth = currentYear === new Date().getFullYear() && currentMonth === new Date().getMonth() + 1;
+      
+      // Filtrar time entries do período selecionado
+      const periodEntries = timeEntries.filter(entry => {
+        const entryDate = new Date(entry.date);
+        return entryDate.getFullYear() === currentYear && 
+               entryDate.getMonth() + 1 === currentMonth;
+      });
+      
+      // ... resto do código de cálculo permanece igual, mas usa periodEntries
+      let totalTimeMinutes = 0;
+      let totalTimeCost = 0;
+      const userTimeDetails = {};
+      
+      periodEntries.forEach(entry => {
+        totalTimeMinutes += entry.minutes_spent || 0;
+        
+        const userProfile = users.find(u => u.username === entry.user_name);
+        const hourlyRate = userProfile?.hourly_rate || 25;
+        
+        const entryCost = (entry.minutes_spent / 60) * hourlyRate;
+        totalTimeCost += entryCost;
+        
+        if (!userTimeDetails[entry.user_name]) {
+          userTimeDetails[entry.user_name] = {
+            totalMinutes: 0,
+            totalCost: 0,
+            hourlyRate: hourlyRate,
+            entries: 0
+          };
+        }
+        
+        userTimeDetails[entry.user_name].totalMinutes += entry.minutes_spent;
+        userTimeDetails[entry.user_name].totalCost += entryCost;
+        userTimeDetails[entry.user_name].entries += 1;
+      });
+      
+      const monthlyFee = parseFloat(client.monthly_fee) || 0;
+      const profit = monthlyFee - totalTimeCost;
+      const profitMargin = monthlyFee > 0 ? (profit / monthlyFee) * 100 : 0;
+      const isProfitable = profit > 0;
+      
+      const formatTime = (minutes) => {
+        if (!minutes) return "0h 0m";
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return `${hours}h ${mins}m`;
+      };
+      
+      const formatCurrency = (value) => {
+        return new Intl.NumberFormat("pt-PT", {
+          style: "currency",
+          currency: "EUR",
+        }).format(value || 0);
+      };
+      
+      return (
+        <div>
+          {/* Indicador se não é o mês atual */}
+          {!isCurrentMonth && (
+            <div style={{
+              padding: '0.75rem',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              borderRadius: '8px',
+              marginBottom: '1rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <Calendar size={16} style={{ color: 'rgb(59, 130, 246)' }} />
+              <span style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                Visualizando dados históricos de {String(currentMonth).padStart(2, '0')}/{currentYear}
+              </span>
+            </div>
+          )}
 
-              {activeTab === 'profitability' && (
-                <div>
-                  <h3 style={{ color: 'white', marginBottom: '1rem' }}>Análise de Rentabilidade</h3>
-                  {profitabilityData ? (
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                      gap: '1rem'
+          {/* Cards de métricas principais - mesmo código anterior */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.5rem'
+          }}>
+            {/* Receita Mensal */}
+            <div style={{
+              padding: '1rem',
+              background: 'rgba(52, 211, 153, 0.1)',
+              border: '1px solid rgba(52, 211, 153, 0.2)',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Receita Mensal
+              </p>
+              <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: 'rgb(52, 211, 153)' }}>
+                {formatCurrency(monthlyFee)}
+              </p>
+            </div>
+            
+            {/* Tempo Total */}
+            <div style={{
+              padding: '1rem',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Tempo Total
+              </p>
+              <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: 'rgb(59, 130, 246)' }}>
+                {formatTime(totalTimeMinutes)}
+              </p>
+            </div>
+            
+            {/* Custo Real do Tempo */}
+            <div style={{
+              padding: '1rem',
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid rgba(251, 191, 36, 0.2)',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Custo Real
+              </p>
+              <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: 'rgb(251, 191, 36)' }}>
+                {formatCurrency(totalTimeCost)}
+              </p>
+            </div>
+            
+            {/* Lucro */}
+            <div style={{
+              padding: '1rem',
+              background: isProfitable
+                ? 'rgba(52, 211, 153, 0.1)'
+                : 'rgba(239, 68, 68, 0.1)',
+              border: isProfitable
+                ? '1px solid rgba(52, 211, 153, 0.2)'
+                : '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Lucro
+              </p>
+              <p style={{
+                margin: 0,
+                fontSize: '1.25rem',
+                fontWeight: '700',
+                color: isProfitable
+                  ? 'rgb(52, 211, 153)'
+                  : 'rgb(239, 68, 68)'
+              }}>
+                {formatCurrency(profit)}
+              </p>
+            </div>
+            
+            {/* Margem de Lucro */}
+            <div style={{
+              padding: '1rem',
+              background: isProfitable
+                ? 'rgba(52, 211, 153, 0.1)'
+                : 'rgba(239, 68, 68, 0.1)',
+              border: isProfitable
+                ? '1px solid rgba(52, 211, 153, 0.2)'
+                : '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Margem de Lucro
+              </p>
+              <p style={{
+                margin: 0,
+                fontSize: '1.25rem',
+                fontWeight: '700',
+                color: isProfitable
+                  ? 'rgb(52, 211, 153)'
+                  : 'rgb(239, 68, 68)'
+              }}>
+                {profitMargin.toFixed(2)}%
+              </p>
+            </div>
+          </div>
+
+          {/* Resto do código permanece igual */}
+          {Object.keys(userTimeDetails).length > 0 && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              marginBottom: '1rem',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                padding: '1rem',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'rgba(255, 255, 255, 0.05)'
+              }}>
+                <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                  Breakdown por Utilizador
+                </h4>
+              </div>
+              
+              <div style={{ padding: '1rem' }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                  gap: '0.75rem'
+                }}>
+                  {Object.entries(userTimeDetails).map(([userName, details]) => (
+                    <div key={userName} style={{
+                      padding: '0.75rem',
+                      background: 'rgba(147, 51, 234, 0.1)',
+                      border: '1px solid rgba(147, 51, 234, 0.2)',
+                      borderRadius: '6px'
                     }}>
                       <div style={{
-                        padding: '1rem',
-                        background: 'rgba(52, 211, 153, 0.1)',
-                        border: '1px solid rgba(52, 211, 153, 0.2)',
-                        borderRadius: '8px',
-                        textAlign: 'center'
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '0.5rem'
                       }}>
-                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
-                          Receita Mensal
-                        </p>
-                        <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: 'rgb(52, 211, 153)' }}>
-                          {formatCurrency(profitabilityData.monthly_fee)}
-                        </p>
+                        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                          {userName}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                          {details.entries} registros
+                        </span>
                       </div>
+                      
                       <div style={{
-                        padding: '1rem',
-                        background: 'rgba(59, 130, 246, 0.1)',
-                        border: '1px solid rgba(59, 130, 246, 0.2)',
-                        borderRadius: '8px',
-                        textAlign: 'center'
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.8)'
                       }}>
-                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
-                          Tempo Total
-                        </p>
-                        <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', color: 'rgb(59, 130, 246)' }}>
-                          {formatTime(profitabilityData.total_time_minutes)}
-                        </p>
+                        <span>⏱️ {formatTime(details.totalMinutes)}</span>
+                        <span>💰 {formatCurrency(details.totalCost)}</span>
                       </div>
+                      
                       <div style={{
-                        padding: '1rem',
-                        background: profitabilityData.is_profitable
-                          ? 'rgba(52, 211, 153, 0.1)'
-                          : 'rgba(239, 68, 68, 0.1)',
-                        border: profitabilityData.is_profitable
-                          ? '1px solid rgba(52, 211, 153, 0.2)'
-                          : '1px solid rgba(239, 68, 68, 0.2)',
-                        borderRadius: '8px',
-                        textAlign: 'center'
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.6)',
+                        marginTop: '0.25rem'
                       }}>
-                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
-                          Margem de Lucro
-                        </p>
-                        <p style={{
-                          margin: 0,
-                          fontSize: '1.25rem',
-                          fontWeight: '700',
-                          color: profitabilityData.is_profitable
-                            ? 'rgb(52, 211, 153)'
-                            : 'rgb(239, 68, 68)'
-                        }}>
-                          {profitabilityData.profit_margin.toFixed(2)}%
-                        </p>
+                        Taxa: {formatCurrency(details.hourlyRate)}/hora
                       </div>
                     </div>
-                  ) : (
-                    <p style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                      Dados de rentabilidade não disponíveis.
-                    </p>
-                  )}
+                  ))}
                 </div>
-              )}
+              </div>
+            </div>
+          )}
+
+          {/* Lista de registros - atualizar para usar periodEntries */}
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.05)',
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '1rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>
+                Registros de Tempo - {String(currentMonth).padStart(2, '0')}/{currentYear}
+              </h4>
+              <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                {periodEntries.length} registros
+              </span>
+            </div>
+            
+            {periodEntries.length === 0 ? (
+              <div style={{
+                padding: '2rem',
+                textAlign: 'center',
+                color: 'rgba(255, 255, 255, 0.6)'
+              }}>
+                <Clock size={32} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+                <p style={{ margin: 0 }}>
+                  Nenhum registo de tempo encontrado para {String(currentMonth).padStart(2, '0')}/{currentYear}.
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+                {periodEntries
+                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .map(entry => {
+                    const userProfile = users.find(u => u.username === entry.user_name);
+                    const hourlyRate = userProfile?.hourly_rate || 25;
+                    const entryCost = (entry.minutes_spent / 60) * hourlyRate;
+                    
+                    return (
+                      <div key={entry.id} style={{
+                        padding: '1rem',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start'
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <h5 style={{ margin: '0 0 0.5rem 0', color: 'white', fontSize: '0.875rem' }}>
+                            {entry.description}
+                          </h5>
+                          <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '0.5rem',
+                            fontSize: '0.75rem',
+                            color: 'rgba(255, 255, 255, 0.7)'
+                          }}>
+                            <span>📅 {new Date(entry.date).toLocaleDateString('pt-PT')}</span>
+                            <span>👤 {entry.user_name}</span>
+                            <span>💰 {formatCurrency(hourlyRate)}/h</span>
+                            {entry.task_title && <span>📋 {entry.task_title}</span>}
+                          </div>
+                        </div>
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-end',
+                          gap: '0.25rem'
+                        }}>
+                          <span style={{
+                            fontSize: '0.875rem',
+                            fontWeight: '600',
+                            color: 'rgb(52, 211, 153)'
+                          }}>
+                            {formatTime(entry.minutes_spent)}
+                          </span>
+                          <span style={{
+                            fontSize: '0.75rem',
+                            color: 'rgba(255, 255, 255, 0.6)'
+                          }}>
+                            {formatCurrency(entryCost)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          {/* Resto dos componentes: indicador de rentabilidade, análise, etc. */}
+          {/* ... resto do código da análise inteligente ... */}
+
+        </div>
+      );
+    })()}
+  </div>
+)}
             </div>
           )}
         </div>
@@ -962,7 +1361,16 @@ const ClientManagement = () => {
   // Estados locais
   const [searchTerm, setSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "name", direction: "asc" });
-  const [filters, setFilters] = useState({ active: true });
+  const [filters, setFilters] = useState({
+    active: true,
+    hasEmail: null,
+    hasPhone: null,
+    hasNif: null,
+    hasMonthlyFee: null,
+    accountManager: '',
+    minMonthlyFee: '',
+    maxMonthlyFee: ''
+  });
   const [viewMode, setViewMode] = useState('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
@@ -1061,6 +1469,61 @@ const ClientManagement = () => {
       result = result.filter(client => client.is_active);
     }
 
+    // Filtro por email
+    if (filters.hasEmail === true) {
+      result = result.filter(client => client.email && client.email.trim() !== '');
+    } else if (filters.hasEmail === false) {
+      result = result.filter(client => !client.email || client.email.trim() === '');
+    }
+
+    // Filtro por telefone
+    if (filters.hasPhone === true) {
+      result = result.filter(client => client.phone && client.phone.trim() !== '');
+    } else if (filters.hasPhone === false) {
+      result = result.filter(client => !client.phone || client.phone.trim() === '');
+    }
+
+    // Filtro por NIF
+    if (filters.hasNif === true) {
+      result = result.filter(client => client.nif && client.nif.trim() !== '');
+    } else if (filters.hasNif === false) {
+      result = result.filter(client => !client.nif || client.nif.trim() === '');
+    }
+
+    // Filtro por avença mensal
+    if (filters.hasMonthlyFee === true) {
+      result = result.filter(client => client.monthly_fee && parseFloat(client.monthly_fee) > 0);
+    } else if (filters.hasMonthlyFee === false) {
+      result = result.filter(client => !client.monthly_fee || parseFloat(client.monthly_fee) <= 0);
+    }
+
+    // Filtro por gestor de conta
+    if (filters.accountManager) {
+      result = result.filter(client => client.account_manager === parseInt(filters.accountManager));
+    }
+
+    // Filtro por valor mínimo da avença
+    if (filters.minMonthlyFee) {
+      const minValue = parseFloat(filters.minMonthlyFee);
+      if (!isNaN(minValue)) {
+        result = result.filter(client => {
+          const clientFee = parseFloat(client.monthly_fee) || 0;
+          return clientFee >= minValue;
+        });
+      }
+    }
+
+    // Filtro por valor máximo da avença
+    if (filters.maxMonthlyFee) {
+      const maxValue = parseFloat(filters.maxMonthlyFee);
+      if (!isNaN(maxValue)) {
+        result = result.filter(client => {
+          const clientFee = parseFloat(client.monthly_fee) || 0;
+          return clientFee <= maxValue;
+        });
+      }
+    }
+
     // Aplicar ordenação
     if (sortConfig.key) {
       result.sort((a, b) => {
@@ -1086,6 +1549,8 @@ const ClientManagement = () => {
 
     return result;
   }, [clients, searchTerm, filters, sortConfig]);
+
+
 
   // Event handlers
   const handleSearchChange = useCallback((e) => {
@@ -1350,7 +1815,7 @@ const ClientManagement = () => {
       </div>
     );
   }
-  
+
   return (
     <div style={{
       position: 'relative',
@@ -1857,11 +2322,6 @@ const ClientManagement = () => {
                   Mostrar apenas clientes ativos
                 </label>
               </div>
-
-              <ViewToggle
-                activeView={viewMode}
-                onChange={setViewMode}
-              />
             </div>
 
             <div style={{ position: 'relative', minWidth: '300px' }}>
@@ -1903,18 +2363,323 @@ const ClientManagement = () => {
                   borderTop: '1px solid rgba(255, 255, 255, 0.1)',
                   paddingTop: '1rem',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '1rem',
-                  flexWrap: 'wrap'
+                  flexDirection: 'column',
+                  gap: '1rem'
                 }}
               >
-                <p style={{
-                  margin: 0,
-                  fontSize: '0.875rem',
-                  color: 'rgba(255, 255, 255, 0.7)'
+                {/* Filtros de Informações de Contacto */}
+                <div>
+                  <h4 style={{
+                    margin: '0 0 0.75rem 0',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <Mail size={16} style={{ color: 'rgb(59, 130, 246)' }} />
+                    Informações de Contacto
+                  </h4>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '0.75rem'
+                  }}>
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Email
+                      </label>
+                      <select
+                        name="hasEmail"
+                        value={filters.hasEmail === null ? '' : filters.hasEmail}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          hasEmail: e.target.value === '' ? null : e.target.value === 'true'
+                        }))}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        <option value="">Todos</option>
+                        <option value="true">Com Email</option>
+                        <option value="false">Sem Email</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Telefone
+                      </label>
+                      <select
+                        name="hasPhone"
+                        value={filters.hasPhone === null ? '' : filters.hasPhone}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          hasPhone: e.target.value === '' ? null : e.target.value === 'true'
+                        }))}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        <option value="">Todos</option>
+                        <option value="true">Com Telefone</option>
+                        <option value="false">Sem Telefone</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        marginBottom: '0.25rem'
+                      }}>
+                        NIF
+                      </label>
+                      <select
+                        name="hasNif"
+                        value={filters.hasNif === null ? '' : filters.hasNif}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          hasNif: e.target.value === '' ? null : e.target.value === 'true'
+                        }))}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        <option value="">Todos</option>
+                        <option value="true">Com NIF</option>
+                        <option value="false">Sem NIF</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filtros Financeiros */}
+                <div>
+                  <h4 style={{
+                    margin: '0 0 0.75rem 0',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <Euro size={16} style={{ color: 'rgb(52, 211, 153)' }} />
+                    Filtros Financeiros
+                  </h4>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                    gap: '0.75rem'
+                  }}>
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Avença Mensal
+                      </label>
+                      <select
+                        name="hasMonthlyFee"
+                        value={filters.hasMonthlyFee === null ? '' : filters.hasMonthlyFee}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          hasMonthlyFee: e.target.value === '' ? null : e.target.value === 'true'
+                        }))}
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          fontSize: '0.75rem'
+                        }}
+                      >
+                        <option value="">Todos</option>
+                        <option value="true">Com Avença</option>
+                        <option value="false">Sem Avença</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Valor Mínimo (€)
+                      </label>
+                      <input
+                        type="number"
+                        name="minMonthlyFee"
+                        value={filters.minMonthlyFee}
+                        onChange={handleFilterChange}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          fontSize: '0.75rem'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.75rem',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Valor Máximo (€)
+                      </label>
+                      <input
+                        type="number"
+                        name="maxMonthlyFee"
+                        value={filters.maxMonthlyFee}
+                        onChange={handleFilterChange}
+                        placeholder="999.99"
+                        step="0.01"
+                        min="0"
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '6px',
+                          color: 'white',
+                          fontSize: '0.75rem'
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filtro por Gestor de Conta */}
+                <div>
+                  <h4 style={{
+                    margin: '0 0 0.75rem 0',
+                    fontSize: '0.875rem',
+                    fontWeight: '600',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <UserCheck size={16} style={{ color: 'rgb(147, 51, 234)' }} />
+                    Gestão
+                  </h4>
+                  <div style={{ maxWidth: '300px' }}>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      marginBottom: '0.25rem'
+                    }}>
+                      Gestor de Conta
+                    </label>
+                    <select
+                      name="accountManager"
+                      value={filters.accountManager}
+                      onChange={handleFilterChange}
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '6px',
+                        color: 'white',
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      <option value="">Todos os Gestores</option>
+                      {users && users.map(user => (
+                        <option key={user.id} value={user.id}>
+                          {user.username}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Botão para limpar filtros */}
+                <div style={{
+                  borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                  paddingTop: '1rem',
+                  display: 'flex',
+                  justifyContent: 'flex-end'
                 }}>
-                  Filtros adicionais em breve...
-                </p>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setFilters({
+                      active: true,
+                      hasEmail: null,
+                      hasPhone: null,
+                      hasNif: null,
+                      hasMonthlyFee: null,
+                      accountManager: '',
+                      minMonthlyFee: '',
+                      maxMonthlyFee: ''
+                    })}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '6px',
+                      color: 'white',
+                      fontSize: '0.75rem',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    <X size={14} />
+                    Limpar Filtros
+                  </motion.button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -2595,6 +3360,7 @@ const ClientManagement = () => {
         {showClientModal && selectedClient && (
           <ClientDetailsModal
             client={selectedClient}
+                  users={users || []} // ← ADICIONAR ESTA LINHA
             onClose={() => {
               setShowClientModal(false);
               setSelectedClient(null);

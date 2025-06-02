@@ -28,7 +28,6 @@ import {
 import AIInsightsPanel from './AIInsightsPanel';
 import BackgroundElements from './BackgroundElements';
 import QuickActionsGrid from './QuickActionsGrid';
-import SmartSearchBar from './SmartSearchBar';
 
 const DashboardPages = ({ dashboardData }) => {
     const [currentPage, setCurrentPage] = useState(0);
@@ -332,14 +331,6 @@ const DashboardPages = ({ dashboardData }) => {
                         Pronto para otimizar o seu escritório?
                     </p>
                 </header>
-
-                {/* Search Bar */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <SmartSearchBar
-                        dashboardData={dashboardData}
-                        placeholder="Pergunte qualquer coisa ou descreva o que fez hoje..."
-                    />
-                </div>
 
                 {/* Main Grid */}
                 <div style={{

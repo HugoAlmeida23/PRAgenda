@@ -5,17 +5,431 @@ import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
   Bell, Search, Menu, X, LogOut, User,
   Briefcase, GitPullRequest, Sparkles, Zap, Brain,
-  BarChart3, TrendingUp, Calendar, FileText, HelpCircle,User2
+  BarChart3, TrendingUp, Calendar, FileText, HelpCircle, User2,
+  ArrowRight, Send, Command
 } from 'lucide-react';
-import api from '../../api'; // Adjust the import based on your API setup
+import api from '../../api';
 import BackgroundElements from '../HeroSection/BackgroundElements';
 
-// Navigation Component
+// AI Navigation Service
+class AINavigationService {
+  static navigationMap = [
+    {
+      keywords: ['dashboard', 'inicio', 'home', 'painel', 'overview', 'resumo'],
+      path: '/',
+      label: 'Dashboard',
+      description: 'Ver painel principal e estatísticas'
+    },
+    {
+      keywords: ['cliente', 'clientes', 'client', 'clients', 'empresas', 'empresa'],
+      path: '/clients',
+      label: 'Clientes',
+      description: 'Gerir clientes e informações'
+    },
+    {
+      keywords: ['tempo', 'time', 'registo', 'registrar', 'timesheet', 'horas', 'minutos'],
+      path: '/timeentry',
+      label: 'Registo de Tempos',
+      description: 'Registar tempo gasto em tarefas'
+    },
+    {
+      keywords: ['tarefa', 'tarefas', 'task', 'tasks', 'trabalho', 'atividade', 'atividades'],
+      path: '/tasks',
+      label: 'Tarefas',
+      description: 'Ver e gerir tarefas'
+    },
+    {
+      keywords: ['rentabilidade', 'lucro', 'profit', 'profitability', 'financeiro', 'dinheiro'],
+      path: '/clientprofitability',
+      label: 'Rentabilidade',
+      description: 'Análise de rentabilidade de clientes'
+    },
+    {
+      keywords: ['organização', 'organization', 'empresa', 'equipa', 'team', 'membros'],
+      path: '/organization',
+      label: 'Organização',
+      description: 'Gerir organização e membros'
+    },
+    {
+      keywords: ['workflow', 'fluxo', 'processo', 'aprovação', 'etapa', 'etapas'],
+      path: '/workflow-management',
+      label: 'Workflows',
+      description: 'Gerir fluxos de trabalho'
+    },
+    {
+      keywords: ['perfil', 'profile', 'conta', 'utilizador', 'user', 'configurações pessoais'],
+      path: '/profile',
+      label: 'Perfil',
+      description: 'Ver e editar perfil pessoal'
+    }
+  ];
+
+  static processNavigationIntent(query) {
+    const cleanQuery = query.toLowerCase().trim();
+    
+    // Padrões de navegação
+    const navigationPatterns = [
+      { pattern: /^(ir para|ir a|ir|navegar para|abrir|ver|mostrar|quero ver)\s+(.+)/, intentType: 'navigate' },
+      { pattern: /^(criar|nova?|novo|adicionar|registar|registrar)\s+(.+)/, intentType: 'create' },
+      { pattern: /^(editar|alterar|modificar|mudar)\s+(.+)/, intentType: 'edit' },
+      { pattern: /^(procurar|pesquisar|encontrar|buscar)\s+(.+)/, intentType: 'search' }
+    ];
+
+    for (const { pattern, intentType } of navigationPatterns) {
+      const match = cleanQuery.match(pattern);
+      if (match) {
+        const target = match[2];
+        const route = this.findBestMatch(target);
+        if (route) {
+          return {
+            type: intentType,
+            route,
+            confidence: this.calculateConfidence(target, route.keywords),
+            query: cleanQuery
+          };
+        }
+      }
+    }
+
+    // Busca direta sem padrão
+    const directMatch = this.findBestMatch(cleanQuery);
+    if (directMatch) {
+      return {
+        type: 'navigate',
+        route: directMatch,
+        confidence: this.calculateConfidence(cleanQuery, directMatch.keywords),
+        query: cleanQuery
+      };
+    }
+
+    return null;
+  }
+
+  static findBestMatch(query) {
+    let bestMatch = null;
+    let highestScore = 0;
+
+    for (const route of this.navigationMap) {
+      for (const keyword of route.keywords) {
+        const score = this.calculateSimilarity(query, keyword);
+        if (score > highestScore && score > 0.3) {
+          highestScore = score;
+          bestMatch = route;
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  static calculateSimilarity(query, keyword) {
+    if (query.includes(keyword) || keyword.includes(query)) {
+      return 1.0;
+    }
+
+    // Levenshtein distance for fuzzy matching
+    const distance = this.levenshteinDistance(query, keyword);
+    const maxLength = Math.max(query.length, keyword.length);
+    return 1 - (distance / maxLength);
+  }
+
+  static levenshteinDistance(str1, str2) {
+    const matrix = [];
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    return matrix[str2.length][str1.length];
+  }
+
+  static calculateConfidence(query, keywords) {
+    const scores = keywords.map(keyword => this.calculateSimilarity(query, keyword));
+    return Math.max(...scores);
+  }
+}
+
+// AI Search Component
+const AISearchBar = ({ onNavigate }) => {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef(null);
+
+  const handleQueryChange = (e) => {
+    const value = e.target.value;
+    setQuery(value);
+
+    if (value.length > 2) {
+      const intent = AINavigationService.processNavigationIntent(value);
+      if (intent && intent.confidence > 0.3) {
+        setSuggestions([intent]);
+        setShowSuggestions(true);
+      } else {
+        // Mostrar sugestões baseadas em palavras-chave
+        const partialMatches = AINavigationService.navigationMap
+          .filter(route => 
+            route.keywords.some(keyword => 
+              keyword.includes(value.toLowerCase()) || 
+              value.toLowerCase().includes(keyword)
+            )
+          )
+          .slice(0, 3)
+          .map(route => ({
+            type: 'navigate',
+            route,
+            confidence: 0.7,
+            query: value
+          }));
+        
+        setSuggestions(partialMatches);
+        setShowSuggestions(partialMatches.length > 0);
+      }
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion) => {
+    setIsLoading(true);
+    setTimeout(() => {
+      onNavigate(suggestion.route.path);
+      setQuery('');
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setIsLoading(false);
+    }, 500);
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && suggestions.length > 0) {
+      handleSuggestionClick(suggestions[0]);
+    }
+    if (e.key === 'Escape') {
+      setShowSuggestions(false);
+    }
+  };
+
+  const getIntentIcon = (intentType) => {
+    switch (intentType) {
+      case 'create': return <FileText size={16} />;
+      case 'edit': return <Settings size={16} />;
+      case 'search': return <Search size={16} />;
+      default: return <ArrowRight size={16} />;
+    }
+  };
+
+  const getIntentText = (intentType) => {
+    switch (intentType) {
+      case 'create': return 'Criar';
+      case 'edit': return 'Editar';
+      case 'search': return 'Pesquisar';
+      default: return 'Ir para';
+    }
+  };
+
+  return (
+    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+      <motion.div
+        whileHover={{ scale: 1.02 }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: 'rgba(255, 255, 255, 0.15)',
+          borderRadius: '24px',
+          padding: '0.75rem 1.5rem',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          width: '100%'
+        }}
+      >
+        <Search
+          size={18}
+          style={{
+            marginRight: '0.75rem',
+            color: 'rgba(255, 255, 255, 0.7)'
+          }}
+        />
+        <input
+          ref={searchRef}
+          type="text"
+          placeholder="Pesquisar ou navegar com AI..."
+          value={query}
+          onChange={handleQueryChange}
+          onKeyDown={handleKeyPress}
+          onFocus={() => query.length > 2 && setShowSuggestions(true)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'white',
+            fontSize: '0.9rem',
+            outline: 'none',
+            width: '100%'
+          }}
+        />
+        {isLoading ? (
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          >
+            <Brain size={16} style={{ color: 'rgb(196, 181, 253)' }} />
+          </motion.div>
+        ) : (
+          <motion.div
+            animate={{
+              scale: [1, 1.2, 1],
+              opacity: [0.7, 1, 0.7]
+            }}
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              ease: "easeInOut"
+            }}
+          >
+            <Sparkles
+              size={16}
+              style={{ color: 'rgb(196, 181, 253)' }}
+            />
+          </motion.div>
+        )}
+      </motion.div>
+
+      {/* AI Suggestions Dropdown */}
+      <AnimatePresence>
+        {showSuggestions && suggestions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              marginTop: '0.5rem',
+              background: 'rgba(0, 0, 0, 0.9)',
+              backdropFilter: 'blur(20px)',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              overflow: 'hidden',
+              zIndex: 1000
+            }}
+          >
+            <div style={{
+              padding: '0.75rem 1rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.8rem',
+              color: 'rgba(255, 255, 255, 0.7)'
+            }}>
+              <Brain size={14} />
+              Sugestões da AI
+            </div>
+            
+            {suggestions.map((suggestion, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.05 }}
+                whileHover={{ 
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  x: 4
+                }}
+                onClick={() => handleSuggestionClick(suggestion)}
+                style={{
+                  padding: '1rem',
+                  cursor: 'pointer',
+                  borderBottom: index < suggestions.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginBottom: '0.25rem'
+                  }}>
+                    {getIntentIcon(suggestion.type)}
+                    <span style={{
+                      color: 'white',
+                      fontWeight: '500',
+                      fontSize: '0.9rem'
+                    }}>
+                      {getIntentText(suggestion.type)} {suggestion.route.label}
+                    </span>
+                    <span style={{
+                      background: `rgba(147, 51, 234, ${suggestion.confidence})`,
+                      color: 'white',
+                      padding: '0.125rem 0.5rem',
+                      borderRadius: '8px',
+                      fontSize: '0.7rem',
+                      fontWeight: '600'
+                    }}>
+                      {Math.round(suggestion.confidence * 100)}%
+                    </span>
+                  </div>
+                  <div style={{
+                    fontSize: '0.8rem',
+                    color: 'rgba(255, 255, 255, 0.6)'
+                  }}>
+                    {suggestion.route.description}
+                  </div>
+                </div>
+                
+                <div style={{
+                  padding: '0.5rem',
+                  borderRadius: '8px',
+                  background: 'rgba(255, 255, 255, 0.1)'
+                }}>
+                  <Send size={14} style={{ color: 'rgba(255, 255, 255, 0.8)' }} />
+                </div>
+              </motion.div>
+            ))}
+            
+            <div style={{
+              padding: '0.5rem 1rem',
+              fontSize: '0.75rem',
+              color: 'rgba(255, 255, 255, 0.5)',
+              textAlign: 'center',
+              background: 'rgba(255, 255, 255, 0.05)'
+            }}>
+              <Command size={12} style={{ marginRight: '0.25rem' }} />
+              Pressione Enter para navegar
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+// Navigation Component (unchanged from previous)
 const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   const navigate = useNavigate();
 
   const menuItems = [
-    
     { path: "/", icon: Home, label: "Dashboard", category: "main" },
     { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade", category: "analytics" },
     { path: "/tasks", icon: CheckSquare, label: "Tarefas", category: "main" },
@@ -164,31 +578,12 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
               </div>
             </div>
             
-            
             {/* Menu Items */}
             <div style={{
               flex: 1,
               padding: '1rem 0',
               overflowX: 'hidden',
-              overflowY: 'auto',
-              // Custom scrollbar styles
-              scrollbarWidth: 'thin',
-              scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent',
-              // WebKit scrollbar styles
-              WebkitScrollbar: {
-                width: '6px'
-              },
-              WebkitScrollbarTrack: {
-                background: 'transparent'
-              },
-              WebkitScrollbarThumb: {
-                background: 'rgba(255, 255, 255, 0.3)',
-                borderRadius: '3px',
-                transition: 'background 0.2s ease'
-              },
-              WebkitScrollbarThumbHover: {
-                background: 'rgba(255, 255, 255, 0.5)'
-              }
+              overflowY: 'auto'
             }}>
               {menuItems.map((item, index) => {
                 const IconComponent = item.icon;
@@ -286,10 +681,10 @@ const fetchDashboardData = async () => {
   }
 };
 
-
 // Main Layout Component
 const Layout = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   
@@ -298,7 +693,6 @@ const Layout = () => {
       try {
         const profileData = await fetchDashboardData();
         if (profileData && profileData.length > 0) {
-          // Since the API returns an array, take the first item
           setUserProfile(profileData[0]);
         }
       } catch (error) {
@@ -309,10 +703,14 @@ const Layout = () => {
     loadUserProfile();
   }, []);
 
-  // Mock notifications
   const [notifications] = useState(2);
 
   const toggleNav = () => setNavOpen(!navOpen);
+
+  const handleAINavigation = (path) => {
+    navigate(path);
+    setNavOpen(false); // Close navigation if open
+  };
 
   return (
     <div style={{
@@ -320,7 +718,7 @@ const Layout = () => {
       position: 'relative',
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
-       <BackgroundElements businessStatus="optimal" />
+      <BackgroundElements businessStatus="optimal" />
 
       {/* Top Navigation Bar */}
       <motion.header
@@ -362,55 +760,8 @@ const Layout = () => {
             <Menu size={20} />
           </motion.button>
 
-          {/* Search Bar */}
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'rgba(255, 255, 255, 0.15)',
-              borderRadius: '24px',
-              padding: '0.75rem 1.5rem',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              minWidth: '300px'
-            }}
-          >
-            <Search
-              size={18}
-              style={{
-                marginRight: '0.75rem',
-                color: 'rgba(255, 255, 255, 0.7)'
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Pesquisar ou descrever tarefa..."
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'white',
-                fontSize: '0.9rem',
-                outline: 'none',
-                width: '100%'
-              }}
-            />
-            <motion.div
-              animate={{
-                scale: [1, 1.2, 1],
-                opacity: [0.7, 1, 0.7]
-              }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-            >
-              <Sparkles
-                size={16}
-                style={{ color: 'rgb(196, 181, 253)' }}
-              />
-            </motion.div>
-          </motion.div>
+          {/* AI Search Bar */}
+          <AISearchBar onNavigate={handleAINavigation} />
         </div>
 
         {/* Right Side */}
@@ -453,36 +804,6 @@ const Layout = () => {
               </motion.span>
             )}
           </motion.button>
-
-          {/* AI Assistant Button */}
-          {/* <motion.button
-            whileHover={{ 
-              scale: 1.05,
-              boxShadow: '0 0 20px rgba(147, 51, 234, 0.5)'
-            }}
-            whileTap={{ scale: 0.95 }}
-            style={{
-              background: 'rgba(147, 51, 234, 0.3)',
-              border: '1px solid rgba(147, 51, 234, 0.5)',
-              borderRadius: '12px',
-              padding: '0.75rem 1rem',
-              color: 'white',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontSize: '0.875rem',
-              fontWeight: '500'
-            }}
-          >
-            <motion.div
-              animate={{ rotate: [0, 360] }}
-              transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-            >
-              <Brain size={18} />
-            </motion.div>
-            AI Assistant
-          </motion.button> */}
         </div>
       </motion.header>
 
@@ -507,40 +828,6 @@ const Layout = () => {
       >
         <Outlet />
       </motion.main>
-
-      {/* Bottom AI Suggestions (Optional) */}
-      {/* <motion.div
-        initial={{ y: 100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 1, duration: 0.6 }}
-        style={{
-          position: 'fixed',
-          bottom: '2rem',
-          right: '2rem',
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(20px)',
-          borderRadius: '16px',
-          padding: '1rem',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          color: 'white',
-          fontSize: '0.875rem',
-          maxWidth: '300px',
-          zIndex: 50
-        }}
-      >
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          marginBottom: '0.5rem'
-        }}>
-          <Zap size={16} style={{ color: 'rgb(251, 191, 36)' }} />
-          <span style={{ fontWeight: '600' }}>Sugestão AI</span>
-        </div>
-        <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.8)' }}>
-          Tem 3 tarefas pendentes para hoje. Quer que organize por prioridade?
-        </p>
-      </motion.div> */}
     </div>
   );
 };

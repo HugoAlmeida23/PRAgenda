@@ -517,6 +517,7 @@ class TaskViewSet(viewsets.ModelViewSet):
                 {"error": "Passo do workflow não encontrado"}, 
                 status=status.HTTP_404_NOT_FOUND
             )
+    # views.py - Correção da action workflow_status
 
     @action(detail=True, methods=['get'])
     def workflow_status(self, request, pk=None):
@@ -539,16 +540,13 @@ class TaskViewSet(viewsets.ModelViewSet):
         # Calcular tempo por passo - CORRIGIDO
         time_by_step = {}
         for step_obj in all_steps_qs:
-            # Buscar entradas de tempo que especificamente referenciam este passo
             step_time_entries = TimeEntry.objects.filter(
                 task=task, 
                 workflow_step=step_obj
             )
             
-            # Se não há entradas específicas para o passo, mas o passo está ativo/concluído,
-            # incluir entradas de tempo gerais da tarefa durante o período deste passo
+            # Se não há entradas específicas para o passo, incluir entradas gerais durante o período do passo
             if not step_time_entries.exists():
-                # Buscar por histórico para determinar quando este passo estava ativo
                 step_started = history_qs.filter(
                     to_step=step_obj,
                     action__in=['step_advanced', 'workflow_assigned']
@@ -560,20 +558,17 @@ class TaskViewSet(viewsets.ModelViewSet):
                 ).first()
                 
                 if step_started or (task.current_workflow_step == step_obj):
-                    # Se é o passo atual ou teve início, incluir tempo geral da tarefa
                     general_time_entries = TimeEntry.objects.filter(
                         task=task,
-                        workflow_step__isnull=True  # Entradas sem passo específico
+                        workflow_step__isnull=True
                     )
                     
                     if step_started and step_ended:
-                        # Filtrar por data se tivermos início e fim
                         general_time_entries = general_time_entries.filter(
                             created_at__gte=step_started.created_at,
                             created_at__lte=step_ended.created_at
                         )
                     elif step_started:
-                        # Apenas início definido
                         general_time_entries = general_time_entries.filter(
                             created_at__gte=step_started.created_at
                         )
@@ -583,28 +578,43 @@ class TaskViewSet(viewsets.ModelViewSet):
             total_minutes = step_time_entries.aggregate(total=models.Sum('minutes_spent'))['total'] or 0
             time_by_step[str(step_obj.id)] = total_minutes
 
-        # Determinar passos concluídos - CORRIGIDO
+        # NOVA LÓGICA: Determinar passos concluídos de forma mais precisa
         completed_step_ids = set()
-        workflow_is_marked_completed = history_qs.filter(action='workflow_completed').exists()
+        workflow_is_completed = history_qs.filter(action='workflow_completed').exists()
 
-        if workflow_is_marked_completed and task.current_workflow_step is None:
-            # Workflow completamente finalizado
+        if workflow_is_completed and task.current_workflow_step is None:
+            # Workflow completamente finalizado - todos os passos estão concluídos
             for step_obj in all_steps_qs:
                 completed_step_ids.add(str(step_obj.id))
         else:
-            # Analisar histórico para determinar passos concluídos
+            # Analisar histórico para passos explicitamente concluídos
             for history_entry in history_qs:
                 if history_entry.action in ['step_completed', 'step_advanced'] and history_entry.from_step_id:
                     completed_step_ids.add(str(history_entry.from_step_id))
             
-            # NOVO: Marcar passos anteriores ao atual como concluídos
+            # CORREÇÃO PRINCIPAL: Marcar passos anteriores ao atual como concluídos
             if task.current_workflow_step:
                 current_order = task.current_workflow_step.order
                 for step_obj in all_steps_qs:
                     if step_obj.order < current_order:
                         completed_step_ids.add(str(step_obj.id))
 
-        # Construir resposta
+        # Construir resposta com progresso corrigido
+        completed_count = len(completed_step_ids)
+        total_steps = all_steps_qs.count()
+        
+        # Calcular passo atual para exibição
+        if workflow_is_completed:
+            current_step_display = total_steps
+            percentage = 100.0
+        elif task.current_workflow_step:
+            # O passo atual é o número de passos concluídos + 1
+            current_step_display = completed_count + 1
+            percentage = (completed_count / total_steps) * 100 if total_steps > 0 else 0
+        else:
+            current_step_display = 0
+            percentage = 0.0
+
         response_data = {
             'task': {
                 'id': task.id,
@@ -615,9 +625,15 @@ class TaskViewSet(viewsets.ModelViewSet):
             'workflow': {
                 'id': workflow_definition.id,
                 'name': workflow_definition.name,
-                'is_completed': workflow_is_marked_completed and task.current_workflow_step is None,
+                'is_completed': workflow_is_completed,
                 'steps': [],
                 'time_by_step': time_by_step,
+                'progress': {
+                    'current_step': current_step_display,
+                    'completed_steps': completed_count,
+                    'total_steps': total_steps,
+                    'percentage': round(percentage, 1)
+                }
             },
             'current_step': None,
             'history': [],
@@ -642,16 +658,6 @@ class TaskViewSet(viewsets.ModelViewSet):
             is_current = task.current_workflow_step_id == step_obj.id
             is_completed = step_id_str in completed_step_ids
             
-            # CORREÇÃO: Se é o passo atual e o workflow não está completo, não deve estar marcado como concluído
-            # EXCETO se há histórico explícito de conclusão
-            if is_current and not response_data['workflow']['is_completed']:
-                step_completed_explicitly = history_qs.filter(
-                    from_step=step_obj,
-                    action='step_completed'
-                ).exists()
-                if not step_completed_explicitly:
-                    is_completed = False
-
             # Parse next_steps e previous_steps
             try:
                 next_steps_data = json.loads(step_obj.next_steps) if isinstance(step_obj.next_steps, str) and step_obj.next_steps else (step_obj.next_steps if isinstance(step_obj.next_steps, list) else [])
@@ -679,8 +685,8 @@ class TaskViewSet(viewsets.ModelViewSet):
                 'time_spent': time_by_step.get(step_id_str, 0),
             })
         
-        # Histórico - MELHORADO
-        for history_entry in history_qs[:50]:  # Limitar a 50 entradas mais recentes
+        # Histórico
+        for history_entry in history_qs[:50]:
             response_data['history'].append({
                 'id': history_entry.id,
                 'from_step': history_entry.from_step.name if history_entry.from_step else None,

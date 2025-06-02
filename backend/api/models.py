@@ -1085,6 +1085,97 @@ class Task(models.Model):
             self.completed_at = None
             
         super(Task, self).save(*args, **kwargs)
+
+    def get_workflow_progress_data(self):
+        """
+        Retorna dados precisos do progresso do workflow
+        """
+        if not self.workflow:
+            return None
+            
+        from django.db import models
+        
+        # Buscar todos os passos ordenados
+        all_steps = self.workflow.steps.order_by('order')
+        total_steps = all_steps.count()
+        
+        if total_steps == 0:
+            return None
+        
+        # Determinar passos concluídos
+        completed_step_ids = set()
+        
+        # Verificar se workflow foi marcado como completo
+        workflow_completed = WorkflowHistory.objects.filter(
+            task=self,
+            action='workflow_completed'
+        ).exists()
+        
+        if workflow_completed:
+            # Se o workflow está completo, todos os passos estão concluídos
+            completed_count = total_steps
+            current_step_number = total_steps
+            percentage = 100.0
+        else:
+            # Buscar passos explicitamente concluídos no histórico
+            completed_histories = WorkflowHistory.objects.filter(
+                task=self,
+                action__in=['step_completed', 'step_advanced'],
+                from_step__isnull=False
+            ).values_list('from_step_id', flat=True)
+            
+            completed_step_ids.update(completed_histories)
+            
+            # Marcar passos anteriores ao atual como concluídos
+            if self.current_workflow_step:
+                current_order = self.current_workflow_step.order
+                for step in all_steps:
+                    if step.order < current_order:
+                        completed_step_ids.add(step.id)
+                
+                current_step_number = len(completed_step_ids) + 1
+            else:
+                current_step_number = len(completed_step_ids)
+            
+            completed_count = len(completed_step_ids)
+            percentage = (completed_count / total_steps) * 100 if total_steps > 0 else 0
+        
+        return {
+            'current_step': current_step_number,
+            'completed_steps': completed_count,
+            'total_steps': total_steps,
+            'percentage': round(percentage, 1),
+            'is_completed': workflow_completed
+        }
+    
+    def is_workflow_step_completed(self, step):
+        """
+        Verifica se um passo específico do workflow foi concluído
+        """
+        if not self.workflow or not step:
+            return False
+            
+        # Verificar se há registro de conclusão no histórico
+        step_completed = WorkflowHistory.objects.filter(
+            task=self,
+            from_step=step,
+            action__in=['step_completed', 'step_advanced']
+        ).exists()
+        
+        if step_completed:
+            return True
+            
+        # Se é um passo anterior ao atual, considerar como concluído
+        if self.current_workflow_step and step.order < self.current_workflow_step.order:
+            return True
+            
+        # Se o workflow foi marcado como completo, todos os passos estão concluídos
+        workflow_completed = WorkflowHistory.objects.filter(
+            task=self,
+            action='workflow_completed'
+        ).exists()
+        
+        return workflow_completed
               
 class TimeEntry(models.Model):
     """

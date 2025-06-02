@@ -9,7 +9,8 @@ import {
     ChevronRight,
     Play,
     Pause,
-    BarChart3
+    BarChart3,
+    Zap
 } from 'lucide-react';
 
 const AIInsightsPanel = ({ insights = [], businessStatus }) => {
