@@ -11,7 +11,7 @@ import ClientManagement from "./pages/ClientManagement";
 import TaskManagement from "./pages/TaskManagement";
 import ClientProfitability from "./pages/ClientProfitability";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import OrganizationManagement from "./pages/OrganizationManagement";
+import OrganizationRouter from "./pages/OrganizationRouter"; // Updated import
 import TaskWorkflow from "./pages/TaskOverflow"; // Assuming TaskOverflow is correct, or TaskWorkflow
 import WorkflowManagement from "./pages/WorkflowManagement";
 import DashboardRouter from "./pages/DashboardRouter"; // This will likely be your HomePage equivalent
@@ -68,7 +68,7 @@ function App() {
               <Route path="timeentry" element={<TimeEntry />} />
               <Route path="clientprofitability" element={<ClientProfitability />} />
               <Route path="tasks" element={<TaskManagement />} />
-              <Route path="organization" element={<OrganizationManagement />} />
+              <Route path="organization" element={<OrganizationRouter />} /> {/* Updated to use OrganizationRouter */}
               <Route path="task-workflow/:taskId" element={<TaskWorkflow />} />
               <Route path="workflow-management" element={<WorkflowManagement />} />
             </Route>

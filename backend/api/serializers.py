@@ -42,6 +42,8 @@ class ProfileSerializer(serializers.ModelSerializer):
     email = serializers.ReadOnlyField(source='user.email')
     organization_name = serializers.ReadOnlyField(source='organization.name')
     visible_clients_info = serializers.SerializerMethodField()
+    notification_settings = serializers.SerializerMethodField()
+    unread_notifications_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Profile
@@ -99,16 +101,39 @@ class ProfileSerializer(serializers.ModelSerializer):
             'can_edit_workflows',
             'can_assign_workflows',
             'can_manage_workflows',
+
+            'notification_settings', 'unread_notifications_count'
         ]
         read_only_fields = [
             'invitation_code', 'user', 'username', 
-            'email', 'organization_name'
+            'email', 'organization_name','notification_settings', 'unread_notifications_count'
         ]
     
     def get_visible_clients_info(self, obj):
         """Returns basic info about visible clients for display purposes"""
         visible_clients = obj.visible_clients.all()
         return [{'id': client.id, 'name': client.name} for client in visible_clients]
+
+    def get_notification_settings(self, obj):
+        """Configurações de notificação do usuário"""
+        # Por enquanto, retorna configurações padrão
+        # Futuramente pode ser um campo JSONField no modelo
+        return {
+            'email_notifications': True,
+            'workflow_notifications': True,
+            'deadline_notifications': True,
+            'approval_notifications': True,
+            'daily_digest': False,
+            'notification_frequency': 'immediate'  # 'immediate', 'hourly', 'daily'
+        }
+    
+    def get_unread_notifications_count(self, obj):
+        """Conta notificações não lidas do usuário"""
+        return WorkflowNotification.objects.filter(
+            user=obj.user,
+            is_read=False,
+            is_archived=False
+        ).count()
     
 
 class ClientSerializer(serializers.ModelSerializer):
@@ -289,6 +314,10 @@ class TaskSerializer(serializers.ModelSerializer):
     workflow_progress = serializers.SerializerMethodField()
     available_next_steps = serializers.SerializerMethodField()
     workflow_step_assignee = serializers.ReadOnlyField(source='current_workflow_step.assign_to.username')
+
+    has_pending_notifications = serializers.SerializerMethodField()
+    notifications_count = serializers.SerializerMethodField()
+    latest_notification = serializers.SerializerMethodField()
     
     class Meta:
         model = Task
@@ -299,8 +328,8 @@ class TaskSerializer(serializers.ModelSerializer):
                   'updated_at', 'completed_at','workflow', 'workflow_name', 
                   'current_workflow_step', 'current_workflow_step_name', 
                   'workflow_comment', 'workflow_progress', 'available_next_steps',
-                  'workflow_step_assignee']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at']
+                  'workflow_step_assignee','has_pending_notifications', 'notifications_count', 'latest_notification']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at','has_pending_notifications', 'notifications_count', 'latest_notification']
 
     def get_workflow_progress(self, obj):
         
@@ -448,6 +477,106 @@ class TaskSerializer(serializers.ModelSerializer):
         except:
             return []
 
+    def get_has_pending_notifications(self, obj):
+        """Verifica se a tarefa tem notificações pendentes"""
+        return WorkflowNotification.objects.filter(
+            task=obj,
+            is_read=False,
+            is_archived=False
+        ).exists()
+    
+    def get_notifications_count(self, obj):
+        """Conta notificações não lidas para esta tarefa"""
+        return WorkflowNotification.objects.filter(
+            task=obj,
+            is_read=False,
+            is_archived=False
+        ).count()
+    
+    def get_latest_notification(self, obj):
+        """Retorna a notificação mais recente da tarefa"""
+        latest = WorkflowNotification.objects.filter(
+            task=obj
+        ).order_by('-created_at').first()
+        
+        if latest:
+            return {
+                'id': latest.id,
+                'type': latest.notification_type,
+                'title': latest.title,
+                'created_at': latest.created_at,
+                'is_read': latest.is_read
+            }
+        return None
+
+class NotificationStatsSerializer(serializers.Serializer):
+    """Serializer para estatísticas de notificações"""
+    total_notifications = serializers.IntegerField()
+    unread_count = serializers.IntegerField()
+    urgent_count = serializers.IntegerField()
+    by_type = serializers.DictField()
+    by_priority = serializers.DictField()
+    recent_activity = serializers.ListField()
+
+class NotificationSummarySerializer(serializers.ModelSerializer):
+    """Serializer simplificado para exibição na navbar"""
+    task_title = serializers.ReadOnlyField(source='task.title')
+    time_ago = serializers.SerializerMethodField()
+    icon = serializers.SerializerMethodField()
+    color = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = WorkflowNotification
+        fields = [
+            'id', 'title', 'message', 'notification_type', 'priority',
+            'task_title', 'is_read', 'created_at', 'time_ago', 'icon', 'color'
+        ]
+    
+    def get_time_ago(self, obj):
+        """Tempo decorrido em formato muito compacto"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        diff = timezone.now() - obj.created_at
+        
+        if diff < timedelta(minutes=1):
+            return "agora"
+        elif diff < timedelta(hours=1):
+            return f"{int(diff.total_seconds() / 60)}m"
+        elif diff < timedelta(days=1):
+            return f"{int(diff.total_seconds() / 3600)}h"
+        else:
+            return f"{diff.days}d"
+    
+    def get_icon(self, obj):
+        """Retorna ícone baseado no tipo de notificação"""
+        icon_map = {
+            'step_ready': 'play-circle',
+            'step_completed': 'check-circle',
+            'approval_needed': 'alert-circle',
+            'approval_completed': 'check-circle-2',
+            'workflow_completed': 'flag',
+            'deadline_approaching': 'clock',
+            'step_overdue': 'alert-triangle',
+            'manual_reminder': 'bell',
+            'workflow_assigned': 'git-branch',
+            'step_rejected': 'x-circle',
+            'manual_advance_needed': 'help-circle'
+        }
+        return icon_map.get(obj.notification_type, 'bell')
+    
+    def get_color(self, obj):
+        """Retorna cor baseada na prioridade e tipo"""
+        if obj.priority == 'urgent':
+            return 'red'
+        elif obj.priority == 'high':
+            return 'orange'
+        elif obj.notification_type in ['step_completed', 'workflow_completed', 'approval_completed']:
+            return 'green'
+        elif obj.notification_type in ['approval_needed', 'deadline_approaching']:
+            return 'yellow'
+        else:
+            return 'blue'
 
 class TimeEntrySerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
@@ -530,16 +659,65 @@ class TaskApprovalSerializer(serializers.ModelSerializer):
 class WorkflowNotificationSerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
     task_title = serializers.ReadOnlyField(source='task.title')
+    task_client_name = serializers.ReadOnlyField(source='task.client.name')
     workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name')
+    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    
+    # Campos calculados
+    time_since_created = serializers.SerializerMethodField()
+    is_urgent = serializers.SerializerMethodField()
+    can_be_archived = serializers.SerializerMethodField()
     
     class Meta:
         model = WorkflowNotification
-        fields = ['id', 'user', 'user_name', 'task', 'task_title',
-                  'workflow_step', 'workflow_step_name', 'notification_type',
-                  'title', 'message', 'is_read', 'email_sent',
-                  'created_at', 'read_at']
-        read_only_fields = ['id', 'created_at', 'read_at']
-
+        fields = [
+            'id', 'user', 'user_name', 'task', 'task_title', 'task_client_name',
+            'workflow_step', 'workflow_step_name', 'notification_type',
+            'priority', 'title', 'message', 'is_read', 'is_archived',
+            'email_sent', 'created_at', 'read_at', 'scheduled_for',
+            'metadata', 'created_by', 'created_by_name',
+            'time_since_created', 'is_urgent', 'can_be_archived'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'read_at', 'time_since_created', 
+            'is_urgent', 'can_be_archived'
+        ]
+    
+    def get_time_since_created(self, obj):
+        """Retorna tempo decorrido desde a criação em formato legível"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        now = timezone.now()
+        diff = now - obj.created_at
+        
+        if diff < timedelta(minutes=1):
+            return "Agora mesmo"
+        elif diff < timedelta(hours=1):
+            minutes = int(diff.total_seconds() / 60)
+            return f"{minutes} min atrás"
+        elif diff < timedelta(days=1):
+            hours = int(diff.total_seconds() / 3600)
+            return f"{hours}h atrás"
+        elif diff < timedelta(days=7):
+            days = diff.days
+            return f"{days} dia{'s' if days > 1 else ''} atrás"
+        else:
+            return obj.created_at.strftime('%d/%m/%Y')
+    
+    def get_is_urgent(self, obj):
+        """Determina se a notificação é urgente"""
+        urgent_types = ['deadline_approaching', 'step_overdue', 'approval_needed']
+        return obj.priority in ['high', 'urgent'] or obj.notification_type in urgent_types
+    
+    def get_can_be_archived(self, obj):
+        """Determina se a notificação pode ser arquivada"""
+        # Notificações já lidas há mais de 1 dia podem ser arquivadas
+        if obj.is_read and obj.read_at:
+            from datetime import timedelta
+            from django.utils import timezone
+            return timezone.now() - obj.read_at > timedelta(days=1)
+        return False
 
 class WorkflowHistorySerializer(serializers.ModelSerializer):
     task_title = serializers.ReadOnlyField(source='task.title')

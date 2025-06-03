@@ -47,7 +47,7 @@ import {
   Star,
   Workflow,
   GitBranch,
-  Route, 
+  Route,
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from "../contexts/PermissionsContext";
@@ -70,31 +70,37 @@ const PRIORITY_OPTIONS = [
   { value: 5, label: "Pode Esperar", color: "rgba(255, 255, 255, 0.6)" },
 ];
 
-// --- Data Fetching Function (Outside Component) ---
-const fetchTaskManagementData = async (userId) => {
-  console.log("Fetching task management data for user:", userId);
+const fetchTaskManagementData = async (userId, permissions) => {
+  console.log("Fetching task management data for user:", userId, "isOrgAdmin:", permissions.isOrgAdmin);
+
+  // Choose the appropriate endpoint based on permissions
+  const tasksEndpoint = permissions.isOrgAdmin ? "/tasks/" : `/tasks/?user=${userId}`;
+
   const [tasksRes, clientsRes, usersRes, categoriesRes, workflowsRes] = await Promise.all([
-    api.get(`/tasks/?user=${userId}`),
+    api.get(tasksEndpoint),
     api.get("/clients/?is_active=true"),
     api.get("/profiles/"),
     api.get("/task-categories/"),
-    api.get("/workflow-definitions/?is_active=true") // ADICIONAR ESTA LINHA
+    api.get("/workflow-definitions/?is_active=true")
   ]);
+
   console.log("Data fetched:", {
     tasks: tasksRes.data.length,
     clients: clientsRes.data.length,
     users: usersRes.data.length,
     categories: categoriesRes.data.length,
-    workflows: workflowsRes.data.length  // ADICIONAR ESTA LINHA
+    workflows: workflowsRes.data.length
   });
+
   return {
     tasks: tasksRes.data || [],
     clients: clientsRes.data || [],
     users: usersRes.data || [],
     categories: categoriesRes.data || [],
-    workflows: workflowsRes.data || [], // ADICIONAR ESTA LINHA
+    workflows: workflowsRes.data || [],
   };
 };
+
 
 const WorkflowConfiguration = ({
   selectedWorkflow,
@@ -239,7 +245,7 @@ const WorkflowIndicator = ({ task, onViewWorkflow }) => {
   console.log("Task data:", task);
   console.log("Task workflow_name:", task.workflow_name);
   console.log("Task workflow_progress:", task.workflow_progress);
-  
+
   if (!task.workflow_name) {
     console.log("Sem workflow_name, retornando null");
     return null;
@@ -248,67 +254,67 @@ const WorkflowIndicator = ({ task, onViewWorkflow }) => {
   // CORREÇÃO: Usar dados do progresso com fallbacks seguros
   const progressData = task.workflow_progress;
   console.log("Progress data completo:", progressData);
-  
+
   // Se não há dados de progresso, mostrar como "não iniciado"
   if (!progressData) {
     console.log("Sem progressData - usando fallback para workflow não iniciado");
-    
+
     return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      padding: '0.5rem',
-      background: 'rgba(147, 51, 234, 0.1)',
-      border: '1px solid rgba(147, 51, 234, 0.2)',
-      borderRadius: '8px',
-      fontSize: '0.75rem'
-    }}>
-      <Network size={12} style={{ color: 'rgb(147, 51, 234)' }} />
-      <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-        {task.workflow_name}
-      </span>
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '0.25rem',
-        color: 'rgb(147, 51, 234)'
+        gap: '0.5rem',
+        padding: '0.5rem',
+        background: 'rgba(147, 51, 234, 0.1)',
+        border: '1px solid rgba(147, 51, 234, 0.2)',
+        borderRadius: '8px',
+        fontSize: '0.75rem'
       }}>
-        <span>{currentStep}/{totalSteps}</span>
+        <Network size={12} style={{ color: 'rgb(147, 51, 234)' }} />
+        <span style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+          {task.workflow_name}
+        </span>
         <div style={{
-          width: '30px',
-          height: '4px',
-          background: 'rgba(147, 51, 234, 0.2)',
-          borderRadius: '2px',
-          overflow: 'hidden'
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.25rem',
+          color: 'rgb(147, 51, 234)'
         }}>
+          <span>{currentStep}/{totalSteps}</span>
           <div style={{
-            width: `${progressPercentage}%`,
-            height: '100%',
-            background: 'rgb(147, 51, 234)',
-            borderRadius: '2px'
-          }} />
+            width: '30px',
+            height: '4px',
+            background: 'rgba(147, 51, 234, 0.2)',
+            borderRadius: '2px',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              width: `${progressPercentage}%`,
+              height: '100%',
+              background: 'rgb(147, 51, 234)',
+              borderRadius: '2px'
+            }} />
+          </div>
         </div>
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => onViewWorkflow(task)}
+          style={{
+            background: 'rgba(147, 51, 234, 0.2)',
+            border: '1px solid rgba(147, 51, 234, 0.3)',
+            borderRadius: '4px',
+            padding: '0.25rem',
+            color: 'rgb(147, 51, 234)',
+            cursor: 'pointer'
+          }}
+        >
+          <EyeIcon size={12} />
+        </motion.button>
       </div>
-      <motion.button
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-        onClick={() => onViewWorkflow(task)}
-        style={{
-          background: 'rgba(147, 51, 234, 0.2)',
-          border: '1px solid rgba(147, 51, 234, 0.3)',
-          borderRadius: '4px',
-          padding: '0.25rem',
-          color: 'rgb(147, 51, 234)',
-          cursor: 'pointer'
-        }}
-      >
-        <EyeIcon size={12} />
-      </motion.button>
-    </div>
-  );
+    );
   }
-  
+
   const completedSteps = progressData.completed_steps || 0;
   const totalSteps = progressData.total_steps || 0;
   const percentage = progressData.percentage || 0;
@@ -327,7 +333,7 @@ const WorkflowIndicator = ({ task, onViewWorkflow }) => {
   let displayColor;
   let backgroundColor;
   let borderColor;
-  
+
   if (totalSteps === 0) {
     displayText = "Sem passos";
     displayColor = 'rgba(255, 255, 255, 0.5)';
@@ -344,7 +350,7 @@ const WorkflowIndicator = ({ task, onViewWorkflow }) => {
     backgroundColor = 'rgba(147, 51, 234, 0.1)';
     borderColor = 'rgba(147, 51, 234, 0.2)';
   }
-  
+
   console.log("Display text:", displayText);
   console.log("=== FIM WORKFLOW INDICATOR DEBUG ===");
 
@@ -442,12 +448,11 @@ const TaskManagement = () => {
   const [isLoadingSteps, setIsLoadingSteps] = useState(false);
   const [showWorkflowConfig, setShowWorkflowConfig] = useState(false);
 
-  // --- Data Fetching using React Query ---
   const { data, isLoading: isLoadingData, isError, error, refetch } = useQuery({
-    queryKey: ['taskManagementData', permissions.userId],
-    queryFn: () => fetchTaskManagementData(permissions.userId),
+    queryKey: ['taskManagementData', permissions.userId, permissions.isOrgAdmin],
+    queryFn: () => fetchTaskManagementData(permissions.userId, permissions),
     staleTime: 5 * 60 * 1000,
-    enabled: !!permissions.userId,
+    enabled: !!permissions.userId && permissions.initialized, // Add initialized check
   });
 
   const handleLogTimeForTask = useCallback((task) => {
@@ -2812,70 +2817,70 @@ const TaskManagement = () => {
       </AnimatePresence>
       <NotificationsContainer />
       {/* Modal do TaskOverflow */}
-<AnimatePresence>
-  {selectedTaskForWorkflow && (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.6)',
-      backdropFilter: 'blur(4px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-      padding: '1rem'
-    }}>
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        style={{
-          ...glassStyle,
-          width: '100%',
-          maxWidth: '1200px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          color: 'white'
-        }}
-      >
-        <div style={{
-          padding: '1.5rem',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <h3 style={{ margin: 0 }}>
-            Workflow - {selectedTaskForWorkflow?.title}
-          </h3>
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setSelectedTaskForWorkflow(null)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255,255,255,0.7)',
-              cursor: 'pointer'
-            }}
-          >
-            <X size={24} />
-          </motion.button>
-        </div>
-        
-        <div style={{ padding: '1.5rem' }}>
-          <TaskOverflow
-            taskId={selectedTaskForWorkflow?.id}
-            onWorkflowUpdate={() => {
-              queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
-            }}
-            permissions={permissions}
-          />
-        </div>
-      </motion.div>
-    </div>
-  )}
-</AnimatePresence>
+      <AnimatePresence>
+        {selectedTaskForWorkflow && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem'
+          }}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              style={{
+                ...glassStyle,
+                width: '100%',
+                maxWidth: '1200px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                color: 'white'
+              }}
+            >
+              <div style={{
+                padding: '1.5rem',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <h3 style={{ margin: 0 }}>
+                  Workflow - {selectedTaskForWorkflow?.title}
+                </h3>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setSelectedTaskForWorkflow(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.7)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <X size={24} />
+                </motion.button>
+              </div>
+
+              <div style={{ padding: '1.5rem' }}>
+                <TaskOverflow
+                  taskId={selectedTaskForWorkflow?.id}
+                  onWorkflowUpdate={() => {
+                    queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
+                  }}
+                  permissions={permissions}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       <style jsx>{`
         @keyframes spin {
           from { transform: rotate(0deg); }

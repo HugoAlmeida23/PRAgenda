@@ -1271,6 +1271,27 @@ class WorkflowNotification(models.Model):
     """
     Notificações relacionadas a atualizações de workflow
     """
+    NOTIFICATION_TYPES = [
+        ('step_assigned', 'Passo Atribuído'),
+        ('step_ready', 'Passo Pronto para Execução'),
+        ('step_completed', 'Passo Concluído'),
+        ('approval_needed', 'Aprovação Necessária'),
+        ('approval_completed', 'Aprovação Concluída'),
+        ('workflow_completed', 'Workflow Concluído'),
+        ('deadline_approaching', 'Prazo Próximo'),
+        ('step_overdue', 'Passo Atrasado'),
+        ('manual_reminder', 'Lembrete Manual'),
+        ('workflow_assigned', 'Workflow Atribuído'),
+        ('step_rejected', 'Passo Rejeitado'),
+    ]
+    
+    PRIORITY_LEVELS = [
+        ('low', 'Baixa'),
+        ('normal', 'Normal'),
+        ('high', 'Alta'),
+        ('urgent', 'Urgente'),
+    ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
     user = models.ForeignKey(
@@ -1289,35 +1310,63 @@ class WorkflowNotification(models.Model):
         WorkflowStep,
         on_delete=models.CASCADE,
         related_name='notifications',
-        verbose_name="Passo do Workflow"
+        verbose_name="Passo do Workflow",
+        null=True,
+        blank=True
     )
     
     notification_type = models.CharField(
         max_length=50,
-        choices=[
-            ('step_assigned', 'Passo Atribuído'),
-            ('step_ready', 'Passo Pronto para Execução'),
-            ('step_completed', 'Passo Concluído'),
-            ('approval_needed', 'Aprovação Necessária'),
-            ('approval_completed', 'Aprovação Concluída'),
-            ('workflow_completed', 'Workflow Concluído')
-        ],
+        choices=NOTIFICATION_TYPES,
         verbose_name="Tipo de Notificação"
+    )
+    
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_LEVELS,
+        default='normal',
+        verbose_name="Prioridade"
     )
     
     title = models.CharField(max_length=200, verbose_name="Título")
     message = models.TextField(verbose_name="Mensagem")
     
+    # Campos de estado
     is_read = models.BooleanField(default=False, verbose_name="Lida")
+    is_archived = models.BooleanField(default=False, verbose_name="Arquivada")
     email_sent = models.BooleanField(default=False, verbose_name="Email Enviado")
     
+    # Campos de timing
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     read_at = models.DateTimeField(null=True, blank=True, verbose_name="Lida em")
+    scheduled_for = models.DateTimeField(null=True, blank=True, verbose_name="Agendada para")
+    
+    # Metadados adicionais
+    metadata = models.JSONField(
+        default=dict, 
+        verbose_name="Metadados",
+        help_text="Dados adicionais da notificação"
+    )
+    
+    # Quem criou a notificação (para notificações manuais)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_notifications',
+        verbose_name="Criado por"
+    )
     
     class Meta:
         verbose_name = "Notificação de Workflow"
         verbose_name_plural = "Notificações de Workflow"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=['user', 'is_read']),
+            models.Index(fields=['task', 'notification_type']),
+            models.Index(fields=['created_at']),
+        ]
     
     def __str__(self):
         return f"{self.user.username} - {self.title}"
@@ -1327,7 +1376,19 @@ class WorkflowNotification(models.Model):
         if not self.is_read:
             self.is_read = True
             self.read_at = timezone.now()
-            self.save()
+            self.save(update_fields=['is_read', 'read_at'])
+    
+    def mark_as_unread(self):
+        """Marca a notificação como não lida"""
+        if self.is_read:
+            self.is_read = False
+            self.read_at = None
+            self.save(update_fields=['is_read', 'read_at'])
+    
+    def archive(self):
+        """Arquiva a notificação"""
+        self.is_archived = True
+        self.save(update_fields=['is_archived'])
 
 
 # NOVO: Modelo para histórico de workflow

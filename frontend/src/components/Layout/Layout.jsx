@@ -3,16 +3,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate, Link, Outlet } from 'react-router-dom';
 import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
-  Bell, Search, Menu, X, LogOut, User,
+  Bell, Search, Menu, X, LogOut, User as UserIconLucide, // Renamed User to UserIconLucide
   Briefcase, GitPullRequest, Sparkles, Zap, Brain,
   BarChart3, TrendingUp, Calendar, FileText, HelpCircle, User2,
-  ArrowRight, Send, Command
+  ArrowRight, Send, Command, Check, Loader2, PackageOpen, PlayCircle, AlertTriangle// Added Loader2 and PackageOpen
 } from 'lucide-react';
 import api from '../../api';
 import BackgroundElements from '../HeroSection/BackgroundElements';
 import './Layout.css'; 
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; // Added React Query
+import { toast } from 'react-toastify'; // For potential error messages
 
-// AI Navigation Service
+// AI Navigation Service (existing)
 class AINavigationService {
   static navigationMap = [
     {
@@ -68,7 +70,6 @@ class AINavigationService {
   static processNavigationIntent(query) {
     const cleanQuery = query.toLowerCase().trim();
     
-    // Padrões de navegação
     const navigationPatterns = [
       { pattern: /^(ir para|ir a|ir|navegar para|abrir|ver|mostrar|quero ver)\s+(.+)/, intentType: 'navigate' },
       { pattern: /^(criar|nova?|novo|adicionar|registar|registrar)\s+(.+)/, intentType: 'create' },
@@ -92,7 +93,6 @@ class AINavigationService {
       }
     }
 
-    // Busca direta sem padrão
     const directMatch = this.findBestMatch(cleanQuery);
     if (directMatch) {
       return {
@@ -128,7 +128,6 @@ class AINavigationService {
       return 1.0;
     }
 
-    // Levenshtein distance for fuzzy matching
     const distance = this.levenshteinDistance(query, keyword);
     const maxLength = Math.max(query.length, keyword.length);
     return 1 - (distance / maxLength);
@@ -164,7 +163,7 @@ class AINavigationService {
   }
 }
 
-// AI Search Component
+// AI Search Component (existing)
 const AISearchBar = ({ onNavigate }) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -182,7 +181,6 @@ const AISearchBar = ({ onNavigate }) => {
         setSuggestions([intent]);
         setShowSuggestions(true);
       } else {
-        // Mostrar sugestões baseadas em palavras-chave
         const partialMatches = AINavigationService.navigationMap
           .filter(route => 
             route.keywords.some(keyword => 
@@ -244,9 +242,20 @@ const AISearchBar = ({ onNavigate }) => {
       default: return 'Ir para';
     }
   };
+  
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [searchRef]);
+
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div style={{ position: 'relative', width: '100%' }} ref={searchRef}>
       <motion.div
         whileHover={{ scale: 1.05 }}
         style={{
@@ -267,7 +276,6 @@ const AISearchBar = ({ onNavigate }) => {
           }}
         />
         <input
-          ref={searchRef}
           type="text"
           placeholder="Pesquisar ou navegar com AI..."
           value={query}
@@ -310,7 +318,6 @@ const AISearchBar = ({ onNavigate }) => {
         )}
       </motion.div>
 
-      {/* AI Suggestions Dropdown */}
       <AnimatePresence>
         {showSuggestions && suggestions.length > 0 && (
           <motion.div
@@ -417,7 +424,7 @@ const AISearchBar = ({ onNavigate }) => {
   );
 };
 
-// Navigation Component (unchanged from previous)
+// Navigation Component (existing)
 const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   const navigate = useNavigate();
 
@@ -429,7 +436,7 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
     { path: "/clients", icon: Users, label: "Clientes", category: "main" },
     { path: "/organization", icon: Briefcase, label: "Organização", category: "settings" },
     { path: "/workflow-management", icon: Settings, label: "Gerir Workflows", category: "advanced" },
-    { path: "/profile", icon: User2, label: "Perfil", category: "main" }
+    { path: "/profile", icon: UserIconLucide, label: "Perfil", category: "main" }
   ];
 
   const handleMenuClick = (path) => {
@@ -441,7 +448,6 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -456,7 +462,6 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
             }}
           />
 
-          {/* Navigation Panel */}
           <motion.div
             initial={{ x: -320, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -477,7 +482,6 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
               color: 'white'
             }}
           >
-            {/* Header */}
             <div style={{
               padding: '2rem',
               borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
@@ -534,7 +538,6 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
                 </motion.button>
               </div>
 
-              {/* User Info */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -570,7 +573,6 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
               </div>
             </div>
             
-            {/* Menu Items */}
             <div className="navigation-menu-scrollable" style={{
               flex: 1,
               padding: '1rem 0',
@@ -625,7 +627,6 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
               })}
             </div>
 
-            {/* Footer */}
             <div style={{
               padding: '2rem',
               borderTop: '1px solid rgba(255, 255, 255, 0.1)'
@@ -663,23 +664,225 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   );
 };
 
-const fetchDashboardData = async () => {
-  try {
-    const response = await api.get("/profiles/");
-    console.log("Dashboard data fetched:", response.data);
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching dashboard data:", error);
-    return null;
-  }
+// Notifications Dropdown Component
+const NotificationsDropdown = ({
+  isOpen,
+  onClose,
+  notifications,
+  isLoading,
+  onMarkAsRead,
+  onMarkAllAsRead,
+  onNavigate
+}) => {
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen, onClose]);
+
+  const getNotificationIcon = (type, priority) => {
+    const iconMap = {
+      step_ready: PlayCircle,
+      step_completed: CheckSquare,
+      approval_needed: HelpCircle,
+      approval_completed: Check,
+      workflow_completed: Sparkles,
+      deadline_approaching: Clock,
+      step_overdue: AlertTriangle,
+      manual_reminder: Bell,
+      workflow_assigned: GitPullRequest,
+      step_rejected: X,
+      default: Bell,
+    };
+    const Icon = iconMap[type] || iconMap.default;
+    let color = "rgba(255, 255, 255, 0.7)";
+    if (priority === 'urgent') color = 'rgb(239, 68, 68)';
+    else if (priority === 'high') color = 'rgb(251, 146, 60)';
+    else if (type === 'step_completed' || type === 'workflow_completed') color = 'rgb(52, 211, 153)';
+    return <Icon size={18} style={{ color, marginRight: '0.75rem', flexShrink: 0 }} />;
+  };
+  
+  const timeSince = (dateString) => {
+    const date = new Date(dateString);
+    const seconds = Math.floor((new Date() - date) / 1000);
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + "a";
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + "m";
+    interval = seconds / 86400;
+    if (interval > 1) return Math.floor(interval) + "d";
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + "h";
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + "min";
+    return Math.floor(seconds) + "s";
+  };
+
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          ref={dropdownRef}
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 0.5rem)',
+            right: 0,
+            width: '360px',
+            background: 'rgba(20, 20, 30, 0.9)',
+            backdropFilter: 'blur(15px)',
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+            zIndex: 1001,
+            color: 'white',
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{
+            padding: '1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>Notificações</h3>
+            {notifications && notifications.length > 0 && (
+              <motion.button
+                onClick={onMarkAllAsRead}
+                whileHover={{ color: 'rgb(59, 130, 246)'}}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.7)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '500'
+                }}
+              >
+                Marcar todas como lidas
+              </motion.button>
+            )}
+          </div>
+
+          <div style={{ maxHeight: '400px', overflowY: 'auto' }} className="notification-list-scrollable">
+            {isLoading ? (
+              <div style={{ padding: '2rem', textAlign: 'center' }}>
+                <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255, 255, 255, 0.7)' }} />
+              </div>
+            ) : notifications && notifications.length > 0 ? (
+              notifications.map(notif => (
+                <motion.div
+                  key={notif.id}
+                  onClick={() => {
+                    onMarkAsRead(notif.id);
+                    if (notif.task) onNavigate(`/tasks?taskId=${notif.task}`); // Or specific task view
+                    onClose();
+                  }}
+                  whileHover={{ background: 'rgba(255, 255, 255, 0.1)' }}
+                  style={{
+                    padding: '1rem',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    position: 'relative'
+                  }}
+                >
+                  {!notif.is_read && (
+                    <motion.div 
+                      initial={{ scale: 0 }} animate={{ scale: 1 }}
+                      style={{ 
+                        width: '8px', height: '8px', borderRadius: '50%', 
+                        background: 'rgb(59, 130, 246)', 
+                        position: 'absolute', left: '0.5rem', top: 'calc(50% - 4px)'
+                      }}
+                    />
+                  )}
+                  {getNotificationIcon(notif.notification_type, notif.priority)}
+                  <div style={{ flex: 1, paddingLeft: !notif.is_read ? '0.5rem' : '0' }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '0.25rem'
+                    }}>
+                      <span style={{ fontWeight: '600', fontSize: '0.9rem', color: notif.is_read ? 'rgba(255,255,255,0.7)' : 'white' }}>
+                        {notif.title}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.5)' }}>
+                        {timeSince(notif.created_at)}
+                      </span>
+                    </div>
+                    <p style={{
+                      margin: 0,
+                      fontSize: '0.8rem',
+                      color: notif.is_read ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.8)',
+                      lineHeight: 1.4,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                    }}>
+                      {notif.message}
+                    </p>
+                  </div>
+                </motion.div>
+              ))
+            ) : (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'rgba(255, 255, 255, 0.5)' }}>
+                <PackageOpen size={32} style={{ marginBottom: '0.5rem' }} />
+                <p>Nenhuma notificação nova.</p>
+              </div>
+            )}
+          </div>
+
+          <Link
+            to="/notifications" // Future page for all notifications
+            onClick={onClose}
+            style={{
+              display: 'block',
+              padding: '1rem',
+              textAlign: 'center',
+              fontSize: '0.875rem',
+              fontWeight: '500',
+              color: 'rgb(59, 130, 246)',
+              textDecoration: 'none',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(255,255,255,0.05)'
+            }}
+          >
+            Ver todas as notificações
+          </Link>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 };
+
 
 // Main Layout Component
 const Layout = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
   const [navOpen, setNavOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   
   useEffect(() => {
     const loadUserProfile = async () => {
@@ -696,14 +899,56 @@ const Layout = () => {
     loadUserProfile();
   }, []);
 
-  const [notifications] = useState(2);
-
   const toggleNav = () => setNavOpen(!navOpen);
 
   const handleAINavigation = (path) => {
     navigate(path);
-    setNavOpen(false); // Close navigation if open
+    setNavOpen(false);
   };
+
+  // Fetch unread notification count
+  const { data: unreadData, refetch: refetchUnreadCount } = useQuery({
+    queryKey: ['unreadNotificationCount'],
+    queryFn: () => api.get('/workflow-notifications/unread_count/').then(res => res.data),
+    staleTime: 60 * 1000, // 1 minute
+    refetchInterval: 60 * 1000, // Refetch every minute
+  });
+  const unreadCount = unreadData?.unread_count || 0;
+
+  // Fetch notifications list for dropdown
+  const { data: notificationList, isLoading: isLoadingNotifications, refetch: refetchNotificationList } = useQuery({
+    queryKey: ['notificationList'],
+    queryFn: () => api.get('/workflow-notifications/?limit=7&ordering=-created_at&is_archived=false').then(res => res.data.results || res.data), // Ensure results is an array
+    enabled: notificationsOpen,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+  
+  // Mutations for notifications
+  const markAsReadMutation = useMutation({
+    mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/mark_as_read/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
+      queryClient.invalidateQueries({ queryKey: ['notificationList'] });
+    },
+    onError: (error) => toast.error("Falha ao marcar como lida: " + (error.response?.data?.detail || error.message)),
+  });
+
+  const markAllAsReadMutation = useMutation({
+    mutationFn: () => api.post('/workflow-notifications/mark_all_as_read/'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
+      queryClient.invalidateQueries({ queryKey: ['notificationList'] });
+      toast.success("Todas as notificações marcadas como lidas.");
+    },
+    onError: (error) => toast.error("Falha ao marcar todas como lidas: " + (error.response?.data?.detail || error.message)),
+  });
+
+  useEffect(() => {
+    if (notificationsOpen) {
+      refetchNotificationList();
+    }
+  }, [notificationsOpen, refetchNotificationList]);
+
 
   return (
     <div style={{
@@ -713,7 +958,6 @@ const Layout = () => {
     }}>
       <BackgroundElements businessStatus="optimal" />
 
-      {/* Top Navigation Bar */}
       <motion.header
         initial={{ y: -80, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -732,7 +976,6 @@ const Layout = () => {
           color: 'white'
         }}
       >
-        {/* Left Side */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <motion.button
             onClick={toggleNav}
@@ -752,55 +995,63 @@ const Layout = () => {
           >
             <Menu size={20} />
           </motion.button>
-
-          {/* AI Search Bar */}
           <AISearchBar onNavigate={handleAINavigation} />
         </div>
 
-        {/* Right Side */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <motion.button
-            whileHover={{ scale: 1.1, y: -2 }}
-            whileTap={{ scale: 0.95 }}
-            style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '12px',
-              padding: '0.75rem',
-              color: 'white',
-              cursor: 'pointer',
-              position: 'relative'
-            }}
-          >
-            <Bell size={20} />
-            {notifications > 0 && (
-              <motion.span
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                style={{
-                  position: 'absolute',
-                  top: '-4px',
-                  right: '-4px',
-                  background: '#ef4444',
-                  color: 'white',
-                  borderRadius: '50%',
-                  fontSize: '0.75rem',
-                  fontWeight: '600',
-                  width: '20px',
-                  height: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                {notifications}
-              </motion.span>
-            )}
-          </motion.button>
+          <div style={{ position: 'relative' }}>
+            <motion.button
+              onClick={() => setNotificationsOpen(prev => !prev)}
+              whileHover={{ scale: 1.1, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                padding: '0.75rem',
+                color: 'white',
+                cursor: 'pointer',
+                position: 'relative'
+              }}
+            >
+              <Bell size={20} />
+              {unreadCount > 0 && (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    background: '#ef4444',
+                    color: 'white',
+                    borderRadius: '50%',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    width: '20px',
+                    height: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </motion.span>
+              )}
+            </motion.button>
+            <NotificationsDropdown
+              isOpen={notificationsOpen}
+              onClose={() => setNotificationsOpen(false)}
+              notifications={notificationList}
+              isLoading={isLoadingNotifications}
+              onMarkAsRead={(id) => markAsReadMutation.mutate(id)}
+              onMarkAllAsRead={() => markAllAsReadMutation.mutate()}
+              onNavigate={handleAINavigation}
+            />
+          </div>
         </div>
       </motion.header>
 
-      {/* Navigation Panel */}
       <NavigationPanel
         isOpen={navOpen}
         onClose={() => setNavOpen(false)}
@@ -808,7 +1059,6 @@ const Layout = () => {
         userProfile={userProfile}
       />
 
-      {/* Main Content */}
       <motion.main
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -816,7 +1066,7 @@ const Layout = () => {
         style={{
           position: 'relative',
           zIndex: 1,
-          minHeight: 'calc(100vh - 80px)'
+          minHeight: 'calc(100vh - 80px)' // Adjusted for header height
         }}
       >
         <Outlet />
