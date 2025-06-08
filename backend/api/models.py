@@ -1461,4 +1461,247 @@ class WorkflowHistory(models.Model):
     def __str__(self):
         return f"{self.task.title} - {self.action} - {self.created_at}"
   
+class NotificationSettings(models.Model):
+    """
+    Configurações de notificação personalizadas por usuário
+    """
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='notification_settings'
+    )
     
+    # Configurações gerais
+    email_notifications_enabled = models.BooleanField(default=True)
+    push_notifications_enabled = models.BooleanField(default=True)
+    
+    # Configurações por tipo de notificação
+    notify_step_ready = models.BooleanField(default=True)
+    notify_step_completed = models.BooleanField(default=True)
+    notify_approval_needed = models.BooleanField(default=True)
+    notify_approval_completed = models.BooleanField(default=True)
+    notify_workflow_completed = models.BooleanField(default=True)
+    notify_deadline_approaching = models.BooleanField(default=True)
+    notify_step_overdue = models.BooleanField(default=True)
+    notify_workflow_assigned = models.BooleanField(default=True)
+    notify_step_rejected = models.BooleanField(default=True)
+    notify_manual_reminders = models.BooleanField(default=True)
+    
+    # Configurações de frequência
+    digest_frequency = models.CharField(
+        max_length=20,
+        choices=[
+            ('immediate', 'Imediato'),
+            ('hourly', 'A cada hora'),
+            ('daily', 'Diário'),
+            ('weekly', 'Semanal'),
+        ],
+        default='immediate'
+    )
+    
+    # Horários para digest
+    digest_time = models.TimeField(default='09:00')
+    
+    # Configurações de deadline
+    deadline_days_notice = models.JSONField(
+        default=list,
+        help_text="Lista de dias antes do deadline para notificar [3, 1, 0]"
+    )
+    
+    # Configurações de passos atrasados
+    overdue_threshold_days = models.PositiveIntegerField(default=5)
+    
+    # Configurações de aprovação
+    approval_reminder_days = models.PositiveIntegerField(default=2)
+    
+    # Quiet hours (horário de silêncio)
+    quiet_start_time = models.TimeField(null=True, blank=True)
+    quiet_end_time = models.TimeField(null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Configurações de Notificação"
+        verbose_name_plural = "Configurações de Notificações"
+    
+    def __str__(self):
+        return f"Configurações de {self.user.username}"
+    
+    def should_notify(self, notification_type):
+        """Verifica se deve notificar baseado nas configurações"""
+        type_mapping = {
+            'step_ready': self.notify_step_ready,
+            'step_completed': self.notify_step_completed,
+            'approval_needed': self.notify_approval_needed,
+            'approval_completed': self.notify_approval_completed,
+            'workflow_completed': self.notify_workflow_completed,
+            'deadline_approaching': self.notify_deadline_approaching,
+            'step_overdue': self.notify_step_overdue,
+            'workflow_assigned': self.notify_workflow_assigned,
+            'step_rejected': self.notify_step_rejected,
+            'manual_reminder': self.notify_manual_reminders,
+        }
+        return type_mapping.get(notification_type, True)
+    
+    def is_quiet_time(self):
+        """Verifica se está no horário de silêncio"""
+        if not self.quiet_start_time or not self.quiet_end_time:
+            return False
+        
+        now_time = timezone.now().time()
+        
+        if self.quiet_start_time <= self.quiet_end_time:
+            # Ex: 22:00 - 08:00 (mesmo dia)
+            return self.quiet_start_time <= now_time <= self.quiet_end_time
+        else:
+            # Ex: 22:00 - 08:00 (atravessa meia-noite)
+            return now_time >= self.quiet_start_time or now_time <= self.quiet_end_time
+        
+class NotificationTemplate(models.Model):
+    """
+    Templates personalizáveis para diferentes tipos de notificação
+    """
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='notification_templates',
+        verbose_name="Organização"
+    )
+    
+    notification_type = models.CharField(
+        max_length=50,
+        choices=WorkflowNotification.NOTIFICATION_TYPES,
+        verbose_name="Tipo de Notificação"
+    )
+    
+    name = models.CharField(max_length=100, verbose_name="Nome do Template")
+    
+    # Templates com variáveis substituíveis
+    title_template = models.CharField(
+        max_length=200,
+        help_text="Use variáveis como {task_title}, {client_name}, {user_name}, {step_name}"
+    )
+    
+    message_template = models.TextField(
+        help_text="Template da mensagem com variáveis substituíveis"
+    )
+    
+    # Configurações específicas
+    default_priority = models.CharField(
+        max_length=10,
+        choices=WorkflowNotification.PRIORITY_LEVELS,
+        default='normal'
+    )
+    
+    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Template padrão para este tipo de notificação"
+    )
+    
+    # Variáveis disponíveis (para documentação)
+    available_variables = models.JSONField(
+        default=list,
+        help_text="Lista de variáveis disponíveis neste template"
+    )
+    
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_templates'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Template de Notificação"
+        verbose_name_plural = "Templates de Notificação"
+        unique_together = ['organization', 'notification_type', 'is_default']
+        ordering = ['notification_type', 'name']
+    
+    def __str__(self):
+        return f"{self.organization.name} - {self.get_notification_type_display()} - {self.name}"
+    
+    def render(self, context):
+        """
+        Renderiza o template com as variáveis do contexto
+        """
+        try:
+            title = self.title_template.format(**context)
+            message = self.message_template.format(**context)
+            return title, message
+        except KeyError as e:
+            logger.error(f"Variável ausente no template {self.id}: {e}")
+            return self.title_template, self.message_template
+    
+    def get_context_variables(self, task=None, user=None, workflow_step=None, **kwargs):
+        """
+        Gera contexto padrão para renderização
+        """
+        context = {
+            'user_name': user.username if user else '',
+            'user_first_name': user.first_name if user else '',
+            'task_title': task.title if task else '',
+            'client_name': task.client.name if task and task.client else '',
+            'step_name': workflow_step.name if workflow_step else '',
+            'workflow_name': workflow_step.workflow.name if workflow_step and workflow_step.workflow else '',
+            'organization_name': task.client.organization.name if task and task.client and task.client.organization else '',
+            'current_date': timezone.now().strftime('%d/%m/%Y'),
+            'current_time': timezone.now().strftime('%H:%M'),
+        }
+        
+        # Adicionar variáveis extras do kwargs
+        context.update(kwargs)
+        
+        return context
+
+
+class NotificationDigest(models.Model):
+    """
+    Agrupamento de notificações para envio em digest
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='notification_digests'
+    )
+    
+    digest_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('hourly', 'Hourly'),
+            ('daily', 'Daily'),
+            ('weekly', 'Weekly'),
+        ]
+    )
+    
+    # Período coberto pelo digest
+    period_start = models.DateTimeField()
+    period_end = models.DateTimeField()
+    
+    # Notificações incluídas
+    notifications = models.ManyToManyField(
+        WorkflowNotification,
+        related_name='digests'
+    )
+    
+    # Status
+    is_sent = models.BooleanField(default=False)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    
+    # Conteúdo do digest
+    title = models.CharField(max_length=200)
+    content = models.TextField()
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Digest de Notificação"
+        verbose_name_plural = "Digests de Notificação"
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Digest {self.digest_type} - {self.user.username} - {self.period_start.date()}"

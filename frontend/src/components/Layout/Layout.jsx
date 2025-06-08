@@ -884,20 +884,20 @@ const Layout = () => {
   const [userProfile, setUserProfile] = useState(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   
-  useEffect(() => {
-    const loadUserProfile = async () => {
-      try {
-        const profileData = await fetchDashboardData();
-        if (profileData && profileData.length > 0) {
-          setUserProfile(profileData[0]);
-        }
-      } catch (error) {
-        console.error("Failed to load user profile:", error);
+ useEffect(() => {
+  const loadUserProfile = async () => {
+    try {
+      const response = await api.get('/profiles/'); // Changed this line
+      if (response.data && response.data.length > 0) {
+        setUserProfile(response.data[0]);
       }
-    };
+    } catch (error) {
+      console.error("Failed to load user profile:", error);
+    }
+  };
 
-    loadUserProfile();
-  }, []);
+  loadUserProfile();
+}, []);
 
   const toggleNav = () => setNavOpen(!navOpen);
 

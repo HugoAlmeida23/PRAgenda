@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta
-from ..models import WorkflowNotification, Task, WorkflowStep, Profile
+from ..models import WorkflowNotification, Task, WorkflowStep, Profile, NotificationSettings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,6 +12,7 @@ class NotificationService:
     """
     
     @staticmethod
+
     def create_notification(
         user,
         task,
@@ -27,8 +28,33 @@ class NotificationService:
         recent_threshold_hours=24    
     ):
         """
-        Cria uma nova notificação
+        Cria uma nova notificação respeitando configurações do usuário
         """
+        
+        # Verificar configurações do usuário
+        try:
+            settings = user.notification_settings
+            
+            # Verificar se o tipo de notificação está habilitado
+            if not settings.should_notify(notification_type):
+                logger.info(f"Notificação {notification_type} desabilitada para {user.username}")
+                return None
+            
+            # Verificar horário de silêncio
+            if settings.is_quiet_time():
+                logger.info(f"Horário de silêncio ativo para {user.username}, notificação será agendada")
+                # Agendar para depois do horário de silêncio
+                if not scheduled_for:
+                    tomorrow = timezone.now().replace(hour=settings.digest_time.hour, 
+                                                    minute=settings.digest_time.minute, 
+                                                    second=0, microsecond=0) + timedelta(days=1)
+                    scheduled_for = tomorrow
+                    
+        except NotificationSettings.DoesNotExist:
+            # Se não tem configurações, usar padrão
+            pass
+        
+        # Verificar notificações recentes
         if check_existing_recent:
             cutoff_time = timezone.now() - timedelta(hours=recent_threshold_hours)
             existing = WorkflowNotification.objects.filter(
@@ -39,7 +65,7 @@ class NotificationService:
                 created_at__gte=cutoff_time
             ).exists()
             if existing:
-                logger.info(f"Notificação similar recente já enviada para {user.username} sobre tarefa {task.id} (tipo: {notification_type}). Nova notificação suprimida.")
+                logger.info(f"Notificação similar recente já enviada para {user.username}")
                 return None
 
         try:
@@ -62,7 +88,7 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Erro ao criar notificação: {e}")
             return None
-    
+        
     @staticmethod
     def notify_step_ready(task, workflow_step, changed_by=None):
         """

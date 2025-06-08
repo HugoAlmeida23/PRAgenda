@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Organization, Client, TaskCategory, Task, TimeEntry, Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
+from .models import Organization, Client,NotificationSettings, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
 import json
 from django.db import models
 from django.db.models import Sum
@@ -655,6 +655,20 @@ class TaskApprovalSerializer(serializers.ModelSerializer):
         validated_data['approved_by'] = self.context['request'].user
         return super().create(validated_data)
 
+class NotificationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationSettings
+        fields = [
+            'email_notifications_enabled', 'push_notifications_enabled',
+            'notify_step_ready', 'notify_step_completed', 'notify_approval_needed',
+            'notify_approval_completed', 'notify_workflow_completed', 
+            'notify_deadline_approaching', 'notify_step_overdue',
+            'notify_workflow_assigned', 'notify_step_rejected', 'notify_manual_reminders',
+            'digest_frequency', 'digest_time', 'deadline_days_notice',
+            'overdue_threshold_days', 'approval_reminder_days',
+            'quiet_start_time', 'quiet_end_time'
+        ]
+
 
 class WorkflowNotificationSerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
@@ -730,4 +744,53 @@ class WorkflowHistorySerializer(serializers.ModelSerializer):
         fields = ['id', 'task', 'task_title', 'from_step', 'from_step_name',
                   'to_step', 'to_step_name', 'changed_by', 'changed_by_name',
                   'action', 'comment', 'time_spent_minutes', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+class NotificationTemplateSerializer(serializers.ModelSerializer):
+    organization_name = serializers.ReadOnlyField(source='organization.name')
+    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    notification_type_display = serializers.ReadOnlyField(source='get_notification_type_display')
+    
+    class Meta:
+        model = NotificationTemplate
+        fields = [
+            'id', 'organization', 'organization_name', 'notification_type', 
+            'notification_type_display', 'name', 'title_template', 
+            'message_template', 'default_priority', 'is_active', 'is_default',
+            'available_variables', 'created_by', 'created_by_name', 
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def validate(self, data):
+        # Validar que apenas um template pode ser padrão por tipo/organização
+        if data.get('is_default'):
+            existing_default = NotificationTemplate.objects.filter(
+                organization=data['organization'],
+                notification_type=data['notification_type'],
+                is_default=True
+            )
+            
+            if self.instance:
+                existing_default = existing_default.exclude(id=self.instance.id)
+            
+            if existing_default.exists():
+                raise serializers.ValidationError(
+                    "Já existe um template padrão para este tipo de notificação"
+                )
+        
+        return data
+
+
+class NotificationDigestSerializer(serializers.ModelSerializer):
+    user_name = serializers.ReadOnlyField(source='user.username')
+    notifications_count = serializers.ReadOnlyField(source='notifications.count')
+    
+    class Meta:
+        model = NotificationDigest
+        fields = [
+            'id', 'user', 'user_name', 'digest_type', 'period_start', 
+            'period_end', 'notifications_count', 'is_sent', 'sent_at',
+            'title', 'content', 'created_at'
+        ]
         read_only_fields = ['id', 'created_at']

@@ -17,6 +17,7 @@ import WorkflowManagement from "./pages/WorkflowManagement";
 import DashboardRouter from "./pages/DashboardRouter"; // This will likely be your HomePage equivalent
 import { PermissionsProvider } from './contexts/PermissionsContext';
 import Layout from './components/Layout/Layout'; // Your new Layout component
+import NotificationsPage from "./pages/NotificationsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -71,6 +72,7 @@ function App() {
               <Route path="organization" element={<OrganizationRouter />} /> {/* Updated to use OrganizationRouter */}
               <Route path="task-workflow/:taskId" element={<TaskWorkflow />} />
               <Route path="workflow-management" element={<WorkflowManagement />} />
+              <Route path="notifications" element={<NotificationsPage />} />
             </Route>
 
             {/* Fallback for unknown routes */}

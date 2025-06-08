@@ -301,97 +301,78 @@ const TaskOverflow = ({ taskId, onWorkflowUpdate, permissions }) => {
       variants={containerVariants}
       style={{ color: 'white' }}
     >
-      {/* Header do Workflow */}
+      {/* Compact Header do Workflow */}
       <motion.div
         variants={itemVariants}
-        style={{ ...glassStyle, padding: '2rem', marginBottom: '2rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)' }}
+        style={{ ...glassStyle, padding: '1rem', marginBottom: '1rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ background: 'rgba(255,255,255,0.1)', padding: '0.75rem', borderRadius: '12px' }}>
-              <Network size={28} style={{ color: 'rgb(147, 197, 253)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ background: 'rgba(255,255,255,0.1)', padding: '0.4rem', borderRadius: '8px' }}>
+              <Network size={16} style={{ color: 'rgb(147, 197, 253)' }} />
             </div>
             <div>
-              <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.75rem', fontWeight: 'bold', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              <h2 style={{ margin: '0 0 0.1rem 0', fontSize: '1rem', fontWeight: 'bold', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 {workflowData.workflow.name}
               </h2>
-              <p style={{ margin: 0, fontSize: '1rem', color: 'rgba(255, 255, 255, 0.7)' }}>
-                Passo Atual: {workflowData.workflow.is_completed ? 'Finalizado' : (workflowData.current_step?.name || 'Não iniciado')}
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                {workflowData.workflow.is_completed ? 'Finalizado' : (workflowData.current_step?.name || 'Não iniciado')}
               </p>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => setShowHistory(!showHistory)} style={{ ...glassStyle, padding: '0.75rem 1rem', border: '1px solid rgba(255, 255, 255, 0.2)', background: showHistory ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-              {showHistory ? <EyeOff size={16} /> : <Eye size={16} />} Histórico
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowHistory(!showHistory)} style={{ ...glassStyle, padding: '0.4rem 0.6rem', border: '1px solid rgba(255, 255, 255, 0.2)', background: showHistory ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.85rem' }}>
+              {showHistory ? <EyeOff size={10} /> : <Eye size={10} />} Histórico
             </motion.button>
-            <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => setShowTimeEntries(!showTimeEntries)} style={{ ...glassStyle, padding: '0.75rem 1rem', border: '1px solid rgba(255, 255, 255, 0.2)', background: showTimeEntries ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-              <Timer size={16} /> Tempos
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowTimeEntries(!showTimeEntries)} style={{ ...glassStyle, padding: '0.4rem 0.6rem', border: '1px solid rgba(255, 255, 255, 0.2)', background: showTimeEntries ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.85rem' }}>
+              <Timer size={10} /> Tempos
             </motion.button>
           </div>
         </div>
 
-        {/* Progresso Geral */}
-        <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '12px', padding: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <TrendingUp size={20} style={{ color: 'rgb(59, 130, 246)' }} />
-              <span style={{ fontSize: '1rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600' }}>
-                Progresso do Workflow
+        {/* Compact Progress Bar */}
+        <div style={{ background: 'rgba(0, 0, 0, 0.2)', borderRadius: '8px', padding: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <TrendingUp size={12} style={{ color: 'rgb(59, 130, 246)' }} />
+              <span style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600' }}>
+                Progresso
               </span>
             </div>
-            <span style={{ fontSize: '1.125rem', fontWeight: '700', color: 'white' }}>
-              {completedStepsCount} de {totalSteps}
+            <span style={{ fontSize: '0.7rem', fontWeight: '700', color: 'white' }}>
+              {completedStepsCount}/{totalSteps}
             </span>
           </div>
-          <div style={{ width: '100%', height: '12px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+          <div style={{ width: '100%', height: '6px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '3px', overflow: 'hidden', position: 'relative' }}>
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${progressPercentage}%` }}
-              transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
               style={{
                 height: '100%',
                 background: 'linear-gradient(90deg, rgb(59, 130, 246), rgb(147, 51, 234))',
-                borderRadius: '6px',
-                position: 'relative'
+                borderRadius: '3px',
               }}
-            >
-              {progressPercentage < 100 && progressPercentage > 0 && (
-                <motion.div
-                  animate={{ x: [-10, 10, -10] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    width: '20px',
-                    height: '100%',
-                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
-                    borderRadius: '6px'
-                  }}
-                />
-              )}
-            </motion.div>
+            />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
-            <span>Iniciado</span>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '0.4rem', fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.7)' }}>
             <span>{Math.round(progressPercentage)}% concluído</span>
-            <span>Finalizado</span>
           </div>
         </div>
       </motion.div>
 
-      {/* Visualização dos Passos */}
-      <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '2rem', marginBottom: '2rem' }}>
-        <h3 style={{ margin: '0 0 2rem 0', fontSize: '1.35rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-          <Network size={24} /> Passos do Workflow
+      {/* Compact Steps Visualization */}
+      <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1rem', marginBottom: '1rem' }}>
+        <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <Network size={14} /> Passos do Workflow
         </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {stepsDefinition.map((stepInfo) => (
-            <WorkflowStepCard
+            <CompactWorkflowStepCard
               key={stepInfo.id}
-              step={stepInfo} // stepInfo is a step DEFINITION { id, name, order, requires_approval, etc. }
-              workflowData={workflowData} // Full DYNAMIC workflow data for this task { current_step, history, approvals, time_by_step, workflow: {steps (definitions)} }
+              step={stepInfo}
+              workflowData={workflowData}
               timeSpent={workflowData.time_by_step?.[stepInfo.id] || 0}
               onAdvance={handleAdvanceWorkflow}
               onApprove={handleApproveStep}
@@ -399,146 +380,244 @@ const TaskOverflow = ({ taskId, onWorkflowUpdate, permissions }) => {
               canApprove={canApproveStep}
               isAdvancing={isAdvancing}
               isApproving={isApproving}
-              isWorkflowCompleted={workflowData.is_completed}
             />
           ))}
         </div>
       </motion.div>
 
-      {/* História do Workflow */}
+      {/* Compact History */}
       <AnimatePresence>
         {showHistory && (
-          <motion.div initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: -20 }} transition={{ duration: 0.35 }} style={{ ...glassStyle, padding: '2rem', marginBottom: '2rem' }}>
-            <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.25rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'white' }}>
-              <FileText size={20} /> Histórico do Workflow
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }} style={{ ...glassStyle, padding: '1rem', marginBottom: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'white' }}>
+              <FileText size={12} /> Histórico
             </h3>
             {!workflowData.history || workflowData.history.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2rem 0', color: 'rgba(255, 255, 255, 0.6)' }}>
-                <MessageSquare size={40} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                <p style={{ margin: 0 }}>Nenhum histórico disponível.</p>
+              <div style={{ textAlign: 'center', padding: '1rem 0', color: 'rgba(255, 255, 255, 0.6)' }}>
+                <p style={{ margin: 0, fontSize: '0.65rem' }}>Nenhum histórico disponível.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '400px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-                {workflowData.history.map((entry, index) => (
-                  <motion.div
-                    key={entry.id || index} // Use entry.id if available, otherwise index as fallback
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    style={{ ...glassStyle, padding: '1.25rem', background: 'rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'flex-start', gap: '1rem' }}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '200px', overflowY: 'auto' }}>
+                {workflowData.history.slice(0, 5).map((entry, index) => (
+                  <div
+                    key={entry.id || index}
+                    style={{ ...glassStyle, padding: '0.6rem', background: 'rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                   >
-                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'rgb(59, 130, 246)', marginTop: '0.3rem', flexShrink: 0 }} />
+                    <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgb(59, 130, 246)', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.5rem', color: 'white' }}>
-                        {entry.from_step && entry.to_step ? `${entry.from_step_name || entry.from_step} → ${entry.to_step_name || entry.to_step}` : entry.to_step_name || entry.from_step_name || entry.to_step || entry.from_step || 'Ação no Workflow'}
+                      <div style={{ fontSize: '0.6rem', fontWeight: '600', color: 'white', marginBottom: '0.2rem' }}>
+                        {entry.from_step && entry.to_step ? `${entry.from_step_name || entry.from_step} → ${entry.to_step_name || entry.to_step}` : entry.to_step_name || 'Ação'}
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.6)', marginBottom: '0.5rem' }}>
-                        <span style={{ fontWeight: '500' }}>{entry.changed_by_username || entry.changed_by}</span> • {formatDate(entry.created_at)}
+                      <div style={{ fontSize: '0.55rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+                        {entry.changed_by_username} • {formatDate(entry.created_at)}
                       </div>
-                      {entry.comment && (
-                        <div style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.85)', fontStyle: 'italic', background: 'rgba(0,0,0, 0.1)', padding: '0.75rem', borderRadius: '8px', marginTop: '0.5rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                          "{entry.comment}"
-                        </div>
-                      )}
                     </div>
                     {entry.time_spent_minutes > 0 && (
-                      <div style={{ padding: '0.4rem 0.6rem', borderRadius: '8px', background: 'rgba(52, 211, 153, 0.15)', fontSize: '0.75rem', color: 'rgb(110, 231, 183)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0, alignSelf: 'center' }}>
-                        <Timer size={12} /> {formatTime(entry.time_spent_minutes)}
+                      <div style={{ fontSize: '0.55rem', color: 'rgb(110, 231, 183)', fontWeight: '600' }}>
+                        {formatTime(entry.time_spent_minutes)}
                       </div>
                     )}
-                  </motion.div>
+                  </div>
                 ))}
+                {workflowData.history.length > 5 && (
+                  <div style={{ textAlign: 'center', fontSize: '0.6rem', color: 'rgba(255, 255, 255, 0.5)', padding: '0.3rem' }}>
+                    +{workflowData.history.length - 5} mais entradas
+                  </div>
+                )}
               </div>
             )}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Tempo por Passo */}
+      {/* Compact Time Entries */}
       <AnimatePresence>
         {showTimeEntries && (
-          <motion.div initial={{ opacity: 0, height: 0, y: -20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: -20 }} transition={{ duration: 0.35 }} style={{ ...glassStyle, padding: '2rem', marginBottom: '2rem' }}>
-            <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.25rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'white' }}>
-              <Timer size={20} /> Tempo por Passo
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }} style={{ ...glassStyle, padding: '1rem', marginBottom: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'white' }}>
+              <Timer size={12} /> Tempos
             </h3>
-            {Object.keys(workflowData.time_by_step || {}).length === 0 && stepsDefinition.every(s => !(workflowData.time_by_step?.[s.id] > 0)) ? (
-              <div style={{ textAlign: 'center', padding: '2rem 0', color: 'rgba(255, 255, 255, 0.6)' }}>
-                <Timer size={40} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                <p style={{ margin: 0 }}>Nenhum tempo registrado para os passos deste workflow.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.5rem' }}>
+              {stepsDefinition.map((stepInfo) => {
+                const timeForStep = workflowData.time_by_step?.[stepInfo.id] || 0;
+                if (timeForStep > 0 || workflowData.current_step?.id === stepInfo.id) {
+                  return (
+                    <div key={stepInfo.id} style={{ ...glassStyle, padding: '0.5rem', background: 'rgba(255, 255, 255, 0.05)', textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.6rem', fontWeight: '600', color: 'white', marginBottom: '0.2rem' }}>
+                        {stepInfo.name}
+                      </div>
+                      <div style={{ fontSize: '0.65rem', fontWeight: '700', color: timeForStep > 0 ? 'rgb(52, 211, 153)' : 'rgb(251, 191, 36)' }}>
+                        {formatTime(timeForStep)}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
+            <div style={{ ...glassStyle, padding: '0.6rem', marginTop: '0.75rem', background: 'rgba(147, 51, 234, 0.1)', border: '1px solid rgba(147, 51, 234, 0.2)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: '600', color: 'white' }}>
+                Total: <span style={{ color: 'rgb(147, 51, 234)', fontWeight: '700' }}>
+                  {formatTime(Object.values(workflowData.time_by_step || {}).reduce((total, time) => total + (time || 0), 0))}
+                </span>
               </div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
-                  {stepsDefinition.map((stepInfo) => {
-                    const timeForStep = workflowData.time_by_step?.[stepInfo.id] || 0;
-                    // Only render if time is logged or it's the current step to show it's active even with 0 time
-                    if (timeForStep > 0 || workflowData.current_step?.id === stepInfo.id) {
-                      return (<SimpleWorkflowStepTimeCard key={stepInfo.id} step={stepInfo} timeSpent={timeForStep} isCurrentStep={workflowData.current_step?.id === stepInfo.id} />);
-                    }
-                    return null;
-                  })}
-                </div>
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} style={{ ...glassStyle, padding: '1.5rem', marginTop: '2rem', background: 'rgba(147, 51, 234, 0.1)', border: '1px solid rgba(147, 51, 234, 0.2)', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.125rem', fontWeight: '600', color: 'white' }}>
-                      <Sparkles size={20} style={{ color: 'rgb(147, 51, 234)' }} /> Tempo Total Registrado no Workflow:
-                    </div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'rgb(147, 51, 234)' }}>
-                      {formatTime(Object.values(workflowData.time_by_step || {}).reduce((total, time) => total + (time || 0), 0))}
-                    </div>
-                  </div>
-                </motion.div>
-              </>
-            )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Empty Floating Action Button container (can be removed if not used) */}
-      <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.5, type: "spring", stiffness: 200 }} style={{ position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 100 }} />
-
       <style jsx>{`
-        // Base styles from original file
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .animate-spin { animation: spin 1s linear infinite; }
-        textarea::placeholder { color: rgba(255, 255, 255, 0.5) !important; }
         
-        // Custom scrollbar for applicable elements (like history)
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); border-radius: 4px; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 2px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); border-radius: 2px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.4); }
         
-        // General smooth transitions (can be too broad, apply specifically if needed)
-        // * { transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease; }
-        
-        button { transition: transform 0.15s ease-out, background-color 0.2s ease, box-shadow 0.2s ease; }
-        button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        button { transition: transform 0.1s ease-out, background-color 0.15s ease; }
+        button:hover { transform: translateY(-0.5px); }
         button:active { transform: translateY(0px) scale(0.98); }
-        
-        button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible {
-          outline: 2px solid rgba(96, 165, 250, 0.7); // Brighter blue for focus
-          outline-offset: 2px;
-          box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.3); // Softer glow
-        }
-        
-        // Glass morphism can be applied with a class if needed for more elements
-        // .glass-effect { backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); }
-
-        @media (max-width: 768px) {
-          // Add mobile-specific styles if needed
-          // .workflow-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
-        }
         
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
             animation-duration: 0.01ms !important;
             animation-iteration-count: 1 !important;
             transition-duration: 0.01ms !important;
-            animation-delay: 0ms !important;
           }
         }
       `}</style>
+    </motion.div>
+  );
+};
+
+const CompactWorkflowStepCard = ({
+  step,
+  workflowData,
+  timeSpent,
+  onAdvance,
+  onApprove,
+  canAdvance,
+  canApprove,
+  isAdvancing,
+  isApproving
+}) => {
+  const [showActions, setShowActions] = useState(false);
+  
+  if (!step) return null;
+
+  const isActive = Boolean(step.is_current);
+  const isCompleted = Boolean(step.is_completed);
+  
+  const isApproved = useMemo(() => {
+    if (!step.requires_approval) return true;
+    if (!workflowData?.approvals?.length) return false;
+    return workflowData.approvals.some(appr => appr.workflow_step_id === step.id && appr.approved);
+  }, [step, workflowData?.approvals]);
+
+  const getStepColors = () => {
+    if (isCompleted) return { bg: 'rgba(52, 211, 153, 0.1)', border: 'rgba(52, 211, 153, 0.3)', text: 'rgb(52, 211, 153)' };
+    if (isActive) {
+      if (step.requires_approval && !isApproved) return { bg: 'rgba(251, 191, 36, 0.1)', border: 'rgba(251, 191, 36, 0.3)', text: 'rgb(251, 191, 36)' };
+      return { bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)', text: 'rgb(59, 130, 246)' };
+    }
+    return { bg: 'rgba(255, 255, 255, 0.05)', border: 'rgba(255, 255, 255, 0.15)', text: 'rgba(255, 255, 255, 0.4)' };
+  };
+
+  const colors = getStepColors();
+  
+  const StatusIcon = () => {
+    if (isCompleted) return <CheckCircle2 size={12} style={{ color: colors.text }} />;
+    if (isActive) {
+      if (step.requires_approval && !isApproved) return <AlertCircle size={12} style={{ color: colors.text }} />;
+      return <PlayCircle size={12} style={{ color: colors.text }} />;
+    }
+    return <Clock4 size={12} style={{ color: colors.text }} />;
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        ...glassStyle,
+        padding: '0.75rem',
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        position: 'relative'
+      }}
+    >
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', background: colors.text, borderTopLeftRadius: '8px', borderBottomLeftRadius: '8px' }} />
+      
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: colors.bg, border: `1px solid ${colors.text}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <StatusIcon />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: '600', color: 'white', marginBottom: '0.1rem' }}>
+              {step.order}. {step.name}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>
+              {step.assign_to_name && `👤 ${step.assign_to_name}`}
+              {timeSpent > 0 && ` • ⏱️ ${formatTime(timeSpent)}`}
+            </div>
+          </div>
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
+          {step.requires_approval && (
+            <span style={{ fontSize: '0.9rem', padding: '0.2rem 0.4rem', borderRadius: '4px', background: isApproved ? 'rgba(52, 211, 153, 0.2)' : 'rgba(251, 191, 36, 0.2)', color: isApproved ? 'rgb(110, 231, 183)' : 'rgb(251, 191, 36)' }}>
+              {isApproved ? '✓' : '⚠️ Necessita Aprovação'}
+            </span>
+          )}
+          
+          {isActive && (canAdvance || (canApprove && step.requires_approval && !isApproved)) && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setShowActions(!showActions)}
+              style={{ padding: '0.3rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.6rem' }}
+            >
+              ⚡
+            </motion.button>
+          )}
+        </div>
+      </div>
+      
+      <AnimatePresence>
+        {showActions && isActive && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+              {step.requires_approval && !isApproved && canApprove && (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => onApprove && onApprove(step.id, '')}
+                  disabled={isApproving}
+                  style={{ padding: '0.4rem 0.6rem', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.6rem' }}
+                >
+                  {isApproving ? '⏳' : '✅'} Aprovar
+                </motion.button>
+              )}
+              {canAdvance && (!step.requires_approval || isApproved) && (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => onAdvance && onAdvance(null, '')}
+                  disabled={isAdvancing}
+                  style={{ padding: '0.4rem 0.6rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '4px', color: 'white', cursor: 'pointer', fontSize: '0.6rem' }}
+                >
+                  {isAdvancing ? '⏳' : '➡️'} Avançar
+                </motion.button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

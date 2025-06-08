@@ -1,4 +1,4 @@
-// WorkflowStepCard.jsx (ou pode ser definido dentro de TaskOverflow.jsx)
+// WorkflowStepCard.jsx (Fixed version)
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -14,23 +14,23 @@ import {
   Loader2,
   CheckCircle // Para botão de aprovar
 } from 'lucide-react';
-import { toast } from 'react-toastify'; // Se quiser usar toast para feedback
+import { toast } from 'react-toastify';
 
 // Estilo glass (pode ser compartilhado ou definido aqui)
 const glassStyle = {
   background: 'rgba(255, 255, 255, 0.05)',
-  backdropFilter: 'blur(16px)', // Mais blur para o card principal
+  backdropFilter: 'blur(16px)',
   border: '1px solid rgba(255, 255, 255, 0.1)',
   borderRadius: '16px',
 };
 
-const itemVariants = { // Para animação de entrada/saída do formulário de ações
+const itemVariants = {
     hidden: { opacity: 0, height: 0, y: -10 },
     visible: { opacity: 1, height: 'auto', y: 0, transition: { duration: 0.3 } },
     exit: { opacity: 0, height: 0, y: -10, transition: { duration: 0.2 } }
 };
 
-const stepCardVariants = { // Para animação do card em si
+const stepCardVariants = {
   hidden: { scale: 0.95, opacity: 0 },
   visible: {
     scale: 1,
@@ -40,43 +40,57 @@ const stepCardVariants = { // Para animação do card em si
   hover: {
     scale: 1.02,
     y: -4,
-    boxShadow: "0px 10px 20px rgba(0,0,0,0.2)", // Adiciona sombra no hover
+    boxShadow: "0px 10px 20px rgba(0,0,0,0.2)",
     transition: { type: "spring", stiffness: 300, damping: 15 }
   }
 };
 
 const WorkflowStepCard = ({
   step,
-  workflowData, // Objeto completo do workflow, incluindo workflow.steps, workflow.approvals
-  timeSpent,    // Tempo gasto especificamente neste passo (pode vir de workflowData.time_by_step)
-  onAdvance,    // Função para avançar: (nextStepId, comment) => {}
-  onApprove,    // Função para aprovar: (stepId, comment) => {}
-  canAdvance,   // Booleano: Se o usuário tem permissão geral para avançar
-  canApprove,   // Booleano: Se o usuário tem permissão geral para aprovar
-  isAdvancing,  // Booleano: Se a mutação de avançar está em progresso
-  isApproving   // Booleano: Se a mutação de aprovar está em progresso
+  workflowData,
+  timeSpent,
+  onAdvance,
+  onApprove,
+  canAdvance,
+  canApprove,
+  isAdvancing,
+  isApproving
 }) => {
   const [showActionsForm, setShowActionsForm] = useState(false);
   const [comment, setComment] = useState('');
   const [selectedNextStepId, setSelectedNextStepId] = useState('');
 
-  // Status diretamente do backend
-  const isActive = step.is_current;
-  const isCompleted = step.is_completed;
+  // Early return se step não existir
+  if (!step) {
+    console.warn('WorkflowStepCard: step prop is undefined');
+    return null;
+  }
+
+  // Status diretamente do backend com fallbacks
+  const isActive = Boolean(step.is_current);
+  const isCompleted = Boolean(step.is_completed);
+  
   console.log('WorkflowStepCard Debug:', {
     stepName: step.name,
     stepId: step.id,
     isActive,
     isCompleted,
     workflowData: workflowData,
-    approvals: workflowData?.approvals
+    approvals: workflowData?.approvals,
+    nextSteps: step.next_steps
   });
   
   const isApproved = useMemo(() => {
-    if (!step.requires_approval) return true; // Não precisa de aprovação, então é "aprovado" para fins de avanço
-    return workflowData?.approvals?.some(
+    if (!step.requires_approval) return true;
+    
+    // Verificar se workflowData e approvals existem
+    if (!workflowData || !workflowData.approvals || !Array.isArray(workflowData.approvals)) {
+      return false;
+    }
+    
+    return workflowData.approvals.some(
       appr => appr.workflow_step_id === step.id && appr.approved
-    ) || false;
+    );
   }, [step, workflowData?.approvals]);
 
   const formatTime = (minutes) => {
@@ -94,20 +108,20 @@ const WorkflowStepCard = ({
       iconBg: 'rgba(52, 211, 153, 0.2)',
     };
     if (isActive) {
-      if (step.requires_approval && !isApproved) return { // Aguardando Aprovação
+      if (step.requires_approval && !isApproved) return {
         bg: 'rgba(251, 191, 36, 0.1)',
         border: 'rgba(251, 191, 36, 0.3)',
         text: 'rgb(251, 191, 36)',
         iconBg: 'rgba(251, 191, 36, 0.2)',
       };
-      return { // Ativo e pronto ou aprovado
+      return {
         bg: 'rgba(59, 130, 246, 0.15)',
         border: 'rgba(59, 130, 246, 0.3)',
         text: 'rgb(59, 130, 246)',
         iconBg: 'rgba(59, 130, 246, 0.2)',
       };
     }
-    return { // Pendente
+    return {
       bg: 'rgba(255, 255, 255, 0.05)',
       border: 'rgba(255, 255, 255, 0.15)',
       text: 'rgba(255, 255, 255, 0.4)',
@@ -138,9 +152,9 @@ const WorkflowStepCard = ({
         borderRadius: '9999px',
         fontSize: '0.75rem',
         fontWeight: '600',
-        background: colors.bg, // Usa o bg do status para o badge
-        border: `1px solid ${colors.border}`, // Usa a borda do status
-        color: colors.text, // Usa o texto do status
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        color: colors.text,
         whiteSpace: 'nowrap'
       }}>
         {textContent}
@@ -148,10 +162,20 @@ const WorkflowStepCard = ({
     );
   };
 
+  // Fixed: Verificar se workflowData e steps existem antes de filtrar
   const availableNextStepsForThisStep = useMemo(() => {
-    if (!isActive || !step.next_steps || step.next_steps.length === 0) return [];
+    // Verificações de segurança
+    if (!isActive || !step.next_steps || !Array.isArray(step.next_steps) || step.next_steps.length === 0) {
+      return [];
+    }
+    
+    if (!workflowData || !workflowData.steps || !Array.isArray(workflowData.steps)) {
+      console.warn('WorkflowStepCard: workflowData.steps is not available or not an array');
+      return [];
+    }
+    
     return workflowData.steps.filter(s => step.next_steps.includes(s.id));
-  }, [isActive, step.next_steps, workflowData.steps]);
+  }, [isActive, step.next_steps, workflowData?.steps]);
 
   useEffect(() => {
     if (availableNextStepsForThisStep.length === 1) {
@@ -162,13 +186,12 @@ const WorkflowStepCard = ({
   }, [availableNextStepsForThisStep]);
 
   const handleAdvanceButtonClick = () => {
-    // Se não há próximos passos ou apenas um, não precisa mostrar o formulário, apenas avança.
     if (availableNextStepsForThisStep.length <= 1) {
       const nextId = availableNextStepsForThisStep.length === 1 ? availableNextStepsForThisStep[0].id : null;
-      onAdvance(nextId, comment || (availableNextStepsForThisStep.length === 0 ? "Workflow finalizado." : ""));
-      setComment(''); // Limpa o comentário após o avanço
+      onAdvance && onAdvance(nextId, comment || (availableNextStepsForThisStep.length === 0 ? "Workflow finalizado." : ""));
+      setComment('');
     } else {
-      setShowActionsForm(!showActionsForm); // Mostra o formulário para escolher
+      setShowActionsForm(!showActionsForm);
     }
   };
   
@@ -177,9 +200,19 @@ const WorkflowStepCard = ({
       toast.warn("Por favor, selecione o próximo passo.");
       return;
     }
-    onAdvance(selectedNextStepId, comment);
+    onAdvance && onAdvance(selectedNextStepId, comment);
     setShowActionsForm(false);
     setComment('');
+  };
+
+  const handleApproveClick = () => {
+    if(comment.trim() === "" && window.confirm("Deseja aprovar sem comentário?")){
+      onApprove && onApprove(step.id, comment);
+    } else if (comment.trim() !== "") {
+      onApprove && onApprove(step.id, comment);
+    } else if (comment.trim() === "" && !window.confirm("Deseja aprovar sem comentário?")) {
+      toast.info("Adicione um comentário ou confirme para aprovar sem.")
+    }
   };
 
   return (
@@ -194,7 +227,7 @@ const WorkflowStepCard = ({
         background: colors.bg,
         border: `1px solid ${colors.border}`,
         position: 'relative',
-        overflow: 'hidden', // Para o indicador lateral
+        overflow: 'hidden',
       }}
     >
       {/* Indicador de status lateral */}
@@ -204,7 +237,7 @@ const WorkflowStepCard = ({
         top: 0,
         bottom: 0,
         width: '5px',
-        background: colors.text, // Cor principal do status
+        background: colors.text,
         borderTopLeftRadius: '15px',
         borderBottomLeftRadius: '15px',
       }} />
@@ -228,7 +261,7 @@ const WorkflowStepCard = ({
           </div>
           <div>
             <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '1rem', fontWeight: '600', color: 'white' }}>
-              {step.order}. {step.name}
+              {step.order || '?'}. {step.name || 'Nome não disponível'}
             </h4>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem 1rem', fontSize: '0.875rem', color: 'rgba(255,255,255,0.7)' }}>
               {step.assign_to_name && (
@@ -261,7 +294,7 @@ const WorkflowStepCard = ({
       </div>
 
       {step.description && (
-        <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem', color: 'rgba(255,255,255,0.6)', lineHeight: '1.5', paddingLeft: 'calc(40px + 1rem)' /* Alinhado com o texto do nome */ }}>
+        <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem', color: 'rgba(255,255,255,0.6)', lineHeight: '1.5', paddingLeft: 'calc(40px + 1rem)' }}>
           {step.description}
         </p>
       )}
@@ -272,17 +305,21 @@ const WorkflowStepCard = ({
             {step.requires_approval && !isApproved && canApprove && (
               <motion.button
                 whileHover={{ scale: 1.05, y: -1 }} whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                    if(comment.trim() === "" && window.confirm("Deseja aprovar sem comentário?")){
-                        onApprove(step.id, comment);
-                    } else if (comment.trim() !== "") {
-                        onApprove(step.id, comment);
-                    } else if (comment.trim() === "" && !window.confirm("Deseja aprovar sem comentário?")) {
-                        toast.info("Adicione um comentário ou confirme para aprovar sem.")
-                    }
-                }}
+                onClick={handleApproveClick}
                 disabled={isApproving}
-                style={{ ...glassStyle, padding: '0.6rem 1.2rem', border: '1px solid rgba(52, 211, 153, 0.4)', background: 'rgba(52, 211, 153, 0.25)', color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', opacity: isApproving ? 0.7 : 1 }}
+                style={{ 
+                  ...glassStyle, 
+                  padding: '0.6rem 1.2rem', 
+                  border: '1px solid rgba(52, 211, 153, 0.4)', 
+                  background: 'rgba(52, 211, 153, 0.25)', 
+                  color: 'white', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  fontSize: '0.875rem', 
+                  opacity: isApproving ? 0.7 : 1,
+                  cursor: isApproving ? 'not-allowed' : 'pointer'
+                }}
               >
                 {isApproving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
                 Aprovar Passo
@@ -292,9 +329,22 @@ const WorkflowStepCard = ({
               <motion.button
                 whileHover={{ scale: 1.05, y: -1 }} whileTap={{ scale: 0.95 }}
                 onClick={handleAdvanceButtonClick}
-                style={{ ...glassStyle, padding: '0.6rem 1.2rem', border: '1px solid rgba(59, 130, 246, 0.4)', background: 'rgba(59, 130, 246, 0.25)', color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}
+                disabled={isAdvancing}
+                style={{ 
+                  ...glassStyle, 
+                  padding: '0.6rem 1.2rem', 
+                  border: '1px solid rgba(59, 130, 246, 0.4)', 
+                  background: 'rgba(59, 130, 246, 0.25)', 
+                  color: 'white', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  fontSize: '0.875rem',
+                  opacity: isAdvancing ? 0.7 : 1,
+                  cursor: isAdvancing ? 'not-allowed' : 'pointer'
+                }}
               >
-                <SkipForward size={16} />
+                {isAdvancing ? <Loader2 size={16} className="animate-spin" /> : <SkipForward size={16} />}
                 {availableNextStepsForThisStep.length > 1 ? (showActionsForm ? 'Cancelar Avanço' : 'Avançar Workflow') : 'Avançar Workflow'}
               </motion.button>
             )}
@@ -318,7 +368,7 @@ const WorkflowStepCard = ({
                     <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecione o próximo passo</option>
                     {availableNextStepsForThisStep.map(nextS => (
                       <option key={nextS.id} value={nextS.id} style={{ background: '#1f2937', color: 'white' }}>
-                        {nextS.order}. {nextS.name} {nextS.assign_to_name ? `(${nextS.assign_to_name})` : ''}
+                        {nextS.order || '?'}. {nextS.name} {nextS.assign_to_name ? `(${nextS.assign_to_name})` : ''}
                       </option>
                     ))}
                   </select>
@@ -339,7 +389,7 @@ const WorkflowStepCard = ({
                   <motion.button
                     whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                     onClick={() => { setShowActionsForm(false); setComment(''); }}
-                    style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem' }}
+                    style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', cursor: 'pointer' }}
                   >
                     Cancelar
                   </motion.button>
@@ -347,7 +397,19 @@ const WorkflowStepCard = ({
                     whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                     onClick={handleConfirmAdvance}
                     disabled={isAdvancing || !selectedNextStepId}
-                    style={{ padding: '0.5rem 1rem', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', opacity: (isAdvancing || !selectedNextStepId) ? 0.7 : 1 }}
+                    style={{ 
+                      padding: '0.5rem 1rem', 
+                      background: 'rgba(59,130,246,0.2)', 
+                      border: '1px solid rgba(59,130,246,0.3)', 
+                      borderRadius: '8px', 
+                      color: 'white', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.5rem', 
+                      fontSize: '0.875rem', 
+                      opacity: (isAdvancing || !selectedNextStepId) ? 0.7 : 1,
+                      cursor: (isAdvancing || !selectedNextStepId) ? 'not-allowed' : 'pointer'
+                    }}
                   >
                     {isAdvancing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                     Confirmar Avanço
@@ -356,23 +418,44 @@ const WorkflowStepCard = ({
               </motion.div>
             )}
           </AnimatePresence>
-            {/* Campo de comentário para aprovação, se aplicável */}
-            {isActive && step.requires_approval && !isApproved && canApprove && (
-                 <div style={{ marginTop: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
-                        Comentário de Aprovação (Opcional)
-                    </label>
-                    <textarea
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        placeholder="Adicione um comentário para a aprovação..."
-                        rows={2}
-                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }}
-                    />
-                 </div>
-            )}
+
+          {/* Campo de comentário para aprovação, se aplicável */}
+          {isActive && step.requires_approval && !isApproved && canApprove && (
+            <div style={{ marginTop: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                Comentário de Aprovação (Opcional)
+              </label>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Adicione um comentário para a aprovação..."
+                rows={2}
+                style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' }}
+              />
+            </div>
+          )}
         </div>
       )}
+
+      <style jsx>{`
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        input::placeholder, textarea::placeholder {
+          color: rgba(255, 255, 255, 0.5) !important;
+        }
+        
+        select option {
+          background: #1f2937 !important;
+          color: white !important;
+        }
+      `}</style>
     </motion.div>
   );
 };

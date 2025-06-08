@@ -9,14 +9,14 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import PermissionDenied, ValidationError 
 from .models import (Organization, Client, TaskCategory, Task, TimeEntry, Expense, 
                     ClientProfitability, Profile, AutoTimeTracking, WorkflowStep,
-                    NLPProcessor, WorkflowDefinition, TaskApproval, WorkflowNotification, 
-                    WorkflowHistory)
+                    NLPProcessor, WorkflowDefinition, TaskApproval, WorkflowNotification,NotificationTemplate, 
+                    WorkflowHistory,NotificationSettings, NotificationDigest)
 from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializer,
                          TimeEntrySerializer, ExpenseSerializer, ClientProfitabilitySerializer,
                          ProfileSerializer, AutoTimeTrackingSerializer, OrganizationSerializer,
                          UserSerializer, NLPProcessorSerializer, WorkflowDefinitionSerializer, 
                          WorkflowStepSerializer, TaskApprovalSerializer, WorkflowNotificationSerializer,
-                         WorkflowHistorySerializer)
+                         WorkflowHistorySerializer, NotificationSettingsSerializer,NotificationTemplateSerializer,NotificationDigestSerializer)
 from django.contrib.auth.models import User
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -31,7 +31,13 @@ from .constants.prompts import GEMINI_TIME_EXTRACTION_PROMPT # Assuming this exi
 from .services.gemini_service import GeminiService # Assuming this exists
 from django.db import models # Redundant
 from .utils import update_client_profitability # Already imported
-from .services.notification_service import NotificationService
+from .services.notification_service import NotificationService 
+from .services.notifications_metrics import NotificationMetricsService
+from .services.notification_escalation import NotificationEscalationService
+from .services.notifications_reports import NotificationReportsService
+from .services.notification_template_service import NotificationTemplateService
+from .services.notification_digest_service import NotificationDigestService
+
 
 logger = logging.getLogger(__name__) # Redundant
 
@@ -2350,6 +2356,41 @@ class WorkflowNotificationViewSet(viewsets.ModelViewSet):
             
         return queryset
     
+    @action(detail=False, methods=['get'])
+    def summary_stats(self, request):
+        """Resumo rápido de estatísticas"""
+        user = request.user
+        
+        # Últimos 7 dias
+        week_ago = timezone.now() - timedelta(days=7)
+        
+        notifications = WorkflowNotification.objects.filter(
+            user=user,
+            created_at__gte=week_ago,
+            is_archived=False
+        )
+        
+        stats = {
+            'total_this_week': notifications.count(),
+            'unread_this_week': notifications.filter(is_read=False).count(),
+            'urgent_unread': notifications.filter(
+                is_read=False, 
+                priority='urgent'
+            ).count(),
+            'most_frequent_type': notifications.values('notification_type').annotate(
+                count=Count('id')
+            ).order_by('-count').first(),
+            'oldest_unread_days': None,
+        }
+        
+        # Notificação não lida mais antiga
+        oldest_unread = notifications.filter(is_read=False).order_by('created_at').first()
+        if oldest_unread:
+            days_old = (timezone.now() - oldest_unread.created_at).days
+            stats['oldest_unread_days'] = days_old
+        
+        return Response(stats)
+    
     @action(detail=True, methods=['post'])
     def mark_as_read(self, request, pk=None):
         notification = self.get_object()
@@ -2862,3 +2903,531 @@ def update_organization_profitability(request):
             {'error': f'Erro interno ao processar a requisição: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+class NotificationSettingsViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationSettingsSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return NotificationSettings.objects.filter(user=self.request.user)
+    
+    def get_object(self):
+        """Retorna ou cria as configurações do usuário"""
+        settings, created = NotificationSettings.objects.get_or_create(
+            user=self.request.user,
+            defaults={
+                'deadline_days_notice': [3, 1, 0],
+                'digest_time': '09:00',
+            }
+        )
+        return settings
+    
+    @action(detail=False, methods=['get'])
+    def my_settings(self, request):
+        """Endpoint para obter configurações do usuário logado"""
+        settings = self.get_object()
+        serializer = self.get_serializer(settings)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['patch'])
+    def update_settings(self, request):
+        """Endpoint para atualizar configurações"""
+        settings = self.get_object()
+        serializer = self.get_serializer(settings, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['post'])
+    def reset_to_defaults(self, request):
+        """Reset para configurações padrão"""
+        settings = self.get_object()
+        
+        # Reset para valores padrão
+        settings.email_notifications_enabled = True
+        settings.push_notifications_enabled = True
+        settings.notify_step_ready = True
+        settings.notify_step_completed = True
+        settings.notify_approval_needed = True
+        settings.notify_approval_completed = True
+        settings.notify_workflow_completed = True
+        settings.notify_deadline_approaching = True
+        settings.notify_step_overdue = True
+        settings.notify_workflow_assigned = True
+        settings.notify_step_rejected = True
+        settings.notify_manual_reminders = True
+        settings.digest_frequency = 'immediate'
+        settings.digest_time = timezone.datetime.strptime('09:00', '%H:%M').time()
+        settings.deadline_days_notice = [3, 1, 0]
+        settings.overdue_threshold_days = 5
+        settings.approval_reminder_days = 2
+        settings.quiet_start_time = None
+        settings.quiet_end_time = None
+        
+        settings.save()
+        
+        serializer = self.get_serializer(settings)
+        return Response({
+            'message': 'Configurações resetadas para o padrão',
+            'settings': serializer.data
+        })
+    
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notification_stats(request):
+    """Estatísticas de notificações do usuário"""
+    days = int(request.GET.get('days', 30))
+    
+    try:
+        stats = NotificationMetricsService.get_user_notification_stats(
+            request.user, days
+        )
+        return Response(stats)
+    except Exception as e:
+        logger.error(f"Erro ao calcular estatísticas de notificação: {e}")
+        return Response(
+            {'error': 'Erro ao calcular estatísticas'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def organization_notification_stats(request):
+    """Estatísticas de notificações da organização (apenas admins)"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not profile.is_org_admin:
+            return Response(
+                {'error': 'Apenas administradores podem ver estatísticas da organização'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        days = int(request.GET.get('days', 30))
+        stats = NotificationMetricsService.get_organization_notification_stats(
+            profile.organization, days
+        )
+        return Response(stats)
+        
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro ao calcular estatísticas da organização: {e}")
+        return Response(
+            {'error': 'Erro ao calcular estatísticas'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def workflow_notification_performance(request):
+    """Performance de notificações de workflow"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not (profile.is_org_admin or profile.can_view_analytics):
+            return Response(
+                {'error': 'Sem permissão para ver métricas de workflow'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        workflow_id = request.GET.get('workflow_id')
+        days = int(request.GET.get('days', 30))
+        
+        stats = NotificationMetricsService.get_workflow_notification_performance(
+            workflow_id, days
+        )
+        return Response(stats)
+        
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro ao calcular performance de workflow: {e}")
+        return Response(
+            {'error': 'Erro ao calcular métricas'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notification_reports(request):
+    """Gera relatórios de notificações"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not (profile.is_org_admin or profile.can_view_analytics):
+            return Response(
+                {'error': 'Sem permissão para gerar relatórios'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Parâmetros
+        start_date_str = request.GET.get('start_date')
+        end_date_str = request.GET.get('end_date')
+        format_type = request.GET.get('format', 'json')
+        
+        if not start_date_str or not end_date_str:
+            return Response(
+                {'error': 'start_date e end_date são obrigatórios'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            start_date = datetime.fromisoformat(start_date_str)
+            end_date = datetime.fromisoformat(end_date_str)
+        except ValueError:
+            return Response(
+                {'error': 'Formato de data inválido. Use YYYY-MM-DD'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        report = NotificationReportsService.generate_notification_report(
+            profile.organization, start_date, end_date, format_type
+        )
+        
+        if format_type == 'csv':
+            response = Response(report, content_type='text/csv')
+            response['Content-Disposition'] = 'attachment; filename="notification_report.csv"'
+            return response
+        
+        return Response(report)
+        
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def workflow_efficiency_report(request):
+    """Relatório de eficiência de workflows"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not (profile.is_org_admin or profile.can_view_analytics):
+            return Response(
+                {'error': 'Sem permissão para ver relatórios de workflow'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Parâmetros
+        start_date_str = request.GET.get('start_date')
+        end_date_str = request.GET.get('end_date')
+        
+        if not start_date_str or not end_date_str:
+            # Usar últimos 30 dias como padrão
+            end_date = timezone.now()
+            start_date = end_date - timedelta(days=30)
+        else:
+            try:
+                start_date = datetime.fromisoformat(start_date_str)
+                end_date = datetime.fromisoformat(end_date_str)
+            except ValueError:
+                return Response(
+                    {'error': 'Formato de data inválido'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        report = NotificationReportsService.generate_workflow_efficiency_report(
+            profile.organization, start_date, end_date
+        )
+        
+        return Response(report)
+        
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def trigger_escalation_check(request):
+    """Endpoint para acionar verificação de escalação (apenas admins)"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not profile.is_org_admin:
+            return Response(
+                {'error': 'Apenas administradores podem acionar escalação'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        escalated_count = NotificationEscalationService.check_and_escalate_overdue_notifications()
+        
+        return Response({
+            'success': True,
+            'escalated_notifications': escalated_count,
+            'message': f'{escalated_count} notificações foram escaladas'
+        })
+        
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+class NotificationTemplateViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationTemplateSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        try:
+            profile = Profile.objects.get(user=user)
+            
+            if not profile.organization:
+                return NotificationTemplate.objects.none()
+            
+            # Apenas admins podem gerenciar templates
+            if not profile.is_org_admin:
+                return NotificationTemplate.objects.none()
+            
+            return NotificationTemplate.objects.filter(
+                organization=profile.organization
+            ).select_related('organization', 'created_by')
+            
+        except Profile.DoesNotExist:
+            return NotificationTemplate.objects.none()
+    
+    def perform_create(self, serializer):
+        try:
+            profile = Profile.objects.get(user=self.request.user)
+            
+            if not profile.is_org_admin:
+                raise PermissionDenied("Apenas administradores podem criar templates")
+            
+            serializer.save(
+                organization=profile.organization,
+                created_by=self.request.user
+            )
+            
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil não encontrado")
+    
+    @action(detail=False, methods=['get'])
+    def available_types(self, request):
+        """Lista tipos de notificação disponíveis"""
+        types = [
+            {'value': choice[0], 'label': choice[1]}
+            for choice in WorkflowNotification.NOTIFICATION_TYPES
+        ]
+        return Response(types)
+    
+    @action(detail=True, methods=['post'])
+    def preview(self, request, pk=None):
+        """Preview do template com dados de exemplo"""
+        template = self.get_object()
+        
+        # Dados de exemplo
+        example_context = {
+            'user_name': 'João Silva',
+            'user_first_name': 'João',
+            'task_title': 'Declaração de IRS 2024',
+            'client_name': 'Empresa XYZ Lda',
+            'step_name': 'Revisão de Documentos',
+            'workflow_name': 'Processo de Declaração',
+            'organization_name': template.organization.name,
+            'current_date': timezone.now().strftime('%d/%m/%Y'),
+            'current_time': timezone.now().strftime('%H:%M'),
+        }
+        
+        try:
+            title, message = template.render(example_context)
+            return Response({
+                'title': title,
+                'message': message,
+                'context_used': example_context
+            })
+        except Exception as e:
+            return Response({
+                'error': f'Erro ao renderizar template: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['post'])
+    def create_defaults(self, request):
+        """Cria templates padrão para a organização"""
+        try:
+            profile = Profile.objects.get(user=request.user)
+            
+            if not profile.is_org_admin:
+                raise PermissionDenied("Apenas administradores podem criar templates padrão")
+            
+            created_count = 0
+            
+            # Templates padrão para cada tipo
+            default_templates = [
+                {
+                    'notification_type': 'step_ready',
+                    'name': 'Passo Pronto - Padrão',
+                    'title_template': '🔔 Passo pronto: {step_name}',
+                    'message_template': 'Olá {user_first_name},\n\nA tarefa "{task_title}" (Cliente: {client_name}) chegou ao passo "{step_name}" e está pronta para ser trabalhada.\n\nWorkflow: {workflow_name}\nData: {current_date}',
+                    'default_priority': 'normal',
+                    'is_default': True
+                },
+                {
+                    'notification_type': 'approval_needed',
+                    'name': 'Aprovação Necessária - Padrão',
+                    'title_template': '⚠️ Aprovação necessária: {step_name}',
+                    'message_template': 'Caro {user_first_name},\n\nO passo "{step_name}" da tarefa "{task_title}" (Cliente: {client_name}) precisa de sua aprovação.\n\nPor favor, revise e aprove o mais breve possível.\n\nData: {current_date} às {current_time}',
+                    'default_priority': 'high',
+                    'is_default': True
+                },
+                {
+                    'notification_type': 'step_overdue',
+                    'name': 'Passo Atrasado - Padrão',
+                    'title_template': '🚨 URGENTE: Passo atrasado - {step_name}',
+                    'message_template': 'Atenção {user_first_name},\n\nO passo "{step_name}" da tarefa "{task_title}" (Cliente: {client_name}) está ATRASADO.\n\nPor favor, priorize esta atividade.\n\nWorkflow: {workflow_name}\nData: {current_date}',
+                    'default_priority': 'urgent',
+                    'is_default': True
+                }
+            ]
+            
+            for template_data in default_templates:
+                # Verificar se já existe
+                existing = NotificationTemplate.objects.filter(
+                    organization=profile.organization,
+                    notification_type=template_data['notification_type'],
+                    is_default=True
+                ).exists()
+                
+                if not existing:
+                    NotificationTemplate.objects.create(
+                        organization=profile.organization,
+                        created_by=request.user,
+                        **template_data
+                    )
+                    created_count += 1
+            
+            return Response({
+                'success': True,
+                'created_templates': created_count,
+                'message': f'{created_count} templates padrão criados'
+            })
+            
+        except Profile.DoesNotExist:
+            return Response({
+                'error': 'Perfil não encontrado'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
+class NotificationDigestViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = NotificationDigestSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return NotificationDigest.objects.filter(
+            user=self.request.user
+        ).order_by('-created_at')
+    
+    @action(detail=False, methods=['post'])
+    def generate_digest(self, request):
+        """Gera digest manual para o usuário"""
+        digest_type = request.data.get('type', 'daily')
+        
+        if digest_type not in ['hourly', 'daily', 'weekly']:
+            return Response({
+                'error': 'Tipo de digest inválido'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            if digest_type == 'daily':
+                digest = NotificationDigestService._create_daily_digest(request.user)
+            else:
+                return Response({
+                    'error': 'Tipo de digest não implementado ainda'
+                }, status=status.HTTP_501_NOT_IMPLEMENTED)
+            
+            if digest:
+                serializer = self.get_serializer(digest)
+                return Response({
+                    'success': True,
+                    'digest': serializer.data
+                })
+            else:
+                return Response({
+                    'message': 'Nenhuma notificação encontrada para o período'
+                })
+                
+        except Exception as e:
+            logger.error(f"Erro ao gerar digest: {e}")
+            return Response({
+                'error': 'Erro interno ao gerar digest'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def generate_daily_digests_view(request):
+    """Gera digests diários para todos os usuários (apenas admins)"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not profile.is_org_admin:
+            return Response(
+                {'error': 'Apenas administradores podem gerar digests'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        generated_count = NotificationDigestService.generate_daily_digests()
+        
+        return Response({
+            'success': True,
+            'digests_generated': generated_count,
+            'message': f'{generated_count} digests diários gerados'
+        })
+        
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro ao gerar digests diários: {e}")
+        return Response(
+            {'error': 'Erro interno ao gerar digests'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_pending_digests_view(request):
+    """Envia digests pendentes (apenas admins)"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not profile.is_org_admin:
+            return Response(
+                {'error': 'Apenas administradores podem enviar digests'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        sent_count = NotificationDigestService.send_pending_digests()
+        
+        return Response({
+            'success': True,
+            'digests_sent': sent_count,
+            'message': f'{sent_count} digests enviados'
+        })
+        
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro ao enviar digests: {e}")
+        return Response(
+            {'error': 'Erro interno ao enviar digests'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    

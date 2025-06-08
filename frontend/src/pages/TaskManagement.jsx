@@ -422,7 +422,7 @@ const TaskManagement = () => {
   const getInitialFormData = () => ({
     title: "", description: "", client: "", category: "", assigned_to: "",
     status: "pending", priority: 3, deadline: "", estimated_time_minutes: "",
-    worflow: "", workflow_step_assignments: {}
+    workflow: "", workflow_step_assignments: {}
   });
 
   // --- React Query Client ---
