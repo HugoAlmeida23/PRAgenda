@@ -18,6 +18,7 @@ import DashboardRouter from "./pages/DashboardRouter"; // This will likely be yo
 import { PermissionsProvider } from './contexts/PermissionsContext';
 import Layout from './components/Layout/Layout'; // Your new Layout component
 import NotificationsPage from "./pages/NotificationsPage";
+import FiscalObligationManagement from "./pages/FiscalObligationManagement";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -73,6 +74,7 @@ function App() {
               <Route path="task-workflow/:taskId" element={<TaskWorkflow />} />
               <Route path="workflow-management" element={<WorkflowManagement />} />
               <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="fiscal-obligations" element={<FiscalObligationManagement />} />
             </Route>
 
             {/* Fallback for unknown routes */}

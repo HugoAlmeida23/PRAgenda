@@ -273,10 +273,16 @@ class Client(models.Model):
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
     notes = models.TextField(blank=True, null=True, verbose_name="Observações")
     
+    fiscal_tags = JSONField(
+        default=list, blank=True,
+        verbose_name="Tags Fiscais do Cliente",
+        help_text="Usado para identificar a que obrigações este cliente está sujeito. Ex: ['EMPRESA', 'IVA_TRIMESTRAL', 'REGIME_GERAL_IRC']"
+    )
     class Meta:
         verbose_name = "Cliente"
         verbose_name_plural = "Clientes"
         ordering = ["name"]
+        
     
     def __str__(self):
         return self.name
@@ -971,7 +977,8 @@ class TaskApproval(models.Model):
     def __str__(self):
         status = "aprovado" if self.approved else "rejeitado"
         return f"Passo {self.workflow_step.name} {status} por {self.approved_by.username}"
-    
+
+  
 class Task(models.Model):
     """
     Tarefas a serem realizadas para os clientes.
@@ -1068,11 +1075,26 @@ class Task(models.Model):
         null=True,
         verbose_name="Comentário do Fluxo"
     )
+
+    source_fiscal_obligation = models.ForeignKey(
+        'FiscalObligationDefinition',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='generated_tasks',
+        verbose_name="Origem da Obrigação Fiscal"
+    )
+    obligation_period_key = models.CharField(
+        max_length=50, null=True, blank=True, # Ex: "2024-Q1", "2024-M01"
+        verbose_name="Chave do Período da Obrigação",
+        help_text="Identificador único para o período desta obrigação (ex: ANO-TRIMESTRE)"
+    )
+
     class Meta:
         verbose_name = "Tarefa"
         verbose_name_plural = "Tarefas"
         ordering = ["priority", "deadline"]
-    
+        unique_together = [['client', 'source_fiscal_obligation', 'obligation_period_key']] # Evitar duplicados
+
     def __str__(self):
         return f"{self.title} - {self.client.name}"
     
@@ -1176,7 +1198,109 @@ class Task(models.Model):
         ).exists()
         
         return workflow_completed
-              
+ 
+ 
+class FiscalObligationDefinition(models.Model):
+    PERIODICITY_CHOICES = [
+        ('MONTHLY', 'Mensal'),
+        ('QUARTERLY', 'Trimestral'),
+        ('ANNUAL', 'Anual'),
+        ('BIANNUAL', 'Semestral'), # Semestral = a cada 6 meses
+        ('OTHER', 'Outra'),
+    ]
+    CALCULATION_BASIS_CHOICES = [
+        ('END_OF_PERIOD', 'Fim do Período de Referência'),
+        ('SPECIFIC_DATE', 'Data Específica no Ano'),
+        ('EVENT_DRIVEN', 'Após um Evento'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255, verbose_name="Nome da Obrigação")
+    description = models.TextField(blank=True, null=True, verbose_name="Descrição Detalhada")
+    periodicity = models.CharField(max_length=20, choices=PERIODICITY_CHOICES, verbose_name="Periodicidade")
+    
+    calculation_basis = models.CharField(
+        max_length=20, 
+        choices=CALCULATION_BASIS_CHOICES, 
+        default='END_OF_PERIOD',
+        verbose_name="Base de Cálculo do Prazo"
+    )
+    # Dia do mês para o deadline (1-31)
+    deadline_day = models.PositiveIntegerField(
+        verbose_name="Dia Limite do Mês para Entrega/Pagamento",
+        help_text="Ex: 20 para o dia 20"
+    )
+    # Offset em meses APÓS o fim do período de referência ou após o specific_month/trigger_event_description
+    deadline_month_offset = models.PositiveIntegerField(
+        default=0, 
+        verbose_name="Offset de Meses para Deadline",
+        help_text="0 para o mesmo mês, 1 para o mês seguinte, etc."
+    )
+    # Para obrigações anuais ou com data base específica (ex: IES, Modelo 10)
+    # Se calculation_basis='SPECIFIC_DATE', este é o mês base.
+    specific_month_reference = models.PositiveIntegerField(
+        null=True, blank=True, 
+        verbose_name="Mês de Referência Específico (1-12)",
+        help_text="Para obrigações com uma data base anual ou um mês específico de início de contagem."
+    )
+    
+    # Este campo será usado para filtrar clientes. Cliente terá tags.
+    applies_to_client_tags = JSONField(
+        default=list, blank=True,
+        verbose_name="Aplica-se a Clientes com Tags",
+        help_text="Lista de tags que o cliente deve ter. Ex: ['EMPRESA', 'IVA_MENSAL']"
+    )
+
+    default_task_title_template = models.CharField(
+        max_length=255, 
+        default="{obligation_name} - {client_name} - {period_description}",
+        verbose_name="Template do Título da Tarefa",
+        help_text="Variáveis: {obligation_name}, {client_name}, {period_description}, {year}, {month_name}, {quarter}"
+    )
+    default_task_category = models.ForeignKey(
+        TaskCategory, 
+        on_delete=models.SET_NULL, 
+        null=True, blank=True,
+        verbose_name="Categoria de Tarefa Padrão"
+    )
+    default_priority = models.IntegerField(
+        choices=Task.PRIORITY_CHOICES, # Requer que Task.PRIORITY_CHOICES exista
+        default=2, 
+        verbose_name="Prioridade Padrão da Tarefa"
+    )
+    default_workflow = models.ForeignKey(
+        WorkflowDefinition,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        verbose_name="Workflow Padrão"
+    )
+    # Quantos dias antes do deadline a tarefa deve ser criada
+    generation_trigger_offset_days = models.IntegerField(
+        default=30, 
+        verbose_name="Criar Tarefa X Dias Antes do Deadline"
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Definição Ativa")
+    organization = models.ForeignKey( # Uma definição pode ser global (org=null) ou específica de uma org
+        Organization,
+        on_delete=models.CASCADE,
+        related_name='fiscal_obligation_definitions',
+        verbose_name="Organização",
+        null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Definição de Obrigação Fiscal"
+        verbose_name_plural = "Definições de Obrigações Fiscais"
+        ordering = ['name']
+
+    def __str__(self):
+        org_name = f" ({self.organization.name})" if self.organization else " (Global)"
+        return f"{self.name}{org_name}"
+
+
+            
 class TimeEntry(models.Model):
     """
     Registro de tempo gasto em tarefas para clientes.
@@ -1705,3 +1829,5 @@ class NotificationDigest(models.Model):
     
     def __str__(self):
         return f"Digest {self.digest_type} - {self.user.username} - {self.period_start.date()}"
+
+

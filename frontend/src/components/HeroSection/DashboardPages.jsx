@@ -22,20 +22,20 @@ import {
     Zap,
     FileText,
     ArrowRight
+
 } from 'lucide-react';
 
 // Import dos componentes da primeira página
 import AIInsightsPanel from './AIInsightsPanel';
 import BackgroundElements from './BackgroundElements';
 import QuickActionsGrid from './QuickActionsGrid';
+import { useCallback } from 'react';
+
 
 const DashboardPages = ({ dashboardData }) => {
     const [currentPage, setCurrentPage] = useState(0);
     const [isTransitioning, setIsTransitioning] = useState(false);
-    console.log("🔍 DashboardPages received data:", dashboardData);
-    console.log("📊 Time tracked today:", dashboardData?.time_tracked_today);
-    console.log("💰 Revenue/Cost:", dashboardData?.total_revenue, dashboardData?.total_cost);
-    console.log("📈 Profit margin:", dashboardData?.average_profit_margin);
+    console.log("dahboard permissions:", dashboardData?.permissions);
     // Mapped stats derivados do dashboardData
     // Replace the existing mappedStats with this corrected version:
     const mappedStats = {
@@ -583,111 +583,112 @@ const DashboardPages = ({ dashboardData }) => {
                     marginBottom: '1.8rem'
                 }}>
                     {/* Receita vs Custos */}
-                    <div style={glassCardStyle}>
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            marginBottom: '1rem'
-                        }}>
-                            <div style={{
-                                padding: '0.5rem',
-                                borderRadius: '8px',
-                                backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                                marginRight: '0.75rem'
-                            }}>
-                                <DollarSign size={20} style={{ color: 'rgb(34, 197, 94)' }} />
-                            </div>
-                            <h3 style={{
-                                fontSize: '1rem',
-                                fontWeight: '600',
-                                margin: 0,
-                                color: 'white'
-                            }}>
-                                Receita vs Custos
-                            </h3>
-                        </div>
-
-                        <div style={{ marginBottom: '1rem' }}>
+                    {dashboardData?.permissions?.can_view_profitability && (
+                        <div style={glassCardStyle}>
                             <div style={{
                                 display: 'flex',
-                                justifyContent: 'space-between',
-                                marginBottom: '0.5rem'
+                                alignItems: 'center',
+                                marginBottom: '1rem'
                             }}>
-                                <span style={{
-                                    fontSize: '0.875rem',
-                                    color: 'rgba(255, 255, 255, 0.8)'
+                                <div style={{
+                                    padding: '0.5rem',
+                                    borderRadius: '8px',
+                                    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                                    marginRight: '0.75rem'
                                 }}>
-                                    Receita:
-                                </span>
-                                <span style={{
+                                    <DollarSign size={20} style={{ color: 'rgb(34, 197, 94)' }} />
+                                </div>
+                                <h3 style={{
                                     fontSize: '1rem',
-                                    fontWeight: '700',
-                                    color: 'rgb(34, 197, 94)'
+                                    fontWeight: '600',
+                                    margin: 0,
+                                    color: 'white'
                                 }}>
-                                    €{(mappedStats.total_revenue).toLocaleString()}
-                                </span>
+                                    Receita vs Custos
+                                </h3>
                             </div>
 
-                            <div style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                marginBottom: '0.5rem'
-                            }}>
-                                <span style={{
-                                    fontSize: '0.875rem',
-                                    color: 'rgba(255, 255, 255, 0.8)'
+                            <div style={{ marginBottom: '1rem' }}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '0.5rem'
                                 }}>
-                                    Custo:
-                                </span>
-                                <span style={{
-                                    fontSize: '1rem',
-                                    fontWeight: '700',
-                                    color: 'rgb(239, 68, 68)'
-                                }}>
-                                    €{(mappedStats.total_cost).toLocaleString()}
-                                </span>
-                            </div>
-
-                            <div style={{
-                                borderTop: '1px solid rgba(255, 255, 255, 0.2)',
-                                paddingTop: '0.5rem'
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <span style={{
                                         fontSize: '0.875rem',
-                                        fontWeight: '500',
-                                        color: 'white'
+                                        color: 'rgba(255, 255, 255, 0.8)'
                                     }}>
-                                        Lucro:
+                                        Receita:
                                     </span>
                                     <span style={{
                                         fontSize: '1rem',
                                         fontWeight: '700',
-                                        color: 'white'
+                                        color: 'rgb(34, 197, 94)'
                                     }}>
-                                        €{(mappedStats.total_revenue - mappedStats.total_cost).toLocaleString()}
+                                        €{(mappedStats.total_revenue).toLocaleString()}
                                     </span>
                                 </div>
+
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '0.5rem'
+                                }}>
+                                    <span style={{
+                                        fontSize: '0.875rem',
+                                        color: 'rgba(255, 255, 255, 0.8)'
+                                    }}>
+                                        Custo:
+                                    </span>
+                                    <span style={{
+                                        fontSize: '1rem',
+                                        fontWeight: '700',
+                                        color: 'rgb(239, 68, 68)'
+                                    }}>
+                                        €{(mappedStats.total_cost).toLocaleString()}
+                                    </span>
+                                </div>
+
+                                <div style={{
+                                    borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+                                    paddingTop: '0.5rem'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: '500',
+                                            color: 'white'
+                                        }}>
+                                            Lucro:
+                                        </span>
+                                        <span style={{
+                                            fontSize: '1rem',
+                                            fontWeight: '700',
+                                            color: 'white'
+                                        }}>
+                                            €{(mappedStats.total_revenue - mappedStats.total_cost).toLocaleString()}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
+
+                            <Link
+                                to="/profitability"
+                                style={{
+                                    color: 'rgb(96, 165, 250)',
+                                    fontSize: '0.875rem',
+                                    textDecoration: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    fontWeight: '500'
+                                }}
+                                aria-label="Ver análise financeira detalhada"
+                            >
+                                Ver análise financeira
+                                <ArrowRight size={14} style={{ marginLeft: '0.25rem' }} />
+                            </Link>
                         </div>
-
-                        <Link
-                            to="/profitability"
-                            style={{
-                                color: 'rgb(96, 165, 250)',
-                                fontSize: '0.875rem',
-                                textDecoration: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                                fontWeight: '500'
-                            }}
-                            aria-label="Ver análise financeira detalhada"
-                        >
-                            Ver análise financeira
-                            <ArrowRight size={14} style={{ marginLeft: '0.25rem' }} />
-                        </Link>
-                    </div>
-
+                    )}
                     {/* Produtividade */}
                     <div style={glassCardStyle}>
                         <div style={{
@@ -1380,95 +1381,10 @@ const DashboardPages = ({ dashboardData }) => {
                 </div>
 
                 {/* Atividade Recente - com estilo glass */}
-                <div style={glassCardStyle}>
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        paddingBottom: '1rem',
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-                        marginBottom: '1rem'
-                    }}>
-                        <h2 style={{
-                            fontSize: '1rem',
-                            fontWeight: '600',
-                            margin: 0,
-                            color: 'white',
-                            display: 'flex',
-                            alignItems: 'center'
-                        }}>
-                            <div style={{
-                                padding: '0.5rem',
-                                borderRadius: '8px',
-                                backgroundColor: 'rgba(52, 211, 153, 0.2)',
-                                marginRight: '0.75rem'
-                            }}>
-                                <Activity size={20} style={{ color: 'rgb(52, 211, 153)' }} />
-                            </div>
-                            Atividade Recente
-                        </h2>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button
-                                style={{
-                                    padding: '0.25rem 0.75rem',
-                                    fontSize: '0.75rem',
-                                    backgroundColor: 'rgba(56, 189, 248, 0.2)',
-                                    color: 'rgb(56, 189, 248)',
-                                    borderRadius: '9999px',
-                                    border: '1px solid rgba(56, 189, 248, 0.3)',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(56, 189, 248, 0.3)'}
-                                onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(56, 189, 248, 0.2)'}
-                                aria-label="Filtrar por hoje"
-                            >
-                                Hoje
-                            </button>
-                            <button
-                                style={{
-                                    padding: '0.25rem 0.75rem',
-                                    fontSize: '0.75rem',
-                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                    color: 'rgba(255, 255, 255, 0.7)',
-                                    borderRadius: '9999px',
-                                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
-                                onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
-                                aria-label="Filtrar por semana"
-                            >
-                                Semana
-                            </button>
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {mappedStats.recentTimeEntries?.length === 0 && mappedStats.upcomingTasks?.length === 0 && (
-                            <div style={{
-                                textAlign: 'center',
-                                padding: '1.8rem',
-                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                                borderRadius: '8px',
-                                border: '1px solid rgba(255, 255, 255, 0.1)'
-                            }}>
-                                <Activity size={40} style={{
-                                    color: 'rgba(255, 255, 255, 0.4)',
-                                    margin: '0 auto 1rem auto'
-                                }} />
-                                <p style={{
-                                    color: 'rgba(255, 255, 255, 0.6)',
-                                    margin: 0,
-                                    fontSize: '0.875rem'
-                                }}>
-                                    Sem atividade recente
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <RecentActivitySection 
+                        recentTimeEntries={mappedStats.recentTimeEntries}
+                        upcomingTasks={mappedStats.upcomingTasks}
+                    />
             </div>
         </motion.div>
     );
@@ -1606,5 +1522,318 @@ return (
     </div>
 );
 };
+
+const RecentActivitySection = React.memo(({ recentTimeEntries, upcomingTasks }) => (
+    <div style={{
+        background: 'rgba(255, 255, 255, 0.1)',
+        backdropFilter: 'blur(12px)',
+        borderRadius: '16px',
+        padding: '1.5rem',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        color: 'white',
+    }}>
+        <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingBottom: '1rem',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+            marginBottom: '1rem'
+        }}>
+            <h2 style={{
+                fontSize: '1rem',
+                fontWeight: '600',
+                margin: 0,
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center'
+            }}>
+                <div style={{
+                    padding: '0.5rem',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(52, 211, 153, 0.2)',
+                    marginRight: '0.75rem'
+                }}>
+                    <Activity size={20} style={{ color: 'rgb(52, 211, 153)' }} />
+                </div>
+                Atividade Recente
+            </h2>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Time Entries Section */}
+            {recentTimeEntries && recentTimeEntries.length > 0 && (
+                <div>
+                    <h3 style={{
+                        fontSize: '0.875rem',
+                        fontWeight: '500',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        marginBottom: '0.75rem'
+                    }}>
+                        Tempo Registado Recentemente
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {recentTimeEntries.slice(0, 3).map((entry, index) => (
+                            <TimeEntryRow key={entry.id || index} entry={entry} />
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Upcoming Tasks Section */}
+            {upcomingTasks && upcomingTasks.length > 0 && (
+                <div>
+                    <h3 style={{
+                        fontSize: '0.875rem',
+                        fontWeight: '500',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        marginBottom: '0.75rem'
+                    }}>
+                        Próximas Tarefas
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {upcomingTasks.slice(0, 3).map((task, index) => (
+                            <TaskRow key={task.id || index} task={task} />
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Empty State */}
+            {(!recentTimeEntries || recentTimeEntries.length === 0) && 
+             (!upcomingTasks || upcomingTasks.length === 0) && (
+                <div style={{
+                    textAlign: 'center',
+                    padding: '1.8rem',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                    <Activity size={40} style={{
+                        color: 'rgba(255, 255, 255, 0.4)',
+                        margin: '0 auto 1rem auto'
+                    }} />
+                    <p style={{
+                        color: 'rgba(255, 255, 255, 0.6)',
+                        margin: 0,
+                        fontSize: '0.875rem'
+                    }}>
+                        Sem atividade recente
+                    </p>
+                </div>
+            )}
+        </div>
+    </div>
+));
+
+const FilterButton = React.memo(({ label, active = false }) => {
+    const [isHovered, setIsHovered] = useState(false);
+    
+    return (
+        <button
+            style={{
+                padding: '0.25rem 0.75rem',
+                fontSize: '0.75rem',
+                backgroundColor: active ? 'rgba(56, 189, 248, 0.2)' : 
+                               isHovered ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                color: active ? 'rgb(56, 189, 248)' : 'rgba(255, 255, 255, 0.7)',
+                borderRadius: '9999px',
+                border: `1px solid ${active ? 'rgba(56, 189, 248, 0.3)' : 'rgba(255, 255, 255, 0.2)'}`,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+            }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+        >
+            {label}
+        </button>
+    );
+});
+
+const TimeEntryRow = React.memo(({ entry }) => {
+    const formatMinutes = useCallback((minutes) => {
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+    }, []);
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.75rem',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            borderRadius: '6px',
+            border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+            <div style={{ flex: 1 }}>
+                <div style={{
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    color: 'white',
+                    marginBottom: '0.25rem'
+                }}>
+                    {entry.client_name || 'Cliente não especificado'}
+                </div>
+                <div style={{
+                    fontSize: '0.75rem',
+                    color: 'rgba(255, 255, 255, 0.7)'
+                }}>
+                    {entry.description || 'Sem descrição'}
+                </div>
+            </div>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem'
+            }}>
+                <div style={{
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    color: 'rgb(52, 211, 153)'
+                }}>
+                    {formatMinutes(entry.minutes_spent || 0)}
+                </div>
+                <div style={{
+                    fontSize: '0.75rem',
+                    color: 'rgba(255, 255, 255, 0.6)'
+                }}>
+                    {entry.date ? new Date(entry.date).toLocaleDateString('pt-PT') : 'Data não especificada'}
+                </div>
+            </div>
+        </div>
+    );
+});
+
+// OTIMIZAÇÃO 19: TaskRow component (remains the same)
+const TaskRow = React.memo(({ task }) => {
+    const getPriorityColor = useCallback((priority) => {
+        switch (priority) {
+            case 1: return 'rgb(239, 68, 68)'; // Urgent - Red
+            case 2: return 'rgb(251, 146, 60)'; // High - Orange
+            case 3: return 'rgb(251, 191, 36)'; // Medium - Yellow
+            case 4: return 'rgb(34, 197, 94)'; // Low - Green
+            case 5: return 'rgb(156, 163, 175)'; // Can Wait - Gray
+            default: return 'rgb(251, 191, 36)'; // Default - Yellow
+        }
+    }, []);
+
+    const getStatusColor = useCallback((status) => {
+        switch (status) {
+            case 'completed': return 'rgb(34, 197, 94)';
+            case 'in_progress': return 'rgb(59, 130, 246)';
+            case 'pending': return 'rgb(251, 191, 36)';
+            case 'cancelled': return 'rgb(156, 163, 175)';
+            default: return 'rgb(251, 191, 36)';
+        }
+    }, []);
+
+    const formatDeadline = useCallback((deadline) => {
+        if (!deadline) return 'Sem prazo';
+        
+        const deadlineDate = new Date(deadline);
+        const today = new Date();
+        // Reset time part for accurate date comparison
+        today.setHours(0,0,0,0);
+        deadlineDate.setHours(0,0,0,0);
+
+        const diffTime = deadlineDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 0) return 'Hoje';
+        if (diffDays === 1) return 'Amanhã';
+        if (diffDays === -1) return 'Ontem';
+        if (diffDays < -1) return `${Math.abs(diffDays)} dias atrasado`;
+        if (diffDays > 1 && diffDays <= 7) return `Em ${diffDays} dias`; // Adjusted phrasing
+        
+        return deadlineDate.toLocaleDateString('pt-PT');
+    }, []);
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.75rem',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            borderRadius: '6px',
+            border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+            <div style={{ flex: 1, overflow: 'hidden', marginRight: '0.5rem' }}> {/* Added overflow and margin */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginBottom: '0.25rem'
+                }}>
+                    {/* Priority Indicator */}
+                    <div style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: getPriorityColor(task.priority),
+                        flexShrink: 0
+                    }} />
+                    
+                    <div style={{
+                        fontSize: '0.875rem',
+                        fontWeight: '500',
+                        color: 'white',
+                        whiteSpace: 'nowrap', // Prevent title from wrapping too early
+                        overflow: 'hidden',   // Hide overflow
+                        textOverflow: 'ellipsis' // Add ellipsis for long titles
+                    }}>
+                        {task.title || 'Tarefa sem título'}
+                    </div>
+
+                    {/* Status Badge */}
+                    {task.status && ( // Render only if status exists
+                      <div style={{
+                          padding: '0.125rem 0.5rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.625rem',
+                          fontWeight: '500',
+                          backgroundColor: `${getStatusColor(task.status)}20`, // Ensure alpha is appended correctly
+                          color: getStatusColor(task.status),
+                          border: `1px solid ${getStatusColor(task.status)}40`, // Ensure alpha is appended correctly
+                          marginLeft: 'auto', // Push to the right if space allows
+                          flexShrink: 0
+                      }}>
+                          {task.status || 'pending'}
+                      </div>
+                    )}
+                </div>
+                
+                <div style={{
+                    fontSize: '0.75rem',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                }}>
+                    {task.client_name || 'Cliente não especificado'}
+                </div>
+            </div>
+            
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                flexShrink: 0 // Prevent deadline from shrinking
+            }}>
+                <div style={{
+                    fontSize: '0.75rem',
+                    color: task.deadline && new Date(task.deadline).setHours(0,0,0,0) < new Date().setHours(0,0,0,0) ? 
+                          'rgb(239, 68, 68)' : 'rgba(255, 255, 255, 0.6)',
+                    fontWeight: task.deadline && new Date(task.deadline).setHours(0,0,0,0) < new Date().setHours(0,0,0,0) ? '500' : 'normal',
+                    whiteSpace: 'nowrap' // Prevent wrapping
+                }}>
+                    {formatDeadline(task.deadline)}
+                </div>
+            </div>
+        </div>
+    );
+});
 
 export default DashboardPages; 

@@ -1,12 +1,22 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Organization, Client,NotificationSettings, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
+from .models import Organization, Client,NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
 import json
 from django.db import models
 from django.db.models import Sum
 import logging
 
 logger = logging.getLogger(__name__)
+
+class FiscalObligationDefinitionSerializer(serializers.ModelSerializer):
+    organization_name = serializers.ReadOnlyField(source='organization.name', allow_null=True)
+    default_task_category_name = serializers.ReadOnlyField(source='default_task_category.name', allow_null=True)
+    default_workflow_name = serializers.ReadOnlyField(source='default_workflow.name', allow_null=True)
+
+    class Meta:
+        model = FiscalObligationDefinition
+        fields = '__all__' # Ou liste os campos explicitamente
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 class OrganizationSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()

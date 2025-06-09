@@ -27,6 +27,7 @@ router.register(r'workflow-step-details', views.WorkflowStepDetailViewSet, basen
 router.register(r'notification-settings', views.NotificationSettingsViewSet, basename='notification-settings')
 router.register(r'notification-templates', views.NotificationTemplateViewSet, basename='notification-templates')
 router.register(r'notification-digests', views.NotificationDigestViewSet, basename='notification-digests')
+router.register(r'fiscal-obligation-definitions', views.FiscalObligationDefinitionViewSet, basename='fiscal-obligation-definition')
 
 urlpatterns = [
     # Autenticação

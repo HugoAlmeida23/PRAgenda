@@ -430,6 +430,7 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
 
   const menuItems = [
     { path: "/", icon: Home, label: "Dashboard", category: "main" },
+    { path: "/fiscal-obligations", icon: FileText, /* ou outro ícone como Settings2 */ label: "Definições Fiscais", category: "settings" },
     { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade", category: "analytics" },
     { path: "/tasks", icon: CheckSquare, label: "Tarefas", category: "main" },
     { path: "/timeentry", icon: Clock, label: "Registo de Tempos", category: "main" },

@@ -37,10 +37,107 @@ from .services.notification_escalation import NotificationEscalationService
 from .services.notifications_reports import NotificationReportsService
 from .services.notification_template_service import NotificationTemplateService
 from .services.notification_digest_service import NotificationDigestService
-
+# ... (outros imports e ViewSets)
+from .models import FiscalObligationDefinition
+from .serializers import FiscalObligationDefinitionSerializer # Certifique-se que está importado
 
 logger = logging.getLogger(__name__) # Redundant
 
+class FiscalObligationDefinitionViewSet(viewsets.ModelViewSet):
+    serializer_class = FiscalObligationDefinitionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            # Superusuário pode ver todas as definições
+            return FiscalObligationDefinition.objects.all().select_related('organization', 'default_task_category', 'default_workflow')
+        
+        try:
+            profile = Profile.objects.get(user=user)
+            if profile.organization:
+                # Usuários normais veem definições globais (sem organização) OU da sua própria organização
+                return FiscalObligationDefinition.objects.filter(
+                    Q(organization__isnull=True) | Q(organization=profile.organization)
+                ).select_related('organization', 'default_task_category', 'default_workflow')
+            else:
+                # Usuário sem organização só vê definições globais
+                return FiscalObligationDefinition.objects.filter(organization__isnull=True).select_related('organization', 'default_task_category', 'default_workflow')
+        except Profile.DoesNotExist:
+            return FiscalObligationDefinition.objects.none() # Ou apenas globais se fizer sentido
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        # Apenas superusuários podem criar definições globais (sem organização)
+        # Apenas administradores de organização podem criar definições para a sua organização
+        organization_id = self.request.data.get('organization')
+        
+        if user.is_superuser:
+            if organization_id:
+                try:
+                    org = Organization.objects.get(id=organization_id)
+                    serializer.save(organization=org)
+                except Organization.DoesNotExist:
+                    raise serializers.ValidationError({"organization": "Organização não encontrada."})
+            else:
+                serializer.save(organization=None) # Definição Global
+        else:
+            try:
+                profile = Profile.objects.get(user=user)
+                if not profile.is_org_admin or not profile.organization:
+                    raise PermissionDenied("Apenas administradores de organização podem criar definições fiscais para a sua organização.")
+                
+                # Se um admin de org tenta criar, deve ser para a sua própria org ou nenhuma (se permitido)
+                if organization_id and str(profile.organization.id) != str(organization_id):
+                     raise PermissionDenied("Não pode criar definições para outra organização.")
+                
+                serializer.save(organization=profile.organization) # Força a ser da organização do admin
+            except Profile.DoesNotExist:
+                raise PermissionDenied("Perfil de usuário não encontrado.")
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        instance = serializer.instance
+
+        if user.is_superuser:
+            serializer.save()
+        else:
+            try:
+                profile = Profile.objects.get(user=user)
+                if not profile.is_org_admin or not profile.organization:
+                    raise PermissionDenied("Sem permissão para editar esta definição.")
+                if instance.organization and instance.organization != profile.organization:
+                    raise PermissionDenied("Não pode editar definições de outra organização.")
+                # Admins de org só podem editar as suas ou as globais se tiverem permissão (não implementado aqui)
+                if instance.organization is None and not user.is_superuser: # Admin de org tentando editar global
+                    raise PermissionDenied("Apenas superusuários podem editar definições globais.")
+                serializer.save()
+            except Profile.DoesNotExist:
+                raise PermissionDenied("Perfil de usuário não encontrado.")
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        if user.is_superuser:
+            instance.delete()
+        else:
+            try:
+                profile = Profile.objects.get(user=user)
+                if not profile.is_org_admin or not profile.organization:
+                    raise PermissionDenied("Sem permissão para excluir esta definição.")
+                if instance.organization and instance.organization != profile.organization:
+                    raise PermissionDenied("Não pode excluir definições de outra organização.")
+                if instance.organization is None and not user.is_superuser:
+                    raise PermissionDenied("Apenas superusuários podem excluir definições globais.")
+                
+                # Verificar se está em uso antes de excluir (opcional, mas bom)
+                if Task.objects.filter(source_fiscal_obligation=instance).exists():
+                    # Em vez de excluir, poderia desativar: instance.is_active = False; instance.save()
+                    raise PermissionDenied("Esta definição está em uso por tarefas e não pode ser excluída. Considere desativá-la.")
+
+                instance.delete()
+            except Profile.DoesNotExist:
+                raise PermissionDenied("Perfil de usuário não encontrado.")
+                
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated]

@@ -21,8 +21,7 @@ import {
 import api from '../api';
 import { toast } from 'react-toastify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import WorkflowStepCard from '../components/WorkflowStepCard';
-import SimpleWorkflowStepTimeCard from '../components/SimpleWorkflowStepTimeCard';
+
 
 // Estilos glass modernos
 const glassStyle = {
