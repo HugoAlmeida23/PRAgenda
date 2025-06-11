@@ -2,7 +2,19 @@ from django.db.models import Sum
 from django.utils import timezone
 from decimal import Decimal
 from .models import Client, TimeEntry, Expense, ClientProfitability
+import json
+from decimal import Decimal
+import uuid # If you also have UUIDs
 
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj) # Or str(obj) if you prefer string representation
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        # Let the base class default method raise the TypeError
+        return super().default(obj)
+    
 def update_client_profitability(client_id, year, month):
     """
     Atualiza ou cria um registro de rentabilidade para um cliente e período específico.

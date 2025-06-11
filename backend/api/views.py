@@ -43,7 +43,10 @@ from .models import FiscalSystemSettings
 from django.core.exceptions import PermissionDenied
 from .services.fiscal_notification_service import FiscalNotificationService 
 from .serializers import FiscalSystemSettingsSerializer
-
+from django.db.models.functions import Now
+from django.db.models import ExpressionWrapper, fields
+from .services.ai_advisor_service import AIAdvisorService
+from .utils import CustomJSONEncoder
 
 
 logger = logging.getLogger(__name__) # Redundant
@@ -3956,3 +3959,361 @@ def generate_fiscal_obligations_manual(request):
             {'error': f'Erro interno: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fiscal_upcoming_deadlines(request):
+    """
+    Returns fiscal obligation tasks with upcoming deadlines for the user's organization.
+    Default: next 30 days.
+    Query Params:
+        - days: Number of days ahead to check for deadlines (e.g., ?days=7 for next week). Default is 30.
+        - limit: Max number of tasks to return. Default is 20.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.organization:
+            return Response({'error': 'Usuário não associado a uma organização.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Permissions: Org admins or users with analytics/task view permissions
+        if not (profile.is_org_admin or profile.can_view_analytics or profile.can_view_all_tasks):
+            # If user can only see assigned tasks, filter for those. This might be too restrictive for a dashboard view.
+            # For a general dashboard, typically broader view is preferred if allowed.
+            # Consider if non-admins should see all upcoming fiscal deadlines for their org, or only their assigned ones.
+            # For now, restricting to admins/analytics viewers for org-wide view.
+             return Response({'error': 'Sem permissão para visualizar prazos fiscais da organização.'}, status=status.HTTP_403_FORBIDDEN)
+
+
+        days_ahead_str = request.query_params.get('days', '30')
+        limit_str = request.query_params.get('limit', '20')
+
+        try:
+            days_ahead = int(days_ahead_str)
+            limit = int(limit_str)
+            if not (1 <= days_ahead <= 90): # Limit days_ahead to a reasonable range
+                raise ValueError("Parâmetro 'days' deve estar entre 1 e 90.")
+            if not (1 <= limit <= 100): # Limit the number of results
+                 raise ValueError("Parâmetro 'limit' deve estar entre 1 e 100.")
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        today = timezone.now().date()
+        future_date = today + timedelta(days=days_ahead)
+
+        upcoming_tasks = Task.objects.filter(
+            client__organization=profile.organization,
+            source_fiscal_obligation__isnull=False, # Ensure it's a fiscal obligation task
+            deadline__gte=today,
+            deadline__lte=future_date,
+            status__in=['pending', 'in_progress'] # Only active tasks
+        ).select_related(
+            'client', 
+            'assigned_to', 
+            'source_fiscal_obligation' # To get obligation name if needed
+        ).order_by('deadline', 'priority')[:limit]
+
+        # Using TaskSerializer but might need a more specific one if you want less/different fields
+        serializer = TaskSerializer(upcoming_tasks, many=True) 
+        return Response(serializer.data)
+
+    except Profile.DoesNotExist:
+        return Response({'error': 'Perfil não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erro ao buscar prazos fiscais futuros: {e}")
+        return Response({'error': f'Erro interno: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+# views.py
+
+# ... (other imports and the beginning of get_ai_advisor_initial_context) ...
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_ai_advisor_initial_context(request):
+    try:
+        profile = Profile.objects.select_related('organization').get(user=request.user) # Fetch organization along with profile
+        if not profile.organization:
+            return Response({"error": "Usuário não está associado a uma organização."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not profile.is_org_admin: # Or a more specific 'can_use_ai_advisor' permission
+            return Response({"error": "Sem permissão para aceder ao consultor AI."}, status=status.HTTP_403_FORBIDDEN)
+
+        organization = profile.organization
+        context_data = {
+            "organization_name": organization.name,
+            "current_date": timezone.now().strftime("%Y-%m-%d"),
+            "data_summary_period": "Últimos 90 dias e dados atuais relevantes" # Clarify the scope
+        }
+        
+        # --- Timeframe for aggregations ---
+        ninety_days_ago = timezone.now().date() - timedelta(days=90)
+        today = timezone.now().date() # Use today consistently
+
+        # 1. Clients Overview
+        # ... (Client overview logic remains the same) ...
+        active_clients = Client.objects.filter(organization=organization, is_active=True)
+        client_details_sample = []
+        top_clients = active_clients.order_by('-monthly_fee')[:5]
+        low_fee_clients = active_clients.filter(monthly_fee__lte=0).order_by('name')[:3]
+        
+        clients_for_sample = list(top_clients) + list(low_fee_clients)
+        clients_for_sample_ids = {c.id for c in clients_for_sample}
+        
+        if len(clients_for_sample_ids) < 8:
+            additional_clients_needed = 8 - len(clients_for_sample_ids)
+            other_clients = active_clients.exclude(id__in=clients_for_sample_ids).order_by('?')[:additional_clients_needed]
+            clients_for_sample.extend(other_clients)
+            clients_for_sample_ids.update(c.id for c in other_clients)
+            
+        unique_sample_clients = {c.id: c for c in clients_for_sample}.values()
+
+        for client in unique_sample_clients:
+            profit_record = ClientProfitability.objects.filter(
+                client=client
+            ).order_by('-year', '-month').first()
+            client_details_sample.append({
+                "name": client.name,
+                "monthly_fee": float(client.monthly_fee or 0),
+                "fiscal_tags": client.fiscal_tags or [],
+                "recent_profit_margin": float(profit_record.profit_margin) if profit_record and profit_record.profit_margin is not None else None,
+                "active_tasks_count": Task.objects.filter(client=client, status__in=['pending', 'in_progress']).count(),
+            })
+        context_data['clients_overview'] = {
+            "total_active_clients": active_clients.count(),
+            "clients_sample_details": client_details_sample,
+            "clients_with_no_fee": active_clients.filter(monthly_fee__lte=0).count()
+        }
+
+        # 2. Profitability Snapshot (Organization Level for last 90 days)
+        # ... (Profitability snapshot logic remains the same) ...
+        profitability_snapshot = ClientProfitability.objects.filter(
+            client__organization=organization,
+            last_updated__gte=ninety_days_ago 
+        ).aggregate(
+            avg_profit_margin_org=Avg('profit_margin', filter=Q(profit_margin__isnull=False)),
+            total_profit_org=Sum('profit', filter=Q(profit__isnull=False)),
+            count_profitable_periods=Count('id', filter=Q(is_profitable=True)),
+            count_unprofitable_periods=Count('id', filter=Q(is_profitable=False))
+        )
+        context_data['profitability_snapshot_organization'] = {
+            "average_profit_margin": profitability_snapshot.get('avg_profit_margin_org'),
+            "total_profit_last_90_days_approx": profitability_snapshot.get('total_profit_org'),
+            "profitable_client_months_count": profitability_snapshot.get('count_profitable_periods'),
+            "unprofitable_client_months_count": profitability_snapshot.get('count_unprofitable_periods'),
+        }
+
+        # 3. Tasks Overview
+        org_tasks = Task.objects.filter(client__organization=organization)
+        active_org_tasks = org_tasks.filter(status__in=['pending', 'in_progress'])
+        
+        duration_expression = ExpressionWrapper(F('completed_at') - F('created_at'), output_field=fields.DurationField())
+        completed_tasks_recent = org_tasks.filter(
+            status='completed',
+            completed_at__gte=ninety_days_ago,
+            created_at__isnull=False,
+            completed_at__isnull=False
+        )
+        avg_completion_duration_data = completed_tasks_recent.annotate(duration=duration_expression).aggregate(avg_duration=Avg('duration'))
+        
+        avg_completion_days = None
+        if avg_completion_duration_data and avg_completion_duration_data['avg_duration']:
+            avg_completion_days = avg_completion_duration_data['avg_duration'].total_seconds() / (60*60*24)
+
+        context_data['tasks_overview'] = {
+            "total_tasks": org_tasks.count(),
+            "active_tasks": active_org_tasks.count(),
+            "overdue_tasks": active_org_tasks.filter(deadline__lt=today).count(), # Corrected: today instead of timezone.now().date()
+            "completed_last_90_days": completed_tasks_recent.count(),
+            "avg_task_completion_days_last_90_days": round(avg_completion_days, 1) if avg_completion_days is not None else None,
+        }
+
+        tasks_per_category = TaskCategory.objects.annotate(
+            active_task_count=Count('tasks', filter=Q(tasks__client__organization=organization, tasks__status__in=['pending', 'in_progress']))
+        ).filter(active_task_count__gt=0).order_by('-active_task_count')[:5]
+        
+        context_data['tasks_overview']['active_tasks_per_category_top_5'] = [
+            {"category_name": cat.name, "count": cat.active_task_count} for cat in tasks_per_category
+        ]
+
+        # --- START: NEW SECTION FOR DETAILED TASK SAMPLE ---
+        detailed_tasks_sample = []
+        sample_task_ids = set()
+        MAX_SAMPLE_TASKS = 15 # Max tasks to include in the detailed sample
+
+        # a. Overdue tasks (up to 5)
+        overdue_sample = active_org_tasks.filter(
+            deadline__lt=today
+        ).select_related('assigned_to', 'client').order_by('deadline', '-priority')[:5]
+        for task in overdue_sample:
+            if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS and task.id not in sample_task_ids:
+                detailed_tasks_sample.append({
+                    "title": task.title,
+                    "client_name": task.client.name if task.client else "N/A",
+                    "status": task.get_status_display(),
+                    "priority": task.get_priority_display(),
+                    "deadline": task.deadline.strftime("%Y-%m-%d") if task.deadline else "N/A",
+                    "assigned_to": task.assigned_to.username if task.assigned_to else "Não atribuído"
+                })
+                sample_task_ids.add(task.id)
+
+        # b. Tasks due today or tomorrow (up to 5, excluding already added overdue)
+        if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS:
+            due_soon_sample = active_org_tasks.filter(
+                deadline__gte=today,
+                deadline__lte=today + timedelta(days=1)
+            ).exclude(id__in=sample_task_ids).select_related('assigned_to', 'client').order_by('deadline', 'priority')[:5]
+            for task in due_soon_sample:
+                if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS and task.id not in sample_task_ids:
+                    detailed_tasks_sample.append({
+                        "title": task.title,
+                        "client_name": task.client.name if task.client else "N/A",
+                        "status": task.get_status_display(),
+                        "priority": task.get_priority_display(),
+                        "deadline": task.deadline.strftime("%Y-%m-%d") if task.deadline else "N/A",
+                        "assigned_to": task.assigned_to.username if task.assigned_to else "Não atribuído"
+                    })
+                    sample_task_ids.add(task.id)
+        
+        # c. Other active high priority tasks or recently updated active tasks (to fill up to MAX_SAMPLE_TASKS)
+        if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS:
+            remaining_needed = MAX_SAMPLE_TASKS - len(detailed_tasks_sample)
+            other_active_sample = active_org_tasks.exclude(
+                id__in=sample_task_ids
+            ).select_related('assigned_to', 'client').order_by('-priority', '-updated_at')[:remaining_needed]
+            for task in other_active_sample:
+                # No need to check MAX_SAMPLE_TASKS again due to slice, but keep id check
+                if task.id not in sample_task_ids:
+                    detailed_tasks_sample.append({
+                        "title": task.title,
+                        "client_name": task.client.name if task.client else "N/A",
+                        "status": task.get_status_display(),
+                        "priority": task.get_priority_display(),
+                        "deadline": task.deadline.strftime("%Y-%m-%d") if task.deadline else "N/A",
+                        "assigned_to": task.assigned_to.username if task.assigned_to else "Não atribuído"
+                    })
+                    sample_task_ids.add(task.id)
+
+        context_data['tasks_overview']['detailed_tasks_sample'] = detailed_tasks_sample
+        # --- END: NEW SECTION FOR DETAILED TASK SAMPLE ---
+
+
+        # 4. Fiscal Obligations Snapshot
+        # ... (Fiscal obligations logic remains the same) ...
+        upcoming_fiscal_days = 30
+        future_date_fiscal = today + timedelta(days=upcoming_fiscal_days) # Corrected: today
+        
+        upcoming_fiscal_tasks = Task.objects.filter(
+            client__organization=organization,
+            source_fiscal_obligation__isnull=False,
+            deadline__gte=today, # Corrected: today
+            deadline__lte=future_date_fiscal,
+            status__in=['pending', 'in_progress']
+        ).select_related('source_fiscal_obligation', 'client').order_by('deadline')
+
+        context_data['fiscal_obligations_snapshot'] = {
+            "total_active_fiscal_definitions": FiscalObligationDefinition.objects.filter(
+                Q(organization=organization) | Q(organization__isnull=True), is_active=True
+            ).count(),
+            "upcoming_deadlines_next_30_days_count": upcoming_fiscal_tasks.count(),
+            "upcoming_deadlines_sample": [
+                {
+                    "obligation_name": task.source_fiscal_obligation.name if task.source_fiscal_obligation else task.title,
+                    "client_name": task.client.name,
+                    "deadline": task.deadline.strftime("%Y-%m-%d")
+                } for task in upcoming_fiscal_tasks[:3]
+            ]
+        }
+
+        # 5. Team Performance Snippet (Corrected field names based on previous implementation)
+        # ... (Team performance logic remains the same) ...
+        active_users_count = Profile.objects.filter(organization=organization, user__is_active=True).count()
+        if active_users_count > 0:
+            tasks_completed_last_month_org = org_tasks.filter(status='completed', completed_at__gte=today - timedelta(days=30)).count() # Corrected: today
+            avg_tasks_per_user = tasks_completed_last_month_org / active_users_count if active_users_count > 0 else 0
+            context_data['team_performance_snippet'] = {
+                "active_team_members": active_users_count,
+                "avg_tasks_completed_per_member_last_30_days": round(avg_tasks_per_user,1)
+            }
+        else:
+            context_data['team_performance_snippet'] = {
+                 "active_team_members": 0,
+                 "avg_tasks_completed_per_member_last_30_days": 0
+            }
+
+
+        logger.info(f"Generated AI advisor context for org {organization.id}, user {request.user.username}. Size approx {len(json.dumps(context_data, cls=CustomJSONEncoder))} bytes.")
+
+        return Response(context_data)
+
+    except Profile.DoesNotExist:
+        return Response({"error": "Perfil de usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error generating AI advisor initial context: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({"error": "Erro ao preparar dados para o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def start_ai_advisor_session(request):
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin: # Or your specific permission check
+            return Response({"error": "Sem permissão para iniciar sessão com o Consultor AI."}, status=status.HTTP_403_FORBIDDEN)
+
+        context_data = request.data.get('context', {})
+        if not context_data: # This context comes from the /ai-advisor/get-initial-context/ call
+            return Response({"error": "Dados de contexto são necessários para iniciar a sessão."}, status=status.HTTP_400_BAD_REQUEST)
+
+        advisor_service = AIAdvisorService()
+        session_id, initial_message = advisor_service.start_session(context_data, request.user)
+
+        if session_id is None: # Indicates an error occurred within the service
+            return Response({"error": initial_message or "Não foi possível iniciar a sessão com o Consultor AI."}, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response({
+            "session_id": session_id,
+            "initial_message": initial_message
+        }, status=status.HTTP_201_CREATED)
+
+    except Profile.DoesNotExist:
+        return Response({"error": "Perfil de usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in start_ai_advisor_session view: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({"error": "Erro interno ao iniciar a sessão com o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def query_ai_advisor(request):
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin: # Or your specific permission check
+            return Response({"error": "Sem permissão para consultar o Consultor AI."}, status=status.HTTP_403_FORBIDDEN)
+
+        session_id = request.data.get('session_id')
+        user_query_text = request.data.get('query')
+
+        if not session_id or not user_query_text:
+            return Response({"error": "session_id e query são obrigatórios."}, status=status.HTTP_400_BAD_REQUEST)
+
+        advisor_service = AIAdvisorService()
+        ai_response_text, error_message = advisor_service.process_query(session_id, user_query_text, request.user)
+
+        if error_message:
+            # Check if it's a session not found error specifically
+            if "Sessão inválida ou expirada" in error_message:
+                 return Response({"error": error_message}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": error_message or "Não foi possível obter resposta do Consultor AI."}, status=status.HTTP_502_BAD_GATEWAY)
+        
+        return Response({"response": ai_response_text})
+
+    except Profile.DoesNotExist:
+        return Response({"error": "Perfil de usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in query_ai_advisor view: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({"error": "Erro interno ao consultar o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -18,9 +18,10 @@ import DashboardRouter from "./pages/DashboardRouter"; // This will likely be yo
 import { PermissionsProvider } from './contexts/PermissionsContext';
 import Layout from './components/Layout/Layout'; // Your new Layout component
 import NotificationsPage from "./pages/NotificationsPage";
-import FiscalObligationManagement from "./pages/FiscalObligationManagement";
-import FiscalTagSystemDemo from "./pages/TagManagement";
-import FiscalManagementDashboard from "./pages/FiscalManagementDashboard";
+import FiscalDashboardPage from "./components/fiscal/FiscalDashboardPage";
+import FiscalObligationDefinitionsPage from "./components/fiscal/FiscalObligationDefinitionsPage";
+import FiscalSystemSettingsPage from "./components/fiscal/FiscalSystemSettingsPage";
+import AIAdvisorPage from "./pages/AIAdvisorPage"; // New Import
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -76,10 +77,10 @@ function App() {
               <Route path="task-workflow/:taskId" element={<TaskWorkflow />} />
               <Route path="workflow-management" element={<WorkflowManagement />} />
               <Route path="notifications" element={<NotificationsPage />} />
-              <Route path="fiscal-obligations" element={<FiscalObligationManagement />} />
-              <Route path="tags" element={<FiscalTagSystemDemo />} />
-              <Route path="fiscal-dashboard" element={<FiscalManagementDashboard />} />
-
+              <Route path="fiscal-dashboard" element={<FiscalDashboardPage />} />
+              <Route path="fiscal-definitions" element={<FiscalObligationDefinitionsPage />} />
+              <Route path="fiscal-settings" element={<FiscalSystemSettingsPage />} />
+                            <Route path="ai-advisor" element={<AIAdvisorPage />} /> 
             </Route>
 
             {/* Fallback for unknown routes */}

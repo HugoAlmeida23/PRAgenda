@@ -3,18 +3,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate, Link, Outlet } from 'react-router-dom';
 import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
-  Bell, Search, Menu, X, LogOut, User as UserIconLucide, // Renamed User to UserIconLucide
+  Bell, Search, Menu, X, LogOut, User as UserIconLucide,
   Briefcase, GitPullRequest, Sparkles, Zap, Brain,
   BarChart3, TrendingUp, Calendar, FileText, HelpCircle, User2,
-  ArrowRight, Send, Command, Check, Loader2, PackageOpen, PlayCircle, AlertTriangle// Added Loader2 and PackageOpen
+  ArrowRight, Send, Command, Check, Loader2, PackageOpen, PlayCircle, AlertTriangle,ChevronDown,
+  Archive as ArchiveIcon // New icon for Fiscal
 } from 'lucide-react';
-import api from '../../api';
+import api from '../../api'; // Assuming api.js is in src folder
 import BackgroundElements from '../HeroSection/BackgroundElements';
-import './Layout.css'; 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; // Added React Query
-import { toast } from 'react-toastify'; // For potential error messages
+import './Layout.css';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+import { Bot } from 'lucide-react';
 
-// AI Navigation Service (existing)
+// AI Navigation Service (Keep as is)
 class AINavigationService {
   static navigationMap = [
     {
@@ -22,6 +24,12 @@ class AINavigationService {
       path: '/',
       label: 'Dashboard',
       description: 'Ver painel principal e estatísticas'
+    },
+    {
+      keywords: ['ai advisor', 'chat ia', 'consultor ia', 'insights ia', 'gemini chat'],
+      path: '/ai-advisor',
+      label: 'Consultor AI',
+      description: 'Converse com a IA sobre os seus dados de negócio'
     },
     {
       keywords: ['cliente', 'clientes', 'client', 'clients', 'empresas', 'empresa'],
@@ -64,6 +72,25 @@ class AINavigationService {
       path: '/profile',
       label: 'Perfil',
       description: 'Ver e editar perfil pessoal'
+    },
+    // New Fiscal Navigation Items
+    {
+      keywords: ['fiscal', 'obrigações', 'tax', 'impostos', 'dashboard fiscal'],
+      path: '/fiscal-dashboard',
+      label: 'Dashboard Fiscal',
+      description: 'Visão geral do sistema fiscal'
+    },
+    {
+      keywords: ['definições fiscais', 'regras fiscais', 'obrigações definição'],
+      path: '/fiscal-definitions',
+      label: 'Definições Fiscais',
+      description: 'Gerir definições de obrigações fiscais'
+    },
+    {
+      keywords: ['configurações fiscais', 'settings fiscal', 'ajustes fiscais'],
+      path: '/fiscal-settings',
+      label: 'Configurações Fiscais',
+      description: 'Ajustar configurações do sistema fiscal'
     }
   ];
 
@@ -163,7 +190,7 @@ class AINavigationService {
   }
 }
 
-// AI Search Component (existing)
+
 const AISearchBar = ({ onNavigate }) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -424,23 +451,35 @@ const AISearchBar = ({ onNavigate }) => {
   );
 };
 
-// Navigation Component (existing)
+
 const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   const navigate = useNavigate();
 
   const menuItems = [
     { path: "/", icon: Home, label: "Dashboard", category: "main" },
-    { path: "/fiscal-obligations", icon: FileText, /* ou outro ícone como Settings2 */ label: "Obrigações Fiscais", category: "settings" },
-    { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade", category: "analytics" },
+    { path: "/ai-advisor", icon: Bot, label: "Consultor AI", category: "analytics" }, // Or a new category "AI Tools"
     { path: "/tasks", icon: CheckSquare, label: "Tarefas", category: "main" },
-    { path: "/timeentry", icon: Clock, label: "Registo de Tempos", category: "main" },
     { path: "/clients", icon: Users, label: "Clientes", category: "main" },
-    { path: "/organization", icon: Briefcase, label: "Organização", category: "settings" },
+    { path: "/timeentry", icon: Clock, label: "Registo de Tempos", category: "main" },
+    { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade", category: "analytics" },
     { path: "/workflow-management", icon: Settings, label: "Gerir Workflows", category: "advanced" },
-    { path: "/tags", icon: Settings, label: "Gerir Tags", category: "advanced" },
-    { path: "/fiscal-dashboard", icon: Settings, label: "Gestão Fiscal", category: "advanced" },
+    {
+      label: "Fiscal", icon: ArchiveIcon, category: "fiscal", subItems: [
+        { path: "/fiscal-dashboard", label: "Dashboard Fiscal" },
+        { path: "/fiscal-definitions", label: "Definições" },
+        { path: "/fiscal-settings", label: "Configurações" },
+      ]
+    },
+    { path: "/organization", icon: Briefcase, label: "Organização", category: "settings" },
     { path: "/profile", icon: UserIconLucide, label: "Perfil", category: "main" }
   ];
+
+  const [openSubmenus, setOpenSubmenus] = useState({});
+
+  const toggleSubmenu = (category) => {
+    setOpenSubmenus(prev => ({ ...prev, [category]: !prev[category] }));
+  };
+
 
   const handleMenuClick = (path) => {
     navigate(path);
@@ -585,7 +624,62 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
             }}>
               {menuItems.map((item, index) => {
                 const IconComponent = item.icon;
-                const isActive = currentPath === item.path;
+                const isActive = item.path ? currentPath === item.path : (item.subItems && item.subItems.some(sub => currentPath === sub.path));
+                const isSubmenuOpen = openSubmenus[item.category];
+
+                if (item.subItems) {
+                  return (
+                    <motion.div key={item.category} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.05 }}>
+                      <motion.button
+                        onClick={() => toggleSubmenu(item.category)}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center', padding: '1rem 2rem',
+                          background: isActive ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
+                          border: 'none', color: 'white', fontSize: '0.9rem', fontWeight: '500',
+                          cursor: 'pointer', borderRadius: '0 24px 24px 0', margin: '0.25rem 0',
+                          transition: 'all 0.2s ease', textAlign: 'left', justifyContent: 'space-between'
+                        }}
+                        whileHover={{ scale: 1.02, x: 8 }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          <div style={{ marginRight: '1rem', padding: '0.5rem', borderRadius: '8px', background: isActive ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)' }}>
+                            <IconComponent size={18} />
+                          </div>
+                          {item.label}
+                        </div>
+                        <ChevronDown size={16} style={{ transform: isSubmenuOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                      </motion.button>
+                      <AnimatePresence>
+                        {isSubmenuOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            style={{ overflow: 'hidden', paddingLeft: '2rem' }}
+                          >
+                            {item.subItems.map((subItem, subIndex) => (
+                              <motion.button
+                                key={subItem.path}
+                                onClick={() => handleMenuClick(subItem.path)}
+                                whileHover={{ scale: 1.02, x: 4 }}
+                                whileTap={{ scale: 0.98 }}
+                                style={{
+                                  width: '100%', display: 'flex', alignItems: 'center', padding: '0.75rem 1rem 0.75rem 2rem',
+                                  background: currentPath === subItem.path ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                                  border: 'none', color: 'rgba(255,255,255,0.8)', fontSize: '0.85rem', fontWeight: '400',
+                                  cursor: 'pointer', borderRadius: '0 18px 18px 0', margin: '0.1rem 0',
+                                  transition: 'all 0.2s ease', textAlign: 'left'
+                                }}
+                              >
+                                {subItem.label}
+                              </motion.button>
+                            ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  );
+                }
 
                 return (
                   <motion.div
@@ -667,11 +761,11 @@ const NavigationPanel = ({ isOpen, onClose, currentPath, userProfile }) => {
   );
 };
 
-// Notifications Dropdown Component
+
 const NotificationsDropdown = ({
   isOpen,
   onClose,
-  notifications,
+  notifications = [], // Ensure default value
   isLoading,
   onMarkAsRead,
   onMarkAllAsRead,
@@ -714,12 +808,13 @@ const NotificationsDropdown = ({
   };
   
   const timeSince = (dateString) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
     const seconds = Math.floor((new Date() - date) / 1000);
     let interval = seconds / 31536000;
     if (interval > 1) return Math.floor(interval) + "a";
     interval = seconds / 2592000;
-    if (interval > 1) return Math.floor(interval) + "m";
+    if (interval > 1) return Math.floor(interval) + "m"; // Corrected from "m" for months to distinguish from minutes
     interval = seconds / 86400;
     if (interval > 1) return Math.floor(interval) + "d";
     interval = seconds / 3600;
@@ -791,7 +886,11 @@ const NotificationsDropdown = ({
                   key={notif.id}
                   onClick={() => {
                     onMarkAsRead(notif.id);
-                    if (notif.task) onNavigate(`/tasks?taskId=${notif.task}`); // Or specific task view
+                    if (notif.task) { // Navigate to task detail if task ID exists
+                      // Assuming a route like /tasks/:taskId or similar
+                      // If tasks are viewed within TaskManagement page, navigate there with a query param
+                      navigate(`/tasks?taskId=${notif.task}`);
+                    }
                     onClose();
                   }}
                   whileHover={{ background: 'rgba(255, 255, 255, 0.1)' }}
@@ -854,8 +953,8 @@ const NotificationsDropdown = ({
           </div>
 
           <Link
-            to="/notifications" // Future page for all notifications
-            onClick={onClose}
+            to="/notifications"
+            onClick={() => {onClose(); onNavigate("/notifications");}}
             style={{
               display: 'block',
               padding: '1rem',
@@ -877,7 +976,6 @@ const NotificationsDropdown = ({
 };
 
 
-// Main Layout Component
 const Layout = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -890,48 +988,55 @@ const Layout = () => {
  useEffect(() => {
   const loadUserProfile = async () => {
     try {
-      const response = await api.get('/profiles/'); // Changed this line
+      // Assuming the profiles endpoint for the logged-in user returns an array with one profile
+      const response = await api.get('/profiles/'); 
       if (response.data && response.data.length > 0) {
         setUserProfile(response.data[0]);
       }
     } catch (error) {
       console.error("Failed to load user profile:", error);
+      // Handle error, e.g., navigate to login if unauthorized
+      if (error.response && error.response.status === 401) {
+        navigate('/login');
+      }
     }
   };
 
   loadUserProfile();
-}, []);
+}, [navigate]); // Added navigate to dependency array
 
   const toggleNav = () => setNavOpen(!navOpen);
 
   const handleAINavigation = (path) => {
     navigate(path);
-    setNavOpen(false);
+    setNavOpen(false); // Close nav panel if AI navigation is used
+    setNotificationsOpen(false); // Close notifications dropdown
   };
 
-  // Fetch unread notification count
-  const { data: unreadData, refetch: refetchUnreadCount } = useQuery({
+  const { data: unreadData } = useQuery({
     queryKey: ['unreadNotificationCount'],
     queryFn: () => api.get('/workflow-notifications/unread_count/').then(res => res.data),
-    staleTime: 60 * 1000, // 1 minute
-    refetchInterval: 60 * 1000, // Refetch every minute
+    staleTime: 60 * 1000, 
+    refetchInterval: 60 * 1000,
   });
   const unreadCount = unreadData?.unread_count || 0;
 
-  // Fetch notifications list for dropdown
-  const { data: notificationList, isLoading: isLoadingNotifications, refetch: refetchNotificationList } = useQuery({
-    queryKey: ['notificationList'],
-    queryFn: () => api.get('/workflow-notifications/?limit=7&ordering=-created_at&is_archived=false').then(res => res.data.results || res.data), // Ensure results is an array
-    enabled: notificationsOpen,
-    staleTime: 30 * 1000, // 30 seconds
+  const { 
+    data: notificationList, 
+    isLoading: isLoadingNotifications, 
+    refetch: refetchNotificationList 
+  } = useQuery({
+    queryKey: ['notificationListLayout'], // Unique key for layout dropdown
+    queryFn: () => api.get('/workflow-notifications/?limit=7&ordering=-created_at&is_archived=false').then(res => res.data.results || res.data),
+    enabled: notificationsOpen, // Only fetch when dropdown is open
+    staleTime: 30 * 1000,
   });
   
-  // Mutations for notifications
   const markAsReadMutation = useMutation({
     mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/mark_as_read/`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
-      queryClient.invalidateQueries({ queryKey: ['notificationList'] });
+      queryClient.invalidateQueries({ queryKey: ['notificationListLayout'] });
     },
     onError: (error) => toast.error("Falha ao marcar como lida: " + (error.response?.data?.detail || error.message)),
   });
@@ -940,7 +1045,7 @@ const Layout = () => {
     mutationFn: () => api.post('/workflow-notifications/mark_all_as_read/'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
-      queryClient.invalidateQueries({ queryKey: ['notificationList'] });
+      queryClient.invalidateQueries({ queryKey: ['notificationListLayout'] });
       toast.success("Todas as notificações marcadas como lidas.");
     },
     onError: (error) => toast.error("Falha ao marcar todas como lidas: " + (error.response?.data?.detail || error.message)),
@@ -1045,7 +1150,7 @@ const Layout = () => {
             <NotificationsDropdown
               isOpen={notificationsOpen}
               onClose={() => setNotificationsOpen(false)}
-              notifications={notificationList}
+              notifications={Array.isArray(notificationList) ? notificationList : []} // Ensure it's an array
               isLoading={isLoadingNotifications}
               onMarkAsRead={(id) => markAsReadMutation.mutate(id)}
               onMarkAllAsRead={() => markAllAsReadMutation.mutate()}
@@ -1069,7 +1174,7 @@ const Layout = () => {
         style={{
           position: 'relative',
           zIndex: 1,
-          minHeight: 'calc(100vh - 80px)' // Adjusted for header height
+          minHeight: 'calc(100vh - 80px)' 
         }}
       >
         <Outlet />

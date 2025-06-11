@@ -273,6 +273,104 @@ class GeminiService:
                         'confidence': confidence
                     })
         return validated
+    
+    def generate_conversational_response(self, current_turn_parts, history=None):
+        """
+        Generates a conversational response from Gemini API, supporting history.
+
+        Args:
+            current_turn_parts (list of dicts): The parts of the current user/system prompt.
+                                             e.g., [{"text": "Your query"}]
+            history (list of dicts, optional): Conversation history.
+                                              e.g., [{"role": "user", "parts": [...]}, {"role": "model", "parts": [...]}]
+
+        Returns:
+            str: The generated text from Gemini, or None if an error occurs.
+        """
+        if not self.api_key:
+            logger.error("GEMINI_API_KEY not configured.")
+            return "Erro: Chave da API Gemini não configurada." # Return error message
+
+        # Construct the 'contents' array for Gemini
+        # The 'contents' array should be a list of Content objects.
+        # Each Content object has a 'role' ('user' or 'model') and 'parts'.
+        # 'parts' is a list of Part objects, usually [{"text": "..."}].
+        
+        payload_contents = []
+        if history:
+            # Ensure history items have the correct structure
+            for turn in history:
+                if isinstance(turn, dict) and "role" in turn and "parts" in turn:
+                    payload_contents.append(turn)
+                else:
+                    logger.warning(f"Skipping malformed history turn: {turn}")
+        
+        # Add the current turn (which is from the 'user' for a query,
+        # or could be from 'user' if it's the initial system prompt)
+        payload_contents.append({
+            "role": "user", # Or determine role based on who is "speaking" now. For query, it's user.
+            "parts": current_turn_parts
+        })
+
+        payload = {
+            "contents": payload_contents,
+            "generationConfig": {
+                "temperature": 0.7,       # Controls randomness. Lower for factual, higher for creative.
+                "topP": 0.95,
+                "topK": 40,
+                "maxOutputTokens": 2048,  # Max length of the AI's response. Adjust as needed.
+                # "stopSequences": ["\n\n"], # Optional: sequences that stop generation
+            },
+            # Safety settings can be added here if needed
+            # "safetySettings": [
+            #    { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE" }, ...
+            # ]
+        }
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        logger.debug(f"Sending conversational payload to Gemini: {json.dumps(payload, indent=2, ensure_ascii=False)}")
+
+        try:
+            # Using the same retry logic from _make_api_request but simplified for this example
+            # You might want to refactor _make_api_request to be more generic
+            response = self.session.post(
+                f"{settings.GEMINI_API_URL}?key={self.api_key}", # Use the general Gemini API URL from settings
+                headers=headers,
+                json=payload,
+                timeout=120 # Generous timeout for conversational responses
+            )
+            response.raise_for_status()
+            
+            response_data = response.json()
+            logger.debug(f"Received conversational response from Gemini: {json.dumps(response_data, indent=2, ensure_ascii=False)}")
+
+            if response_data.get("candidates") and len(response_data["candidates"]) > 0:
+                content = response_data["candidates"][0].get("content")
+                if content and content.get("parts") and len(content["parts"]) > 0:
+                    text_response = "".join([part.get("text", "") for part in content["parts"]])
+                    # Check for finishReason - if it's MAX_TOKENS, the response might be cut off.
+                    finish_reason = response_data["candidates"][0].get("finishReason", "")
+                    if finish_reason == "MAX_TOKENS":
+                        logger.warning("Gemini response was truncated due to maxOutputTokens.")
+                        text_response += " ... (resposta pode ter sido truncada)"
+                    return text_response.strip()
+            
+            logger.warning("Could not extract text from Gemini conversational response structure.")
+            return "Recebi sua mensagem, mas estou com dificuldade em formular uma resposta completa agora."
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Gemini API (conversational) request failed: {e}")
+            if e.response is not None:
+                logger.error(f"Gemini API response content: {e.response.text}")
+            return f"Erro ao comunicar com o serviço de IA: {str(e)}"
+        except Exception as e:
+            logger.error(f"An unexpected error occurred in GeminiService (conversational): {e}")
+            import traceback
+            traceback.print_exc()
+            return "Ocorreu um erro inesperado ao contactar o serviço de IA."
 
     def _validate_tasks(self, tasks):
         """Valida a lista de tarefas extraídas"""

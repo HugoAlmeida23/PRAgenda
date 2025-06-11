@@ -5,8 +5,7 @@ import {
   Calendar, Tag, Hash, Plus, Search, AlertTriangle, Info, Users,
   Edit3, CheckCircle, XCircle
 } from 'lucide-react';
-
-import TagManager from './TagManager';
+import TagInput from './TagInput'; // <<<< NEW IMPORT: Using the TagInput we created
 
 const glassStyle = {
   background: 'rgba(255, 255, 255, 0.1)',
@@ -52,7 +51,7 @@ const ClientDetailsModal = ({
     notes: '',
     is_active: true,
     account_manager: '',
-    fiscal_tags: [] // Novo campo para tags fiscais
+    fiscal_tags: []
   });
 
   useEffect(() => {
@@ -90,7 +89,12 @@ const ClientDetailsModal = ({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await onSave(formData);
+      // Ensure fiscal_tags are uppercase before saving
+      const dataToSave = {
+        ...formData,
+        fiscal_tags: formData.fiscal_tags.map(tag => tag.toUpperCase().trim()).filter(tag => tag)
+      };
+      await onSave(dataToSave);
       setIsEditing(false);
     } catch (error) {
       console.error('Erro ao salvar cliente:', error);
@@ -130,10 +134,11 @@ const ClientDetailsModal = ({
           maxWidth: '800px',
           maxHeight: '90vh',
           overflow: 'auto',
-          background: 'rgba(0, 0, 0, 0.9)',
+          background: 'rgba(0, 0, 0, 0.9)', // Darker background for better contrast
           backdropFilter: 'blur(20px)',
           border: '1px solid rgba(255, 255, 255, 0.2)'
         }}
+        className="custom-scrollbar" // For custom scrollbar styles if needed
       >
         {/* Header */}
         <div style={{
@@ -425,7 +430,7 @@ const ClientDetailsModal = ({
                       borderRadius: '8px',
                       color: 'white',
                       fontSize: '0.875rem',
-                      minHeight: '4rem'
+                      minHeight: '4rem' // Min height for display
                     }}>
                       {client.address || 'Não informado'}
                     </div>
@@ -438,13 +443,13 @@ const ClientDetailsModal = ({
                     {isEditing ? (
                       <select
                         name="account_manager"
-                        value={formData.account_manager}
+                        value={formData.account_manager || ''}
                         onChange={handleInputChange}
                         style={inputStyle}
                       >
                         <option value="">Selecionar gestor</option>
                         {users.map(user => (
-                          <option key={user.id} value={user.id}>
+                          <option key={user.id} value={user.user}> {/* Ensure user.user is the ID */}
                             {user.username}
                           </option>
                         ))}
@@ -487,6 +492,7 @@ const ClientDetailsModal = ({
               background: 'rgba(147, 51, 234, 0.05)',
               border: '1px solid rgba(147, 51, 234, 0.2)'
             }}>
+              
               <p style={{
                 margin: '0 0 1rem 0',
                 fontSize: '0.875rem',
@@ -495,17 +501,18 @@ const ClientDetailsModal = ({
                 As tags fiscais são usadas para categorizar o cliente e determinar automaticamente 
                 as obrigações fiscais aplicáveis.
               </p>
-
-              <TagManager
-                selectedTags={formData.fiscal_tags}
-                onChange={handleTagsChange}
-                disabled={!isEditing}
-                placeholder="Adicionar tags fiscais ao cliente..."
-                showDescription={true}
-                maxTags={10}
+                
+              {/* Replaced TagManager with TagInput */}
+              <TagInput
+                tags={formData.fiscal_tags}
+                onTagsChange={handleTagsChange}
+                placeholder="Adicionar tag e pressionar Enter"
+                // Pass disabled prop if needed, based on !isEditing
               />
+               <small style={{fontSize:'0.7rem', opacity:0.7, display: 'block', marginTop: '0.5rem'}}>Ex: EMPRESA, IVA_TRIMESTRAL. Case-insensitive, serão guardadas em maiúsculas.</small>
 
-              {formData.fiscal_tags.length > 0 && (
+
+              {formData.fiscal_tags.length > 0 && !isEditing && (
                 <div style={{
                   marginTop: '1rem',
                   padding: '0.75rem',
@@ -575,8 +582,8 @@ const ClientDetailsModal = ({
                 borderRadius: '8px',
                 color: 'white',
                 fontSize: '0.875rem',
-                minHeight: '5rem',
-                whiteSpace: 'pre-wrap'
+                minHeight: '5rem', // Min height for display
+                whiteSpace: 'pre-wrap' // Preserve line breaks
               }}>
                 {client.notes || 'Sem observações registadas.'}
               </div>
@@ -755,148 +762,25 @@ const ClientDetailsModal = ({
         )}
       </motion.div>
 
-      {/* Custom styles */}
-      <style jsx>{`
-        input::placeholder, textarea::placeholder {
-          color: rgba(255, 255, 255, 0.5) !important;
-        }
-        
-        select option {
-          background: #1f2937 !important;
-          color: white !important;
-        }
-        
-        /* Scrollbar customization */
-        ::-webkit-scrollbar {
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar {
           width: 8px;
+          height: 8px;
         }
-        
-        ::-webkit-scrollbar-track {
-          background: rgba(255, 255, 255, 0.1);
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.05);
           border-radius: 4px;
         }
-        
-        ::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.3);
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.2);
           border-radius: 4px;
         }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.5);
-        }
-        
-        /* Focus states for accessibility */
-        button:focus, input:focus, select:focus, textarea:focus {
-          outline: 2px solid rgba(59, 130, 246, 0.5);
-          outline-offset: 2px;
-        }
-        
-        /* Smooth transitions */
-        * {
-          transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
-        }
-        
-        /* Loading animation */
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        
-        .animate-spin {
-          animation: spin 1s linear infinite;
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.4);
         }
       `}</style>
     </motion.div>
   );
 };
 
-// Demo component
-const ClientDetailsModalDemo = () => {
-  const [showModal, setShowModal] = useState(true);
-  
-  const mockClient = {
-    id: '12345',
-    name: 'Empresa Exemplo Lda',
-    nif: '123456789',
-    email: 'contacto@exemplo.pt',
-    phone: '+351 912 345 678',
-    address: 'Rua das Flores, 123\n4000-000 Porto\nPortugal',
-    monthly_fee: '150.00',
-    notes: 'Cliente desde 2020.\nEmpresa de tecnologia com crescimento constante.\nRequer atenção especial durante período de IVA.',
-    is_active: true,
-    account_manager: '1',
-    account_manager_name: 'João Silva',
-    fiscal_tags: ['EMPRESA', 'IVA_TRIMESTRAL', 'REGIME_GERAL_IRC'],
-    created_at: '2020-03-15T10:30:00Z',
-    updated_at: '2024-12-10T15:45:00Z'
-  };
-
-  const mockUsers = [
-    { id: '1', username: 'João Silva' },
-    { id: '2', username: 'Maria Santos' },
-    { id: '3', username: 'Pedro Costa' }
-  ];
-
-  const mockPermissions = {
-    isOrgAdmin: true,
-    canEditClients: true,
-    canManageClients: true
-  };
-
-  const handleSave = async (formData) => {
-    console.log('Saving client data:', formData);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    alert('Cliente atualizado com sucesso!');
-  };
-
-  if (!showModal) {
-    return (
-      <div style={{
-        padding: '2rem',
-        background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)',
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{
-            padding: '1rem 2rem',
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            borderRadius: '12px',
-            color: 'white',
-            fontSize: '1rem',
-            cursor: 'pointer'
-          }}
-        >
-          Abrir Modal de Cliente
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{
-      background: 'linear-gradient(135deg, rgb(47, 106, 201) 0%, rgb(60, 21, 97) 50%, rgb(8, 134, 156) 100%)',
-      minHeight: '100vh'
-    }}>
-      <AnimatePresence>
-        {showModal && (
-          <ClientDetailsModal
-            client={mockClient}
-            users={mockUsers}
-            onClose={() => setShowModal(false)}
-            onSave={handleSave}
-            permissions={mockPermissions}
-          />
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-export default ClientDetailsModalDemo;
-                
+export default ClientDetailsModal; 

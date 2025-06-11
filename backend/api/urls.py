@@ -65,4 +65,12 @@ urlpatterns = [
     path('fiscal/generate-manual/', views.generate_fiscal_obligations_manual, name='generate-fiscal-manual'),
     path('fiscal/stats/', views.fiscal_obligations_stats, name='fiscal-stats'),
     path('fiscal/test-client/', views.test_client_fiscal_obligations, name='test-fiscal-client'),
+    path('fiscal/upcoming-deadlines/', views.fiscal_upcoming_deadlines, name='fiscal-upcoming-deadlines'), 
+
+    path('ai-advisor/get-initial-context/', views.get_ai_advisor_initial_context, name='ai-get-initial-context'),
+
+    path('ai-advisor/start-session/', views.start_ai_advisor_session, name='ai-start-session'), # ADDED
+    path('ai-advisor/query/', views.query_ai_advisor, name='ai-query-session'), # ADDED
+
+
 ]

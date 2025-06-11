@@ -52,7 +52,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import BackgroundElements from "../components/HeroSection/BackgroundElements";
-import TagManager from "../components/TagManager";
 import ClientDetailsModal from "../components/ClientDetailsModel";
 
 // Data fetching functions
@@ -132,6 +131,8 @@ const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onC
     border: '1px solid rgba(255, 255, 255, 0.15)',
     borderRadius: '16px'
   };
+
+  const fiscalTagsToDisplay = Array.isArray(client.fiscal_tags) ? client.fiscal_tags : [];
 
   return (
     <motion.div
@@ -263,6 +264,40 @@ const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onC
           </div>
         )}
       </div>
+
+{fiscalTagsToDisplay.length > 0 && (
+        <div style={{ marginBottom: '1rem', marginTop: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <Tag size={16} style={{ color: 'rgb(147, 51, 234)' }}/>
+              <h4 style={{ margin: 0, fontSize: '0.8rem', fontWeight: '500', color: 'rgba(255,255,255,0.7)' }}>
+                  Tags Fiscais:
+              </h4>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {fiscalTagsToDisplay.slice(0, 3).map((tag, index) => ( // Show up to 3 tags
+              <span
+                key={index}
+                style={{
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '12px',
+                  fontSize: '0.7rem',
+                  fontWeight: '500',
+                  background: 'rgba(147, 51, 234, 0.2)',
+                  border: '1px solid rgba(147, 51, 234, 0.3)',
+                  color: 'rgb(196, 181, 253)',
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+            {fiscalTagsToDisplay.length > 3 && (
+              <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', alignSelf: 'center' }}>
+                +{fiscalTagsToDisplay.length - 3} mais
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div style={{
         display: 'flex',

@@ -1,5 +1,3 @@
-// --- START OF FILE QuickActionsGrid.jsx ---
-
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -71,7 +69,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
         // For other types, the Link component will handle navigation
     };
 
-    // --- Styles (keep as they are) ---
+    // --- Styles (fixed flexDirection issues) ---
     const containerStyle = {
         background: 'rgba(255, 255, 255, 0.1)',
         backdropFilter: 'blur(12px)',
@@ -81,7 +79,8 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
         minHeight: '320px', // Ensure it has some height
         border: '1px solid rgba(255, 255, 255, 0.1)',
         display: 'flex', // Added for better structure if content is short
-        flexDirection: 'column' // Added
+        flexDirection: 'column', // Fixed: changed from 'grid' to 'column'
+        marginTop: '1.5rem'
     };
 
     const headerStyle = {
@@ -122,7 +121,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
         transition: 'all 0.3s',
         overflow: 'hidden',
         display: 'flex', // Added to help with content layout
-        flexDirection: 'column', // Added
+        flexDirection: 'column', // Fixed: changed from 'grid' to 'column'
         justifyContent: 'space-between' // Added
     };
 
@@ -135,7 +134,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
         position: 'relative',
         zIndex: 10,
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'column', // Fixed: changed from 'grid' to 'column'
         justifyContent: 'space-between',
         height: '100%'
     };
@@ -156,31 +155,8 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
 
     const actionTextStyle = {
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'column', // Fixed: changed from 'grid' to 'column'
         marginTop: 'auto' // Push text to bottom if card is taller
-    };
-
-    const suggestionFooterStyle = {
-        marginTop: '1.5rem',
-        padding: '0.75rem',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: '8px',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        flexShrink: 0 // Prevent footer from shrinking
-    };
-
-    const suggestionContentStyle = {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem'
-    };
-
-    const pulseStyle = {
-        width: '8px',
-        height: '8px',
-        backgroundColor: 'rgb(34, 197, 94)',
-        borderRadius: '50%',
-        animation: 'pulse 2s infinite'
     };
 
     const priorityIndicatorStyle = { // No change
@@ -194,7 +170,6 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
     };
     // --- End of Styles ---
 
-
     const getActionContent = (action) => {
         // ✅ The icon is now a component passed in action.icon
         const ActionIconComponent = action.icon;
@@ -203,8 +178,6 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
             <motion.div
                 style={{ position: 'relative', height: '100%' }} // Ensure motion div takes full height of grid cell
                 variants={actionVariants} // This variant is for the individual action card
-                // whileHover="hover" // these are now on the inner card
-                // whileTap="tap"
                 onHoverStart={() => setHoveredAction(action.type)}
                 onHoverEnd={() => setHoveredAction(null)}
             >
@@ -304,7 +277,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
             >
                 <div style={{
                     display: 'flex',
-                    flexDirection: 'column', // Center content vertically
+                    flexDirection: 'column', // Fixed: changed from 'grid' to 'column'
                     alignItems: 'center',
                     justifyContent: 'center',
                     height: '100%', // Take full height
@@ -399,8 +372,6 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
                     </React.Fragment>
                 ))}
             </motion.div>
-
-
 
             {/* Priority Indicator (Optional, if you have 'urgent' actions) */}
             {actions.some(action => action.type === 'urgent' || action.type === 'urgent_tasks_review') && (

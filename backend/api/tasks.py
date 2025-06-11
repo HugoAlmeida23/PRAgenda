@@ -1,4 +1,4 @@
-from .tasks.fiscal_tasks import (
+from ..api.tasks import (
     generate_fiscal_obligations_task,
     clean_old_fiscal_obligations_task,
     check_fiscal_deadlines_task,

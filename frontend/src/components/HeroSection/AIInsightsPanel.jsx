@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -10,18 +10,81 @@ import {
     ChevronRight,
     Play,
     Pause,
-    BarChart3
+    BarChart3,
+    Clock,
+    CheckSquare,
+    AlertTriangle,
+    Users
 } from 'lucide-react';
+import { usePermissions } from '../../contexts/PermissionsContext'; // Adjust path as needed
 
-const AIInsightsPanel = ({ insights = [], businessStatus }) => {
+const AIInsightsPanel = ({ insights = [], businessStatus, dashboardData }) => {
     const [currentInsight, setCurrentInsight] = useState(0);
     const [isAutoRotating, setIsAutoRotating] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
+    const permissions = usePermissions();
     
     // Debug logs
     console.log("🔍 AI Insights Panel Data Recebido (AIInsightsPanel.jsx):", insights);
     console.log("📊 Business Status:", businessStatus);
+    console.log("📊 Dashboard Data:", dashboardData);
     console.log("🎯 Component mounted and rendering");
+
+    // ✅ Move mappedStatsFromSummary here and use dashboardData prop
+    const mappedStatsFromSummary = useMemo(() => ({
+        timeTrackedToday: dashboardData?.summary?.time_tracked_today || 0,
+        activeTasks: dashboardData?.summary?.active_tasks || 0,
+        overdueTasksCount: dashboardData?.summary?.overdue_tasks || 0,
+        unprofitableClientsCount: dashboardData?.summary?.unprofitable_clients || 0,
+    }), [dashboardData?.summary]);
+
+    const generateQuickActions = (data) => {
+        const actions = [
+            { 
+                type: 'time_entry', 
+                label: 'Registar Tempo', 
+                subtitle: 'Adicionar nova entrada', 
+                icon: Clock, 
+                action: '/timeentry',
+                color: 'rgba(52, 211, 153, 0.2)' 
+            }, 
+            { 
+                type: 'create_task', 
+                label: 'Nova Tarefa', 
+                subtitle: 'Criar e atribuir', 
+                icon: CheckSquare, 
+                action: '/tasks',
+                color: 'rgba(59, 130, 246, 0.2)' 
+            }
+        ];
+        
+        if (data?.overdueTasksCount > 0) {
+            actions.unshift({ 
+                type: 'urgent_tasks_review', 
+                label: 'Resolver Urgentes', 
+                subtitle: `${data.overdueTasksCount} atrasadas`, 
+                icon: AlertTriangle, 
+                action: '/tasks?status=pending&overdue=true',
+                color: 'rgba(239, 68, 68, 0.2)' 
+            });
+        }
+        
+        if (permissions.isOrgAdmin || permissions.canManageClients) {
+            actions.push({ 
+                type: 'add_client', 
+                label: 'Novo Cliente', 
+                subtitle: 'Registar empresa', 
+                icon: Users, 
+                action: '/clients',
+                color: 'rgba(147, 51, 234, 0.2)' 
+            });
+        }
+        
+        return actions.slice(0, 4);
+    };
+
+    // Generate quick actions using the mapped stats
+    const quickActionsForGrid = generateQuickActions(mappedStatsFromSummary);
 
     // Auto-rotate insights every 5 seconds
     useEffect(() => {
@@ -66,28 +129,16 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         return 'rgb(251, 146, 60)';
     };
 
-    const getImpactBadge = (impact) => {
-        const badges = {
-            high: { 
-                color: 'rgba(239, 68, 68, 0.2)',
-                textColor: 'rgb(252, 165, 165)',
-                borderColor: 'rgba(239, 68, 68, 0.3)',
-                label: 'Alto Impacto'
-            },
-            medium: { 
-                color: 'rgba(245, 158, 11, 0.2)',
-                textColor: 'rgb(253, 230, 138)',
-                borderColor: 'rgba(245, 158, 11, 0.3)',
-                label: 'Médio Impacto'
-            },
-            positive: { 
-                color: 'rgba(16, 185, 129, 0.2)',
-                textColor: 'rgb(110, 231, 183)',
-                borderColor: 'rgba(16, 185, 129, 0.3)',
-                label: 'Positivo'
-            }
-        };
-        return badges[impact] || badges.medium;
+    const containerStyle = {
+        background: 'rgba(255, 255, 255, 0.1)',
+        backdropFilter: 'blur(12px)',
+        borderRadius: '16px',
+        padding: '1.5rem',
+        height: '100%',
+        minHeight: '320px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        position: 'relative', // Add position for debugging
+        zIndex: 1 // Add z-index for debugging
     };
 
     const containerVariants = {
@@ -125,22 +176,31 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         }
     };
 
-    // Safely get current insight data
     const currentInsightData = insights && insights.length > 0 ? insights[currentInsight] : null;
-    console.log("📋 Current insight data:", currentInsightData);
 
-    const containerStyle = {
-        background: 'rgba(255, 255, 255, 0.1)',
-        backdropFilter: 'blur(12px)',
-        borderRadius: '16px',
-        padding: '1.5rem',
-        height: '100%',
-        minHeight: '320px',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        position: 'relative', // Add position for debugging
-        zIndex: 1 // Add z-index for debugging
+    const getImpactBadge = (impact) => {
+        const badges = {
+            high: { 
+                color: 'rgba(239, 68, 68, 0.2)',
+                textColor: 'rgb(252, 165, 165)',
+                borderColor: 'rgba(239, 68, 68, 0.3)',
+                label: 'Alto Impacto'
+            },
+            medium: { 
+                color: 'rgba(245, 158, 11, 0.2)',
+                textColor: 'rgb(253, 230, 138)',
+                borderColor: 'rgba(245, 158, 11, 0.3)',
+                label: 'Médio Impacto'
+            },
+            positive: { 
+                color: 'rgba(16, 185, 129, 0.2)',
+                textColor: 'rgb(110, 231, 183)',
+                borderColor: 'rgba(16, 185, 129, 0.3)',
+                label: 'Positivo'
+            }
+        };
+        return badges[impact] || badges.medium;
     };
-
     const headerStyle = {
         display: 'flex',
         alignItems: 'center',
@@ -194,7 +254,7 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        border: '1px solid rgba(255, 255, 255, 0.1)'
+        border: '1px solid rgba(255, 255, 255, 0.1)',
     };
 
     const insightHeaderStyle = {
@@ -226,49 +286,11 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
         alignSelf: 'flex-start',
         transition: 'background-color 0.2s',
         marginLeft: '-1.5rem',
+        marginBottom: '1rem'
     };
 
     const actionButtonHoverStyle = {
         backgroundColor: 'rgba(255, 255, 255, 0.2)'
-    };
-
-    const dotsContainerStyle = {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '0.5rem',
-        marginBottom: '1rem'
-    };
-
-    const dotStyle = {
-        width: '8px',
-        height: '8px',
-        borderRadius: '50%',
-        border: 'none',
-        cursor: 'pointer',
-        transition: 'all 0.3s'
-    };
-
-    const activeDotStyle = {
-        ...dotStyle,
-        backgroundColor: 'white',
-        width: '32px',
-        borderRadius: '4px'
-    };
-
-    const inactiveDotStyle = {
-        ...dotStyle,
-        backgroundColor: 'rgba(255, 255, 255, 0.3)'
-    };
-
-    const statsGridStyle = {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
-        marginTop: '5rem',
-    };
-
-    const statItemStyle = {
-        textAlign: 'center'
     };
 
     const progressBarContainerStyle = {
@@ -468,12 +490,6 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                                                     gap: '0.5rem', 
                                                     marginTop: '0.25rem' 
                                                 }}>
-                                                    <span style={{
-                                                        fontSize: '0.875rem',
-                                                        color: getConfidenceColor(currentInsightData.confidence || 0)
-                                                    }}>
-                                                        {Math.round((currentInsightData.confidence || 0) * 100)}% confiança
-                                                    </span>
                                                     <div style={{
                                                         padding: '0.25rem 0.5rem',
                                                         borderRadius: '9999px',
@@ -515,116 +531,6 @@ const AIInsightsPanel = ({ insights = [], businessStatus }) => {
                     </motion.div>
                 </AnimatePresence>
             </div>
-
-            {/* Insights Navigation Dots */}
-            <div style={dotsContainerStyle}>
-                {insights.map((insight, index) => (
-                    <motion.button
-                        key={`insight-dot-${index}`}
-                        style={index === currentInsight ? activeDotStyle : inactiveDotStyle}
-                        onClick={() => {
-                            console.log("🔘 Dot clicked for insight index:", index);
-                            setCurrentInsight(index);
-                        }}
-                        whileHover={{ scale: 1.2 }}
-                        whileTap={{ scale: 0.9 }}
-                        onMouseEnter={(e) => {
-                            if (index !== currentInsight) {
-                                e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            if (index !== currentInsight) {
-                                e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
-                            }
-                        }}
-                    />
-                ))}
-            </div>
-
-            {/* Quick Stats Row */}
-            {insights.length > 0 && (
-                <div style={statsGridStyle}>
-                    <div style={statItemStyle}>
-                        <div style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            marginBottom: '0.5rem',
-                            
-                        }}>
-                            <Sparkles style={{ color: 'rgb(251, 191, 36)' }} size={16} />
-                        </div>
-                        <p style={{ 
-                            color: 'rgba(255, 255, 255, 0.9)', 
-                            fontWeight: '500', 
-                            fontSize: '0.875rem',
-                            margin: 0 
-                        }}>
-                            {insights.length}
-                        </p>
-                        <p style={{ 
-                            color: 'rgb(191, 219, 254)', 
-                            fontSize: '0.75rem',
-                            margin: 0 
-                        }}>
-                            Insights Ativos
-                        </p>
-                    </div>
-                    
-                    <div style={statItemStyle}>
-                        <div style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            marginBottom: '0.5rem' 
-                        }}>
-                            <TrendingUp style={{ color: 'rgb(52, 211, 153)' }} size={16} />
-                        </div>
-                        <p style={{ 
-                            color: 'rgba(255, 255, 255, 0.9)', 
-                            fontWeight: '500', 
-                            fontSize: '0.875rem',
-                            margin: 0 
-                        }}>
-                            {insights.length > 0 ? Math.round((insights.reduce((acc, insight) => acc + (insight.confidence || 0), 0) / insights.length) * 100) : 0}%
-                        </p>
-                        <p style={{ 
-                            color: 'rgb(191, 219, 254)', 
-                            fontSize: '0.75rem',
-                            margin: 0 
-                        }}>
-                            Confiança Média
-                        </p>
-                    </div>
-                    
-                    <div style={statItemStyle}>
-                        <div style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            marginBottom: '0.5rem' 
-                        }}>
-                            <BarChart3 style={{ color: 'rgb(196, 181, 253)' }} size={16} />
-                        </div>
-                        <p style={{ 
-                            color: 'rgba(255, 255, 255, 0.9)', 
-                            fontWeight: '500', 
-                            fontSize: '0.875rem',
-                            margin: 0 
-                        }}>
-                            {insights.filter(i => i.impact === 'high').length}
-                        </p>
-                        <p style={{ 
-                            color: 'rgb(191, 219, 254)', 
-                            fontSize: '0.75rem',
-                            margin: 0 
-                        }}>
-                            Alto Impacto
-                        </p>
-                    </div>
-                </div>
-            )}
         </motion.div>
     );
 };
