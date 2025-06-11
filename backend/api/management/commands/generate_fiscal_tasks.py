@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     help = 'Gera tarefas fiscais para organizações baseadas nas definições de obrigações.'
 
+    months_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
+                 "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
     def add_arguments(self, parser):
         parser.add_argument(
             '--organization_id',
@@ -37,10 +39,9 @@ class Command(BaseCommand):
 
     def get_period_description_and_key(self, definition_name, periodicity, ref_date):
         """Gera descrição e chave do período."""
-        months_pt = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-        
+                
         if periodicity == 'MONTHLY':
-            month_name = months_pt[ref_date.month - 1]
+            month_name = self.months_pt[ref_date.month - 1]  # Usar self.months_pt
             description = f"{month_name} {ref_date.year}"
             key_suffix = f"{ref_date.year}-M{ref_date.month:02d}"
         elif periodicity == 'QUARTERLY':
@@ -296,7 +297,7 @@ class Command(BaseCommand):
                             client_name=client.name,
                             period_description=period_desc,
                             year=period_start.year, 
-                            month_name=months_pt[period_start.month - 1],
+                            month_name=self.months_pt[period_start.month - 1],
                             quarter=(period_start.month - 1) // 3 + 1
                         )
 

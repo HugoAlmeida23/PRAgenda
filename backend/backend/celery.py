@@ -14,7 +14,7 @@ app.autodiscover_tasks()
 app.conf.beat_schedule = {
     # Geração automática diária às 08:00
     'generate-fiscal-obligations-daily': {
-        'task': 'sua_app.tasks.generate_fiscal_obligations_task',
+        'task': 'api.tasks.generate_fiscal_obligations_task',  # Ajustar caminho
         'schedule': crontab(hour=8, minute=0),
         'options': {'expires': 3600},
         'kwargs': {'months_ahead': 3},
@@ -22,7 +22,7 @@ app.conf.beat_schedule = {
     
     # Limpeza semanal às 02:00 de segunda
     'clean-old-fiscal-obligations': {
-        'task': 'sua_app.tasks.clean_old_fiscal_obligations_task',
+        'task': 'api.tasks.clean_old_fiscal_obligations_task',  # Ajustar caminho
         'schedule': crontab(hour=2, minute=0, day_of_week=1),
         'options': {'expires': 1800},
         'kwargs': {'days_old': 30},
@@ -30,14 +30,14 @@ app.conf.beat_schedule = {
     
     # Verificação de deadlines diária às 07:00
     'check-fiscal-deadlines': {
-        'task': 'sua_app.tasks.check_fiscal_deadlines_task',
+        'task': 'api.tasks.check_fiscal_deadlines_task',  # Ajustar caminho
         'schedule': crontab(hour=7, minute=0),
         'options': {'expires': 1800},
     },
     
     # Relatório semanal às 17:00 de sexta
     'weekly-fiscal-report': {
-        'task': 'sua_app.tasks.generate_weekly_fiscal_report_task',
+        'task': 'api.tasks.generate_weekly_fiscal_report_task',  # Ajustar caminho
         'schedule': crontab(hour=17, minute=0, day_of_week=5),
         'options': {'expires': 3600},
     }

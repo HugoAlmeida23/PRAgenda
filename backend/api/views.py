@@ -16,7 +16,7 @@ from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializ
                          ProfileSerializer, AutoTimeTrackingSerializer, OrganizationSerializer,
                          UserSerializer, NLPProcessorSerializer, WorkflowDefinitionSerializer, 
                          WorkflowStepSerializer, TaskApprovalSerializer, WorkflowNotificationSerializer,
-                         WorkflowHistorySerializer, NotificationSettingsSerializer,NotificationTemplateSerializer,NotificationDigestSerializer)
+                         WorkflowHistorySerializer, NotificationSettingsSerializer,NotificationTemplateSerializer,NotificationDigestSerializer,FiscalGenerationRequestSerializer,FiscalStatsSerializer,FiscalObligationTestSerializer)
 from django.contrib.auth.models import User
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -36,7 +36,6 @@ from .services.notification_escalation import NotificationEscalationService
 from .services.notifications_reports import NotificationReportsService
 from .services.notification_template_service import NotificationTemplateService
 from .services.notification_digest_service import NotificationDigestService
-# ... (outros imports e ViewSets)
 from .models import FiscalObligationDefinition
 from .serializers import FiscalObligationDefinitionSerializer
 from .services.fiscal_obligation_service import FiscalObligationGenerator
@@ -44,6 +43,7 @@ from .models import FiscalSystemSettings
 from django.core.exceptions import PermissionDenied
 from .services.fiscal_notification_service import FiscalNotificationService 
 from .serializers import FiscalSystemSettingsSerializer
+
 
 
 logger = logging.getLogger(__name__) # Redundant
@@ -3882,3 +3882,77 @@ class FiscalSystemSettingsViewSet(viewsets.ModelViewSet):
                 {'error': f'Erro no envio do email: {str(e)}'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def generate_fiscal_obligations_manual(request):
+    """
+    Endpoint para geração manual de obrigações fiscais.
+    """
+    try:
+        serializer = FiscalGenerationRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin:
+            return Response(
+                {'error': 'Apenas administradores podem gerar obrigações fiscais manualmente'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        organization = profile.organization
+        if not organization:
+            return Response(
+                {'error': 'Administrador não associado a uma organização'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        validated_data = serializer.validated_data
+        months_ahead = validated_data['months_ahead']
+        clean_old = validated_data['clean_old']
+        days_old = validated_data['days_old']
+
+        # Limpar obrigações obsoletas se solicitado
+        cleaned_count = 0
+        if clean_old:
+            cleaned_count = FiscalObligationGenerator.clean_old_pending_obligations(
+                days_old=days_old,
+                organization=organization
+            )
+
+        # Gerar obrigações
+        results = FiscalObligationGenerator.generate_for_next_months(
+            months_ahead=months_ahead,
+            organization=organization
+        )
+
+        # Calcular totais
+        total_created = sum(result['tasks_created'] for result in results)
+        total_skipped = sum(result['tasks_skipped'] for result in results)
+        total_errors = sum(len(result['errors']) for result in results)
+
+        return Response({
+            'success': True,
+            'message': f'Geração concluída para {organization.name}',
+            'summary': {
+                'months_processed': len(results),
+                'tasks_created': total_created,
+                'tasks_skipped': total_skipped,
+                'errors': total_errors,
+                'old_tasks_cleaned': cleaned_count
+            },
+            'detailed_results': results
+        })
+
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro na geração manual de obrigações: {e}")
+        return Response(
+            {'error': f'Erro interno: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

@@ -20,7 +20,10 @@ class FiscalObligationDefinitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = FiscalObligationDefinition
         fields = '__all__' # Ou liste os campos explicitamente
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at','organization']
+
+    def create(self, validated_data):
+        return super().create(validated_data)
 
 class OrganizationSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()

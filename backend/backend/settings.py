@@ -127,13 +127,15 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Lisbon'  # Ajuste para seu fuso horário
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'seu-smtp-server.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'seu-email@domain.com'
-EMAIL_HOST_PASSWORD = 'sua-senha'
-DEFAULT_FROM_EMAIL = 'Sistema Fiscal '
+# Configuração de email (ajustar para development)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Para development
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # Para production
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Sistema Fiscal <noreply@exemplo.com>')
 
 LOGGING = {
     'version': 1,

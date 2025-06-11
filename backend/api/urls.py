@@ -60,4 +60,9 @@ urlpatterns = [
     # NOVOS: Gestão de digests
     path('system/generate-daily-digests/', views.generate_daily_digests_view, name='generate-daily-digests'),
     path('system/send-pending-digests/', views.send_pending_digests_view, name='send-pending-digests'),
+
+    # Gestão de obrigações fiscais
+    path('fiscal/generate-manual/', views.generate_fiscal_obligations_manual, name='generate-fiscal-manual'),
+    path('fiscal/stats/', views.fiscal_obligations_stats, name='fiscal-stats'),
+    path('fiscal/test-client/', views.test_client_fiscal_obligations, name='test-fiscal-client'),
 ]
