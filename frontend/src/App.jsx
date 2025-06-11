@@ -19,6 +19,8 @@ import { PermissionsProvider } from './contexts/PermissionsContext';
 import Layout from './components/Layout/Layout'; // Your new Layout component
 import NotificationsPage from "./pages/NotificationsPage";
 import FiscalObligationManagement from "./pages/FiscalObligationManagement";
+import FiscalTagSystemDemo from "./pages/TagManagement";
+import FiscalManagementDashboard from "./pages/FiscalManagementDashboard";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -75,6 +77,9 @@ function App() {
               <Route path="workflow-management" element={<WorkflowManagement />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="fiscal-obligations" element={<FiscalObligationManagement />} />
+              <Route path="tags" element={<FiscalTagSystemDemo />} />
+              <Route path="fiscal-dashboard" element={<FiscalManagementDashboard />} />
+
             </Route>
 
             {/* Fallback for unknown routes */}

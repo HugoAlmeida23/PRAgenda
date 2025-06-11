@@ -28,6 +28,8 @@ router.register(r'notification-settings', views.NotificationSettingsViewSet, bas
 router.register(r'notification-templates', views.NotificationTemplateViewSet, basename='notification-templates')
 router.register(r'notification-digests', views.NotificationDigestViewSet, basename='notification-digests')
 router.register(r'fiscal-obligation-definitions', views.FiscalObligationDefinitionViewSet, basename='fiscal-obligation-definition')
+router.register(r'fiscal-system-settings', views.FiscalSystemSettingsViewSet, basename='fiscal-system-settings')
+
 
 urlpatterns = [
     # Autenticação

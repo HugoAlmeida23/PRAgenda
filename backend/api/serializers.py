@@ -5,6 +5,10 @@ import json
 from django.db import models
 from django.db.models import Sum
 import logging
+from .models import FiscalSystemSettings
+
+from django.utils import timezone
+
 
 logger = logging.getLogger(__name__)
 
@@ -155,8 +159,24 @@ class ClientSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'nif', 'email', 'phone', 'address', 
                   'organization', 'organization_name',
                   'account_manager', 'account_manager_name', 'monthly_fee', 
-                  'created_at', 'updated_at', 'is_active', 'notes']
+                  'created_at', 'updated_at', 'is_active', 'notes', 'fiscal_tags']
         read_only_fields = ['id', 'created_at', 'updated_at', 'organization_name']
+    
+    def validate_fiscal_tags(self, value):
+        """Validate that fiscal_tags is a list"""
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError("fiscal_tags must be a list")
+        # Ensure all tags are strings and uppercase
+        return [str(tag).upper().strip() for tag in value if str(tag).strip()]
+    
+    def to_representation(self, instance):
+        """Ensure fiscal_tags is always a list in the response"""
+        data = super().to_representation(instance)
+        if not isinstance(data.get('fiscal_tags'), list):
+            data['fiscal_tags'] = []
+        return data
 
 
 class TaskCategorySerializer(serializers.ModelSerializer):
@@ -804,3 +824,114 @@ class NotificationDigestSerializer(serializers.ModelSerializer):
             'title', 'content', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
+
+class FiscalSystemSettingsSerializer(serializers.ModelSerializer):
+    organization_name = serializers.ReadOnlyField(source='organization.name')
+    notification_recipients_count = serializers.SerializerMethodField()
+    last_generation_formatted = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = FiscalSystemSettings
+        fields = [
+            'id', 'organization', 'organization_name',
+            # Configurações de geração automática
+            'auto_generation_enabled', 'generation_time', 'months_ahead_generation',
+            # Configurações de limpeza
+            'auto_cleanup_enabled', 'cleanup_days_threshold',
+            # Configurações de notificações
+            'notify_on_generation', 'notify_on_errors', 'email_notifications_enabled',
+            'notification_recipients', 'notification_recipients_count',
+            # Configurações de integração
+            'webhook_url', 'webhook_secret',
+            # Configurações avançadas
+            'advanced_settings',
+            # Metadados
+            'created_at', 'updated_at', 'last_generation', 'last_generation_formatted'
+        ]
+        read_only_fields = ['id', 'organization', 'created_at', 'updated_at', 'last_generation']
+        extra_kwargs = {
+            'webhook_secret': {'write_only': True},  # Não expor o segredo
+        }
+    
+    def get_notification_recipients_count(self, obj):
+        """Retorna quantidade de destinatários de notificação."""
+        return len(obj.get_notification_recipients())
+    
+    def get_last_generation_formatted(self, obj):
+        """Retorna última geração formatada."""
+        if obj.last_generation:
+            return obj.last_generation.strftime('%d/%m/%Y às %H:%M')
+        return 'Nunca executada'
+    
+    def validate_notification_recipients(self, value):
+        """Valida lista de emails para notificação."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("notification_recipients deve ser uma lista")
+        
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        
+        for email in value:
+            if not re.match(email_pattern, email):
+                raise serializers.ValidationError(f"Email inválido: {email}")
+        
+        return value
+    
+    def validate_months_ahead_generation(self, value):
+        """Valida número de meses futuros."""
+        if not 1 <= value <= 12:
+            raise serializers.ValidationError("Meses futuros deve estar entre 1 e 12")
+        return value
+    
+    def validate_cleanup_days_threshold(self, value):
+        """Valida threshold de limpeza."""
+        if not 1 <= value <= 365:
+            raise serializers.ValidationError("Dias para limpeza deve estar entre 1 e 365")
+        return value
+    
+class FiscalObligationTestSerializer(serializers.Serializer):
+    """Serializer para teste de obrigações de um cliente."""
+    client_id = serializers.UUIDField(required=True)
+    year = serializers.IntegerField(required=False, default=timezone.now().year)
+    month = serializers.IntegerField(required=False, default=timezone.now().month)
+    
+    def validate_year(self, value):
+        current_year = timezone.now().year
+        if not (current_year - 1) <= value <= (current_year + 5):
+            raise serializers.ValidationError("Ano deve estar entre o ano passado e 5 anos no futuro")
+        return value
+    
+    def validate_month(self, value):
+        if not 1 <= value <= 12:
+            raise serializers.ValidationError("Mês deve estar entre 1 e 12")
+        return value
+    
+class FiscalGenerationRequestSerializer(serializers.Serializer):
+    """Serializer para solicitação de geração manual."""
+    months_ahead = serializers.IntegerField(default=3, min_value=1, max_value=12)
+    clean_old = serializers.BooleanField(default=False)
+    days_old = serializers.IntegerField(default=30, min_value=1, max_value=365)
+    
+    def validate(self, data):
+        if data['clean_old'] and data['days_old'] < 7:
+            raise serializers.ValidationError("Para limpeza automática, mínimo de 7 dias")
+        return data
+
+
+class FiscalStatsSerializer(serializers.Serializer):
+    """Serializer para estatísticas do sistema fiscal."""
+    total_generated = serializers.IntegerField()
+    pending = serializers.IntegerField()
+    completed = serializers.IntegerField()
+    overdue = serializers.IntegerField()
+    completion_rate = serializers.FloatField()
+    organization = serializers.CharField()
+    
+    # Estatísticas por definição
+    by_definition = serializers.DictField()
+    
+    # Estatísticas por mês
+    by_month = serializers.DictField()
+    
+    # Informações da organização (opcional)
+    organization_info = serializers.DictField(required=False)

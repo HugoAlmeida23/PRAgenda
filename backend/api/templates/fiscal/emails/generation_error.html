@@ -1,0 +1,45 @@
+"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ERRO - Geração de Obrigações Fiscais - {{ organization }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #EF4444; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .content { background: #FEF2F2; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #FECACA; }
+        .error-details { background: white; padding: 15px; border-radius: 6px; margin: 15px 0; font-family: monospace; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚨 ERRO na Geração de Obrigações Fiscais</h1>
+            <p>{{ organization }}</p>
+        </div>
+        
+        <div class="content">
+            <p><strong>Ocorreu um erro durante a geração automática de obrigações fiscais.</strong></p>
+            
+            <div class="error-details">
+                <strong>Detalhes do erro:</strong><br>
+                {{ error_details }}
+            </div>
+            
+            <p><strong>Ações recomendadas:</strong></p>
+            <ul>
+                <li>Verifique as definições de obrigações fiscais</li>
+                <li>Confirme se os clientes possuem tags corretas</li>
+                <li>Tente executar a geração manualmente</li>
+                <li>Entre em contato com o suporte se o problema persistir</li>
+            </ul>
+            
+            <p style="margin-top: 30px; font-size: 14px; color: #666;">
+                Data do erro: {{ timestamp }}
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+"""

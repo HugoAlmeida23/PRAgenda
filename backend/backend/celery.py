@@ -1,28 +1,46 @@
-from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery
 from celery.schedules import crontab
 
-# Definir o módulo de configurações padrão do Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'seu_projeto.settings')
 
-# Criar o aplicativo Celery
-app = Celery('backend')
-
-# Configurar com base nas configurações do Django
+app = Celery('seu_projeto')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
-# Carregar tarefas automaticamente dos aplicativos registrados
+# Carregar tasks de todas as apps Django
 app.autodiscover_tasks()
 
-# Configurar execuções agendadas - a cada hora
+# Configurar tarefas agendadas do sistema fiscal
 app.conf.beat_schedule = {
-    'scrape-citius-every-hour': {
-        'task': 'api.tasks.scheduled_citius_scrape',
-        'schedule': crontab(minute='0'),  # Runs every hour at the top of the hour
+    # Geração automática diária às 08:00
+    'generate-fiscal-obligations-daily': {
+        'task': 'sua_app.tasks.generate_fiscal_obligations_task',
+        'schedule': crontab(hour=8, minute=0),
+        'options': {'expires': 3600},
+        'kwargs': {'months_ahead': 3},
     },
+    
+    # Limpeza semanal às 02:00 de segunda
+    'clean-old-fiscal-obligations': {
+        'task': 'sua_app.tasks.clean_old_fiscal_obligations_task',
+        'schedule': crontab(hour=2, minute=0, day_of_week=1),
+        'options': {'expires': 1800},
+        'kwargs': {'days_old': 30},
+    },
+    
+    # Verificação de deadlines diária às 07:00
+    'check-fiscal-deadlines': {
+        'task': 'sua_app.tasks.check_fiscal_deadlines_task',
+        'schedule': crontab(hour=7, minute=0),
+        'options': {'expires': 1800},
+    },
+    
+    # Relatório semanal às 17:00 de sexta
+    'weekly-fiscal-report': {
+        'task': 'sua_app.tasks.generate_weekly_fiscal_report_task',
+        'schedule': crontab(hour=17, minute=0, day_of_week=5),
+        'options': {'expires': 3600},
+    }
 }
 
-@app.task(bind=True)
-def debug_task(self):
-    print(f'Request: {self.request!r}')
+app.conf.timezone = 'Europe/Lisbon'

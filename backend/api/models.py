@@ -1,3 +1,4 @@
+from venv import logger
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
@@ -6,6 +7,7 @@ from decimal import Decimal
 from django.db.models import JSONField
 import random
 import json
+from django.core.exceptions import ValidationError
 
 
 
@@ -1686,6 +1688,9 @@ class NotificationTemplate(models.Model):
     """
     Templates personalizáveis para diferentes tipos de notificação
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -1830,4 +1835,132 @@ class NotificationDigest(models.Model):
     def __str__(self):
         return f"Digest {self.digest_type} - {self.user.username} - {self.period_start.date()}"
 
+
+class FiscalSystemSettings(models.Model):
+    """
+    Configurações específicas do sistema fiscal por organização.
+    """
+    organization = models.OneToOneField(
+        'Organization',
+        on_delete=models.CASCADE,
+        related_name='fiscal_settings',
+        verbose_name="Organização"
+    )
+    
+    # Configurações de geração automática
+    auto_generation_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Geração Automática Ativada"
+    )
+    generation_time = models.TimeField(
+        default=timezone.datetime.strptime('08:00', '%H:%M').time(),
+        verbose_name="Horário da Geração Automática"
+    )
+    months_ahead_generation = models.PositiveIntegerField(
+        default=3,
+        verbose_name="Meses Futuros para Gerar"
+    )
+    
+    # Configurações de limpeza
+    auto_cleanup_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Limpeza Automática Ativada"
+    )
+    cleanup_days_threshold = models.PositiveIntegerField(
+        default=30,
+        verbose_name="Dias para Considerar Obsoleto"
+    )
+    
+    # Configurações de notificações
+    notify_on_generation = models.BooleanField(
+        default=True,
+        verbose_name="Notificar ao Gerar"
+    )
+    notify_on_errors = models.BooleanField(
+        default=True,
+        verbose_name="Notificar em Erros"
+    )
+    email_notifications_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Notificações por Email"
+    )
+    notification_recipients = models.JSONField(
+        default=list,
+        verbose_name="Destinatários de Notificação",
+        help_text="Lista de emails para receber notificações"
+    )
+    
+    # Configurações de integração
+    webhook_url = models.URLField(
+        blank=True,
+        null=True,
+        verbose_name="URL do Webhook",
+        help_text="URL para receber notificações via webhook"
+    )
+    webhook_secret = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="Segredo do Webhook"
+    )
+    
+    # Configurações avançadas
+    advanced_settings = models.JSONField(
+        default=dict,
+        verbose_name="Configurações Avançadas",
+        help_text="Configurações adicionais em formato JSON"
+    )
+    
+    # Metadados
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_generation = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Última Geração"
+    )
+    
+    class Meta:
+        verbose_name = "Configurações do Sistema Fiscal"
+        verbose_name_plural = "Configurações do Sistema Fiscal"
+    
+    def __str__(self):
+        return f"Configurações Fiscais - {self.organization.name}"
+    
+    @classmethod
+    def get_for_organization(cls, organization):
+        """Obtém ou cria configurações para uma organização."""
+        settings, created = cls.objects.get_or_create(
+            organization=organization,
+            defaults={
+                'auto_generation_enabled': True,
+                'generation_time': timezone.datetime.strptime('08:00', '%H:%M').time(),
+                'months_ahead_generation': 3,
+                'auto_cleanup_enabled': True,
+                'cleanup_days_threshold': 30,
+            }
+        )
+        return settings
+    
+    def update_last_generation(self):
+        """Atualiza timestamp da última geração."""
+        self.last_generation = timezone.now()
+        self.save(update_fields=['last_generation'])
+    
+    def get_notification_recipients(self):
+        """Retorna lista de emails para notificação."""
+        recipients = list(self.notification_recipients)
+        
+        # Adicionar admins da organização se não estiver na lista
+        org_admins = self.organization.members.filter(
+            is_org_admin=True,
+            user__is_active=True,
+            user__email__isnull=False
+        ).exclude(user__email='')
+        
+        for admin in org_admins:
+            if admin.user.email not in recipients:
+                recipients.append(admin.user.email)
+        
+        return recipients
 

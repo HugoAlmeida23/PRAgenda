@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     "api",
     "rest_framework",
     "corsheaders",
+    'django_celery_beat',
 ]
 
 MIDDLEWARE = [
@@ -125,6 +126,43 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Lisbon'  # Ajuste para seu fuso horário
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'seu-smtp-server.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'seu-email@domain.com'
+EMAIL_HOST_PASSWORD = 'sua-senha'
+DEFAULT_FROM_EMAIL = 'Sistema Fiscal '
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'fiscal_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': 'logs/fiscal_system.log',
+        },
+        'fiscal_audit': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': 'logs/fiscal_audit.log',
+        },
+    },
+    'loggers': {
+        'fiscal': {
+            'handlers': ['fiscal_file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'fiscal_audit': {
+            'handlers': ['fiscal_audit'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators

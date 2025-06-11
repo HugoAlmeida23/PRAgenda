@@ -21,7 +21,6 @@ from django.contrib.auth.models import User
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
-from .utils import update_profitability_for_period, update_current_month_profitability # These might be deprecated if update_organization_profitability is preferred
 from django.db.models import Q, Prefetch, F # Added F
 from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
@@ -39,7 +38,13 @@ from .services.notification_template_service import NotificationTemplateService
 from .services.notification_digest_service import NotificationDigestService
 # ... (outros imports e ViewSets)
 from .models import FiscalObligationDefinition
-from .serializers import FiscalObligationDefinitionSerializer # Certifique-se que está importado
+from .serializers import FiscalObligationDefinitionSerializer
+from .services.fiscal_obligation_service import FiscalObligationGenerator
+from .models import FiscalSystemSettings
+from django.core.exceptions import PermissionDenied
+from .services.fiscal_notification_service import FiscalNotificationService 
+from .serializers import FiscalSystemSettingsSerializer
+
 
 logger = logging.getLogger(__name__) # Redundant
 
@@ -3528,3 +3533,352 @@ def send_pending_digests_view(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def generate_fiscal_obligations_manual(request):
+    """
+    Endpoint para geração manual de obrigações fiscais.
+    Apenas administradores podem executar.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin:
+            return Response(
+                {'error': 'Apenas administradores podem gerar obrigações fiscais manualmente'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        organization = profile.organization
+        if not organization:
+            return Response(
+                {'error': 'Administrador não associado a uma organização'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Parâmetros opcionais
+        months_ahead = int(request.data.get('months_ahead', 3))
+        clean_old = request.data.get('clean_old', False)
+        days_old = int(request.data.get('days_old', 30))
+
+        # Limpar obrigações obsoletas se solicitado
+        cleaned_count = 0
+        if clean_old:
+            cleaned_count = FiscalObligationGenerator.clean_old_pending_obligations(
+                days_old=days_old,
+                organization=organization
+            )
+
+        # Gerar obrigações
+        results = FiscalObligationGenerator.generate_for_next_months(
+            months_ahead=months_ahead,
+            organization=organization
+        )
+
+        # Calcular totais
+        total_created = sum(result['tasks_created'] for result in results)
+        total_skipped = sum(result['tasks_skipped'] for result in results)
+        total_errors = sum(len(result['errors']) for result in results)
+
+        return Response({
+            'success': True,
+            'message': f'Geração concluída para {organization.name}',
+            'summary': {
+                'months_processed': len(results),
+                'tasks_created': total_created,
+                'tasks_skipped': total_skipped,
+                'errors': total_errors,
+                'old_tasks_cleaned': cleaned_count
+            },
+            'detailed_results': results
+        })
+
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro na geração manual de obrigações: {e}")
+        return Response(
+            {'error': f'Erro interno: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fiscal_obligations_stats(request):
+    """
+    Endpoint para obter estatísticas do sistema de obrigações fiscais.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        # Verificar permissões - admins ou usuários com permissão de analytics
+        if not (profile.is_org_admin or profile.can_view_analytics):
+            return Response(
+                {'error': 'Sem permissão para ver estatísticas fiscais'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        organization = profile.organization
+        stats = FiscalObligationGenerator.get_generation_stats(organization)
+        
+        # Adicionar informações extras
+        if organization:
+            stats['organization_info'] = {
+                'name': organization.name,
+                'active_clients': organization.clients.filter(is_active=True).count(),
+                'clients_with_tags': organization.clients.exclude(fiscal_tags=[]).count(),
+                'active_definitions': FiscalObligationDefinition.objects.filter(
+                    Q(organization__isnull=True) | Q(organization=organization),
+                    is_active=True
+                ).count()
+            }
+
+        return Response(stats)
+
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro ao obter estatísticas fiscais: {e}")
+        return Response(
+            {'error': f'Erro interno: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def test_client_fiscal_obligations(request):
+    """
+    Endpoint para testar quais obrigações seriam geradas para um cliente específico.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        client_id = request.data.get('client_id')
+        year = request.data.get('year', timezone.now().year)
+        month = request.data.get('month', timezone.now().month)
+        
+        if not client_id:
+            return Response(
+                {'error': 'client_id é obrigatório'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            client = Client.objects.get(id=client_id)
+        except Client.DoesNotExist:
+            return Response(
+                {'error': 'Cliente não encontrado'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Verificar acesso ao cliente
+        if not profile.can_access_client(client):
+            return Response(
+                {'error': 'Sem acesso a este cliente'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Buscar definições aplicáveis
+        definitions_query = FiscalObligationDefinition.objects.filter(is_active=True)
+        
+        if client.organization:
+            definitions_query = definitions_query.filter(
+                Q(organization__isnull=True) | Q(organization=client.organization)
+            )
+
+        applicable_obligations = []
+        for definition in definitions_query:
+            # Verificar se se aplica ao período
+            if not FiscalObligationGenerator._should_generate_for_period(definition, year, month):
+                continue
+                
+            # Verificar se se aplica ao cliente
+            if definition.applies_to_client_tags:
+                if definition.applies_to_client_tags != ['ALL'] and not any(
+                    tag in (client.fiscal_tags or []) for tag in definition.applies_to_client_tags
+                ):
+                    continue
+            
+            # Calcular deadline
+            deadline_info = FiscalObligationGenerator._calculate_deadline(definition, year, month)
+            if not deadline_info:
+                continue
+            
+            # Verificar se deve gerar agora
+            should_generate = FiscalObligationGenerator._should_generate_now(
+                deadline_info['deadline'], 
+                definition.generation_trigger_offset_days
+            )
+            
+            # Verificar se já existe
+            period_key = FiscalObligationGenerator._generate_period_key(definition, year, month)
+            existing_task = client.tasks.filter(
+                source_fiscal_obligation=definition,
+                obligation_period_key=period_key
+            ).first()
+            
+            # Gerar título simulado
+            simulated_title = FiscalObligationGenerator._generate_task_title(
+                definition, client, deadline_info, year, month
+            )
+            
+            applicable_obligations.append({
+                'definition_id': definition.id,
+                'definition_name': definition.name,
+                'periodicity': definition.get_periodicity_display(),
+                'required_tags': definition.applies_to_client_tags or [],
+                'deadline': deadline_info['deadline'],
+                'period_description': deadline_info['period_description'],
+                'should_generate_now': should_generate,
+                'existing_task': {
+                    'id': existing_task.id,
+                    'title': existing_task.title,
+                    'status': existing_task.status
+                } if existing_task else None,
+                'simulated_title': simulated_title,
+                'trigger_offset_days': definition.generation_trigger_offset_days,
+                'priority': definition.get_default_priority_display()
+            })
+
+        return Response({
+            'client': {
+                'id': client.id,
+                'name': client.name,
+                'fiscal_tags': client.fiscal_tags or []
+            },
+            'test_period': {
+                'year': year,
+                'month': month,
+                'month_name': datetime(year, month, 1).strftime('%B %Y')
+            },
+            'applicable_obligations': applicable_obligations,
+            'summary': {
+                'total_definitions_checked': definitions_query.count(),
+                'applicable_count': len(applicable_obligations),
+                'would_generate_count': sum(1 for o in applicable_obligations if o['should_generate_now'] and not o['existing_task']),
+                'already_exists_count': sum(1 for o in applicable_obligations if o['existing_task'])
+            }
+        })
+
+    except Profile.DoesNotExist:
+        return Response(
+            {'error': 'Perfil não encontrado'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Erro no teste de obrigações fiscais: {e}")
+        return Response(
+            {'error': f'Erro interno: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+class FiscalSystemSettingsViewSet(viewsets.ModelViewSet):
+    serializer_class = FiscalSystemSettingsSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            profile = Profile.objects.get(user=user)
+            if profile.organization and profile.is_org_admin:
+                return FiscalSystemSettings.objects.filter(organization=profile.organization)
+            return FiscalSystemSettings.objects.none()
+        except Profile.DoesNotExist:
+            return FiscalSystemSettings.objects.none()
+    
+    def get_object(self):
+        """Retorna ou cria configurações da organização do usuário."""
+        try:
+            profile = Profile.objects.get(user=self.request.user)
+            if not profile.is_org_admin:
+                raise PermissionDenied("Apenas administradores podem gerenciar configurações fiscais")
+            
+            if not profile.organization:
+                raise ValidationError("Usuário não pertence a uma organização")
+            
+            settings = FiscalSystemSettings.get_for_organization(profile.organization)
+            return settings
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Perfil não encontrado")
+    
+    @action(detail=False, methods=['get'])
+    def my_settings(self, request):
+        """Endpoint para obter configurações da organização do usuário."""
+        settings = self.get_object()
+        serializer = self.get_serializer(settings)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['patch'])
+    def update_settings(self, request):
+        """Endpoint para atualizar configurações."""
+        settings = self.get_object()
+        serializer = self.get_serializer(settings, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['post'])
+    def test_webhook(self, request):
+        """Testa o webhook configurado."""
+        settings = self.get_object()
+        
+        if not settings.webhook_url:
+            return Response(
+                {'error': 'Nenhum webhook configurado'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            test_data = {
+                'type': 'webhook_test',
+                'organization': settings.organization.name,
+                'message': 'Teste de webhook do sistema fiscal',
+                'timestamp': timezone.now().isoformat()
+            }
+            
+            FiscalNotificationService._send_webhook(settings, test_data)
+            
+            return Response({'success': True, 'message': 'Webhook testado com sucesso'})
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Erro no teste do webhook: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=False, methods=['post'])
+    def send_test_email(self, request):
+        """Envia email de teste."""
+        settings = self.get_object()
+        
+        try:
+            test_data = {
+                'type': 'email_test',
+                'organization': settings.organization.name,
+                'stats': {
+                    'tasks_created': 5,
+                    'tasks_skipped': 2,
+                    'errors': []
+                },
+                'timestamp': timezone.now().isoformat(),
+                'success': True
+            }
+            
+            FiscalNotificationService._send_generation_email(settings, test_data)
+            
+            return Response({'success': True, 'message': 'Email de teste enviado'})
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Erro no envio do email: {str(e)}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )

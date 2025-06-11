@@ -1,0 +1,77 @@
+"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Geração de Obrigações Fiscais - {{ organization }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #3B82F6; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .content { background: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px; }
+        .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+        .stat-item { background: white; padding: 15px; border-radius: 6px; text-align: center; }
+        .stat-number { font-size: 24px; font-weight: bold; color: #3B82F6; }
+        .success { color: #10B981; }
+        .warning { color: #F59E0B; }
+        .error { color: #EF4444; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧾 Geração de Obrigações Fiscais</h1>
+            <p>{{ organization }}</p>
+        </div>
+        
+        <div class="content">
+            {% if success %}
+                <p class="success">✅ <strong>Geração concluída com sucesso!</strong></p>
+            {% elif has_errors %}
+                <p class="warning">⚠️ <strong>Geração concluída com alguns erros.</strong></p>
+            {% else %}
+                <p class="error">❌ <strong>Geração falhou.</strong></p>
+            {% endif %}
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-number success">{{ stats.tasks_created }}</div>
+                    <div>Tarefas Criadas</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number warning">{{ stats.tasks_skipped }}</div>
+                    <div>Tarefas Ignoradas</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">{{ stats.definitions_processed }}</div>
+                    <div>Definições Processadas</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">{{ stats.clients_processed }}</div>
+                    <div>Clientes Processados</div>
+                </div>
+            </div>
+            
+            {% if stats.errors %}
+                <div style="background: #FEF2F2; border: 1px solid #FECACA; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                    <h3 class="error">Erros Encontrados:</h3>
+                    <ul>
+                        {% for error in stats.errors|slice:":5" %}
+                            <li>{{ error }}</li>
+                        {% endfor %}
+                        {% if stats.errors|length > 5 %}
+                            <li><em>... e mais {{ stats.errors|length|add:"-5" }} erro(s)</em></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            {% endif %}
+            
+            <p style="margin-top: 30px; font-size: 14px; color: #666;">
+                Esta é uma notificação automática do sistema de obrigações fiscais.
+                <br>Data: {{ stats.timestamp }}
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+"""
