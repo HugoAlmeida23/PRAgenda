@@ -1,4 +1,4 @@
-import React from "react"; // Corrected import
+import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -11,17 +11,17 @@ import ClientManagement from "./pages/ClientManagement";
 import TaskManagement from "./pages/TaskManagement";
 import ClientProfitability from "./pages/ClientProfitability";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import OrganizationRouter from "./pages/OrganizationRouter"; // Updated import
-import TaskWorkflow from "./pages/TaskOverflow"; // Assuming TaskOverflow is correct, or TaskWorkflow
+import OrganizationRouter from "./pages/OrganizationRouter";
+import TaskOverflow from "./pages/TaskOverflow";
 import WorkflowManagement from "./pages/WorkflowManagement";
-import DashboardRouter from "./pages/DashboardRouter"; // This will likely be your HomePage equivalent
+import DashboardRouter from "./pages/DashboardRouter";
 import { PermissionsProvider } from './contexts/PermissionsContext';
-import Layout from './components/Layout/Layout'; // Your new Layout component
+import Layout from './components/Layout/Layout'; // O nosso novo Layout
 import NotificationsPage from "./pages/NotificationsPage";
 import FiscalDashboardPage from "./components/fiscal/FiscalDashboardPage";
 import FiscalObligationDefinitionsPage from "./components/fiscal/FiscalObligationDefinitionsPage";
 import FiscalSystemSettingsPage from "./components/fiscal/FiscalSystemSettingsPage";
-import AIAdvisorPage from "./pages/AIAdvisorPage"; // New Import
+import AIAdvisorPage from "./pages/AIAdvisorPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,59 +34,56 @@ const queryClient = new QueryClient({
 
 function Logout() {
   localStorage.clear();
-  // It's good practice to also inform any global state/context about logout
-  // For example, if PermissionsProvider has a logout function:
-  // const { logout } = usePermissions(); logout();
   return <Navigate to="/login" />;
 }
 
 function RegisterAndLogout() {
   localStorage.clear();
-  // Similar to Logout, inform global state if necessary
   return <Register />;
 }
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <PermissionsProvider> {/* PermissionsProvider should wrap BrowserRouter or be accessible to ProtectedRoute */}
+      <PermissionsProvider>
         <BrowserRouter>
+          <ToastContainer theme="dark" position="bottom-right" />
           <Routes>
-            {/* Routes that DO NOT use the Layout (e.g., login, register, logout) */}
+            {/* Rotas que NÃO usam o Layout */}
             <Route path="/login" element={<Login />} />
             <Route path="/logout" element={<Logout />} />
             <Route path="/register" element={<RegisterAndLogout />} />
 
-            {/* Protected routes that WILL use the Layout component */}
+            {/* Rotas Protegidas que usam o novo Layout */}
             <Route
-              path="/"
+              path="/*" // Usar um wildcard para apanhar todas as outras rotas
               element={
                 <ProtectedRoute>
-                  <Layout /> 
+                  <Layout>
+                    <Routes>
+                      {/* As rotas filhas são agora definidas aqui, dentro do Outlet do Layout */}
+                      <Route index element={<DashboardRouter />} />
+                      <Route path="profile" element={<Profile />} />
+                      <Route path="clients" element={<ClientManagement />} />
+                      <Route path="timeentry" element={<TimeEntry />} />
+                      <Route path="tasks" element={<TaskManagement />} />
+                      <Route path="clientprofitability" element={<ClientProfitability />} />
+                      <Route path="organization" element={<OrganizationRouter />} />
+                      <Route path="task-workflow/:taskId" element={<TaskOverflow />} />
+                      <Route path="workflow-management" element={<WorkflowManagement />} />
+                      <Route path="notifications" element={<NotificationsPage />} />
+                      <Route path="fiscal-dashboard" element={<FiscalDashboardPage />} />
+                      <Route path="fiscal-definitions" element={<FiscalObligationDefinitionsPage />} />
+                      <Route path="fiscal-settings" element={<FiscalSystemSettingsPage />} />
+                      <Route path="ai-advisor" element={<AIAdvisorPage />} />
+                      {/* Fallback para rotas desconhecidas dentro da área protegida */}
+                      <Route path="*" element={<NotFound />} />
+                    </Routes>
+                  </Layout>
                 </ProtectedRoute>
               }
-            >
-              {/* Child routes of Layout. These will be rendered in Layout's <Outlet /> */}
-              <Route index element={<DashboardRouter />} /> {/* Default page for "/", often the dashboard */}
-              <Route path="profile" element={<Profile />} />
-              <Route path="clients" element={<ClientManagement />} />
-              <Route path="timeentry" element={<TimeEntry />} />
-              <Route path="clientprofitability" element={<ClientProfitability />} />
-              <Route path="tasks" element={<TaskManagement />} />
-              <Route path="organization" element={<OrganizationRouter />} /> {/* Updated to use OrganizationRouter */}
-              <Route path="task-workflow/:taskId" element={<TaskWorkflow />} />
-              <Route path="workflow-management" element={<WorkflowManagement />} />
-              <Route path="notifications" element={<NotificationsPage />} />
-              <Route path="fiscal-dashboard" element={<FiscalDashboardPage />} />
-              <Route path="fiscal-definitions" element={<FiscalObligationDefinitionsPage />} />
-              <Route path="fiscal-settings" element={<FiscalSystemSettingsPage />} />
-                            <Route path="ai-advisor" element={<AIAdvisorPage />} /> 
-            </Route>
-
-            {/* Fallback for unknown routes */}
-            <Route path="*" element={<NotFound />} />
+            />
           </Routes>
-          <ToastContainer />
         </BrowserRouter>
       </PermissionsProvider>
     </QueryClientProvider>

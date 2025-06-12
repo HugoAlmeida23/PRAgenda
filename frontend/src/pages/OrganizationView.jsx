@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast, ToastContainer } from "react-toastify";
 import {
   Building,
   Users,
@@ -19,6 +20,8 @@ import {
   XCircle,
   Crown,
   User,
+  Plus,
+  Save,
 } from "lucide-react";
 import api from "../api";
 import BackgroundElements from "../components/HeroSection/BackgroundElements";
@@ -126,8 +129,20 @@ const fetchUserProfile = async () => {
 };
 
 const OrganizationView = () => {
+  const queryClient = useQueryClient();
   const permissions = usePermissions();
   const [showAllPermissions, setShowAllPermissions] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [organizationFormData, setOrganizationFormData] = useState({
+    name: "",
+    description: "",
+    address: "",
+    phone: "",
+    email: "",
+    subscription_plan: "Básico",
+    max_users: 5,
+    logo: ""
+  });
 
   const {
     data: organization,
@@ -159,6 +174,53 @@ const OrganizationView = () => {
     queryFn: fetchUserProfile,
     staleTime: 5 * 60 * 1000
   });
+
+  // Mutation for creating organization
+  const createOrganizationMutation = useMutation({
+    mutationFn: (data) => api.post("/organizations/", data),
+    onSuccess: () => {
+      toast.success("Organização criada com sucesso! Você foi definido como administrador.");
+      setShowCreateForm(false);
+      resetOrganizationForm();
+      queryClient.invalidateQueries({ queryKey: ['organization'] });
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      // Reload permissions context
+      window.location.reload();
+    },
+    onError: (error) => {
+      console.error("Erro ao criar organização:", error.response?.data || error.message);
+      const errorMessage = error.response?.data?.detail || 
+                          error.response?.data?.error || 
+                          "Falha ao criar organização";
+      toast.error(errorMessage);
+    }
+  });
+
+  const handleOrganizationInputChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    setOrganizationFormData(prev => ({ 
+      ...prev, 
+      [name]: type === "checkbox" ? checked : value 
+    }));
+  }, []);
+
+  const resetOrganizationForm = useCallback(() => {
+    setOrganizationFormData({ 
+      name: "", 
+      description: "", 
+      address: "", 
+      phone: "", 
+      email: "", 
+      subscription_plan: "Básico", 
+      max_users: 5, 
+      logo: "" 
+    });
+  }, []);
+
+  const handleOrganizationSubmit = useCallback((e) => {
+    e.preventDefault();
+    createOrganizationMutation.mutate(organizationFormData);
+  }, [organizationFormData, createOrganizationMutation]);
 
   // Loading state
   if (isLoadingOrganization || isLoadingProfile) {
@@ -201,18 +263,7 @@ const OrganizationView = () => {
   // Find admin members
   const adminMembers = members.filter(member => member.is_org_admin);
 
-  // Debug log
-  console.log('Permissions Debug:', {
-    permissions,
-    showAllPermissions,
-    canViewAllClients: permissions.canViewAllClients,
-    canCreateClients: permissions.canCreateClients,
-    canEditClients: permissions.canEditClients,
-    canDeleteClients: permissions.canDeleteClients,
-    canChangeClientStatus: permissions.canChangeClientStatus,
-  });
-
-  // Permission categorization - usando valores de fallback para teste
+  // Permission categorization
   const clientPermissions = [
     { key: 'can_view_all_clients', label: 'Ver Todos os Clientes', value: permissions.canViewAllClients || false },
     { key: 'can_create_clients', label: 'Criar Clientes', value: permissions.canCreateClients || false },
@@ -309,6 +360,7 @@ const OrganizationView = () => {
   return (
     <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
       <BackgroundElements businessStatus="optimal" />
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }} />
       
       <motion.div 
         initial="hidden" 
@@ -346,7 +398,230 @@ const OrganizationView = () => {
           {organization && (
             <InvitationCodeDisplay organizationId={organization.id} />
           )}
+          {!organization && (
+            <motion.button 
+              whileHover={{ scale: 1.05, y: -2 }} 
+              whileTap={{ scale: 0.95 }} 
+              onClick={() => setShowCreateForm(true)}
+              style={{ 
+                ...glassStyle, 
+                padding: '0.75rem 1.5rem', 
+                border: '1px solid rgba(59,130,246,0.3)', 
+                background: 'rgba(59,130,246,0.2)', 
+                color: 'white', 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem', 
+                fontSize: '0.875rem', 
+                fontWeight: '500' 
+              }}
+              disabled={createOrganizationMutation.isPending}
+            >
+              <Plus size={18} /> Criar Organização
+            </motion.button>
+          )}
         </motion.div>
+
+        {/* Organization Creation Form */}
+        <AnimatePresence>
+          {showCreateForm && !organization && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0, y: -20 }} 
+              animate={{ opacity: 1, height: 'auto', y: 0 }} 
+              exit={{ opacity: 0, height: 0, y: -20 }}
+              transition={{ duration: 0.3 }} 
+              style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                <div style={{ padding: '0.5rem', backgroundColor: 'rgba(59,130,246,0.2)', borderRadius: '12px' }}>
+                  <Building style={{ color: 'rgb(59,130,246)' }} size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                    Criar Nova Organização
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>
+                    Crie uma organização para começar a gerir clientes e tarefas.
+                  </p>
+                </div>
+              </div>
+              <form onSubmit={handleOrganizationSubmit}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                      Nome *
+                    </label>
+                    <input 
+                      type="text" 
+                      name="name" 
+                      value={organizationFormData.name} 
+                      onChange={handleOrganizationInputChange} 
+                      required 
+                      style={{ 
+                        width: '100%', padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.1)', 
+                        border: '1px solid rgba(255,255,255,0.2)', 
+                        borderRadius: '8px', color: 'white', fontSize: '0.875rem' 
+                      }} 
+                      placeholder="Nome da Organização" 
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                      Email
+                    </label>
+                    <input 
+                      type="email" 
+                      name="email" 
+                      value={organizationFormData.email} 
+                      onChange={handleOrganizationInputChange} 
+                      style={{ 
+                        width: '100%', padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.1)', 
+                        border: '1px solid rgba(255,255,255,0.2)', 
+                        borderRadius: '8px', color: 'white', fontSize: '0.875rem' 
+                      }} 
+                      placeholder="Email de contacto" 
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                      Telefone
+                    </label>
+                    <input 
+                      type="tel" 
+                      name="phone" 
+                      value={organizationFormData.phone} 
+                      onChange={handleOrganizationInputChange} 
+                      style={{ 
+                        width: '100%', padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.1)', 
+                        border: '1px solid rgba(255,255,255,0.2)', 
+                        borderRadius: '8px', color: 'white', fontSize: '0.875rem' 
+                      }} 
+                      placeholder="Número de telefone" 
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                      Morada
+                    </label>
+                    <input 
+                      type="text" 
+                      name="address" 
+                      value={organizationFormData.address} 
+                      onChange={handleOrganizationInputChange} 
+                      style={{ 
+                        width: '100%', padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.1)', 
+                        border: '1px solid rgba(255,255,255,0.2)', 
+                        borderRadius: '8px', color: 'white', fontSize: '0.875rem' 
+                      }} 
+                      placeholder="Morada completa" 
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                      Plano
+                    </label>
+                    <select 
+                      name="subscription_plan" 
+                      value={organizationFormData.subscription_plan} 
+                      onChange={handleOrganizationInputChange} 
+                      style={{ 
+                        width: '100%', padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.1)', 
+                        border: '1px solid rgba(255,255,255,0.2)', 
+                        borderRadius: '8px', color: 'white', fontSize: '0.875rem' 
+                      }}
+                    >
+                      <option value="Básico" style={{ background: '#1f2937', color: 'white' }}>Básico</option>
+                      <option value="Premium" style={{ background: '#1f2937', color: 'white' }}>Premium</option>
+                      <option value="Enterprise" style={{ background: '#1f2937', color: 'white' }}>Enterprise</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                      Máx. Utilizadores
+                    </label>
+                    <input 
+                      type="number" 
+                      name="max_users" 
+                      value={organizationFormData.max_users} 
+                      onChange={handleOrganizationInputChange} 
+                      min="1" 
+                      style={{ 
+                        width: '100%', padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.1)', 
+                        border: '1px solid rgba(255,255,255,0.2)', 
+                        borderRadius: '8px', color: 'white', fontSize: '0.875rem' 
+                      }} 
+                    />
+                  </div>
+                </div>
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255,255,255,0.8)' }}>
+                    Descrição
+                  </label>
+                  <textarea 
+                    name="description" 
+                    value={organizationFormData.description} 
+                    onChange={handleOrganizationInputChange} 
+                    rows={3} 
+                    style={{ 
+                      width: '100%', padding: '0.75rem', 
+                      background: 'rgba(255,255,255,0.1)', 
+                      border: '1px solid rgba(255,255,255,0.2)', 
+                      borderRadius: '8px', color: 'white', fontSize: '0.875rem', resize: 'vertical' 
+                    }} 
+                    placeholder="Breve descrição da organização..." 
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                  <motion.button 
+                    whileHover={{ scale: 1.05 }} 
+                    whileTap={{ scale: 0.95 }} 
+                    type="button" 
+                    onClick={() => { 
+                      setShowCreateForm(false); 
+                      resetOrganizationForm(); 
+                    }} 
+                    style={{ 
+                      padding: '0.75rem 1.5rem', 
+                      background: 'rgba(239,68,68,0.2)', 
+                      border: '1px solid rgba(239,68,68,0.3)', 
+                      borderRadius: '8px', color: 'white', 
+                      fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' 
+                    }} 
+                    disabled={createOrganizationMutation.isPending}
+                  >
+                    Cancelar
+                  </motion.button>
+                  <motion.button 
+                    whileHover={{ scale: 1.05 }} 
+                    whileTap={{ scale: 0.95 }} 
+                    type="submit" 
+                    style={{ 
+                      padding: '0.75rem 1.5rem', 
+                      background: 'rgba(59,130,246,0.2)', 
+                      border: '1px solid rgba(59,130,246,0.3)', 
+                      borderRadius: '8px', color: 'white', 
+                      fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', 
+                      display: 'flex', alignItems: 'center', gap: '0.5rem' 
+                    }} 
+                    disabled={createOrganizationMutation.isPending}
+                  >
+                    {createOrganizationMutation.isPending ? 
+                      <Loader2 size={16} className="animate-spin" /> : <Save size={18} />
+                    }
+                    Criar Organização
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {organization ? (
           <>
@@ -707,7 +982,7 @@ const OrganizationView = () => {
             </motion.div>
           </>
         ) : (
-          /* No Organization Message */
+          /* No Organization Message with Create Option */
           <motion.div 
             variants={itemVariants} 
             style={{ 
@@ -717,9 +992,9 @@ const OrganizationView = () => {
               marginTop: '2rem' 
             }}
           >
-            <Building size={48} style={{ 
+            <Building size={64} style={{ 
               color: 'rgba(255, 255, 255, 0.7)', 
-              marginBottom: '1rem', 
+              marginBottom: '1.5rem', 
               margin: 'auto' 
             }} />
             <h2 style={{ 
@@ -731,10 +1006,51 @@ const OrganizationView = () => {
             </h2>
             <p style={{ 
               color: 'rgba(255, 255, 255, 0.8)', 
-              marginBottom: '1.5rem' 
+              marginBottom: '1.5rem',
+              maxWidth: '600px',
+              margin: '0 auto 1.5rem auto',
+              lineHeight: 1.6
             }}>
-              Parece que ainda não está associado a nenhuma organização. Entre em contacto com um administrador para ser adicionado a uma organização.
+              Ainda não está associado a nenhuma organização. Pode criar uma nova organização para começar a gerir clientes e tarefas, ou aguardar que um administrador o adicione a uma organização existente.
             </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <motion.button 
+                whileHover={{ scale: 1.05, y: -2 }} 
+                whileTap={{ scale: 0.95 }} 
+                onClick={() => setShowCreateForm(true)}
+                style={{ 
+                  ...glassStyle, 
+                  padding: '1rem 2rem', 
+                  border: '1px solid rgba(59,130,246,0.3)', 
+                  background: 'rgba(59,130,246,0.2)', 
+                  color: 'white', 
+                  cursor: 'pointer', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '0.75rem', 
+                  fontSize: '1rem', 
+                  fontWeight: '600' 
+                }}
+                disabled={createOrganizationMutation.isPending}
+              >
+                <Plus size={20} /> Criar Nova Organização
+              </motion.button>
+            </div>
+            <div style={{ 
+              marginTop: '2rem', 
+              padding: '1rem', 
+              background: 'rgba(59, 130, 246, 0.05)', 
+              border: '1px solid rgba(59, 130, 246, 0.2)', 
+              borderRadius: '8px' 
+            }}>
+              <p style={{ 
+                margin: 0, 
+                fontSize: '0.875rem', 
+                color: 'rgba(255, 255, 255, 0.7)' 
+              }}>
+                💡 <strong>Dica:</strong> Ao criar uma organização, será automaticamente definido como administrador com todas as permissões necessárias para gerir a organização.
+              </p>
+            </div>
           </motion.div>
         )}
       </motion.div>
@@ -746,6 +1062,13 @@ const OrganizationView = () => {
         }
         .animate-spin { 
           animation: spin 1s linear infinite; 
+        }
+        input::placeholder, textarea::placeholder { 
+          color: rgba(255,255,255,0.5) !important; 
+        }
+        select option { 
+          background: #1f2937 !important; 
+          color: white !important; 
         }
         ::-webkit-scrollbar { 
           width: 8px; 

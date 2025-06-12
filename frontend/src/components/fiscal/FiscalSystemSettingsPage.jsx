@@ -272,7 +272,7 @@ const FiscalSystemSettingsPage = () => {
                         </motion.section>
                         
                         {/* Integração Webhook */}
-                        <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
+                        {/* <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
                             <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><LinkIcon size={20}/>Integração Webhook</h2>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
                                 <div>
@@ -287,10 +287,10 @@ const FiscalSystemSettingsPage = () => {
                                     {testWebhookMutation.isPending ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} Testar Webhook
                                 </button>
                             </div>
-                        </motion.section>
+                        </motion.section> */}
 
                         {/* Configurações Avançadas */}
-                         <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
+                         {/* <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
                             <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
                                 <HelpCircle size={20}/>Configurações Avançadas (JSON)
                             </h2>
@@ -303,7 +303,7 @@ const FiscalSystemSettingsPage = () => {
                                 placeholder='{ "exemplo_config": true, "outro_valor": 123 }'
                             />
                             <small style={{fontSize:'0.7rem', opacity:0.7, display: 'block', marginTop: '0.5rem'}}>Insira um objeto JSON válido. Estas configurações podem ser usadas para funcionalidades futuras ou personalizadas.</small>
-                        </motion.section>
+                        </motion.section> */}
 
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>

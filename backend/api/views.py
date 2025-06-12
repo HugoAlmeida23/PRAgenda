@@ -1948,9 +1948,72 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     # - For remove_member, cannot remove the last admin.
 
     def perform_create(self, serializer):
-        if not self.request.user.is_superuser:
-            raise PermissionDenied("Apenas superusuários podem criar novas organizações.")
-        serializer.save()
+        user = self.request.user
+        
+        # Verificar se o usuário já pertence a uma organização
+        try:
+            profile = Profile.objects.get(user=user)
+            if profile.organization:
+                raise PermissionDenied("Já pertence a uma organização. Não pode criar uma nova.")
+        except Profile.DoesNotExist:
+            # Se não tem perfil, criar um
+            profile = Profile.objects.create(
+                user=user,
+                role='Administrador',
+                access_level='Admin',
+                hourly_rate=Decimal('0.00'),
+                phone=''
+            )
+        
+        # Criar a organização
+        organization = serializer.save()
+        
+        # Definir o criador como administrador da organização
+        profile.organization = organization
+        profile.is_org_admin = True
+        profile.role = 'Administrador'
+        
+        # Dar todas as permissões de administrador
+        profile.can_manage_clients = True
+        profile.can_view_all_clients = True
+        profile.can_create_clients = True
+        profile.can_edit_clients = True
+        profile.can_delete_clients = True
+        profile.can_change_client_status = True
+        
+        profile.can_assign_tasks = True
+        profile.can_create_tasks = True
+        profile.can_edit_all_tasks = True
+        profile.can_edit_assigned_tasks = True
+        profile.can_delete_tasks = True
+        profile.can_view_all_tasks = True
+        profile.can_approve_tasks = True
+        
+        profile.can_log_time = True
+        profile.can_edit_own_time = True
+        profile.can_edit_all_time = True
+        profile.can_view_team_time = True
+        
+        profile.can_view_client_fees = True
+        profile.can_edit_client_fees = True
+        profile.can_manage_expenses = True
+        profile.can_view_profitability = True
+        profile.can_view_team_profitability = True
+        profile.can_view_organization_profitability = True
+        
+        profile.can_view_analytics = True
+        profile.can_export_reports = True
+        profile.can_create_custom_reports = True
+        profile.can_schedule_reports = True
+        
+        profile.can_create_workflows = True
+        profile.can_edit_workflows = True
+        profile.can_assign_workflows = True
+        profile.can_manage_workflows = True
+        
+        profile.save()
+        
+        logger.info(f"Organização '{organization.name}' criada por {user.username}. Usuário definido como administrador.")
 
     @action(detail=True, methods=['post'])
     def add_member_by_code(self, request, pk=None):
