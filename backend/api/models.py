@@ -1409,6 +1409,7 @@ class WorkflowNotification(models.Model):
         ('manual_reminder', 'Lembrete Manual'),
         ('workflow_assigned', 'Workflow Atribuído'),
         ('step_rejected', 'Passo Rejeitado'),
+        ('manual_advance_needed', 'Avanço Manual Necessário'),
     ]
     
     PRIORITY_LEVELS = [
@@ -1606,6 +1607,7 @@ class NotificationSettings(models.Model):
     notify_step_completed = models.BooleanField(default=True)
     notify_approval_needed = models.BooleanField(default=True)
     notify_approval_completed = models.BooleanField(default=True)
+    notify_manual_advance_needed = models.BooleanField(default=True)
     notify_workflow_completed = models.BooleanField(default=True)
     notify_deadline_approaching = models.BooleanField(default=True)
     notify_step_overdue = models.BooleanField(default=True)

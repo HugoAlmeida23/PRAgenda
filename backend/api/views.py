@@ -616,7 +616,6 @@ class TaskViewSet(viewsets.ModelViewSet):
                 return Response(self.get_serializer(task).data)
             raise PermissionDenied("Perfil de usuário não encontrado")
 
-    # _advance_workflow_step remains largely the same, but ensure it uses NotificationService
     def _advance_workflow_step(self, task, completed_step, user, comment_for_advance=""):
         logger.info(f"Avançando workflow da tarefa {task.id} a partir do passo {completed_step.name if completed_step else 'N/A'}")
         
@@ -675,15 +674,48 @@ class TaskViewSet(viewsets.ModelViewSet):
                 logger.error(f"Próximo passo com ID {next_step_ids[0]} não encontrado para tarefa {task.id}.")
         else: # Multiple next steps
             logger.info(f"Múltiplos próximos passos ({len(next_step_ids)}) para tarefa {task.id} a partir do passo {completed_step.name}. Requer escolha manual.")
-            responsible_user = task.assigned_to or task.created_by # Fallback
-            if responsible_user and responsible_user.is_active:
-                NotificationService.create_notification(
-                    user=responsible_user, task=task, workflow_step=completed_step,
-                    notification_type='manual_advance_needed',
-                    title=f"Escolha o próximo passo para: {task.title}",
-                    message=f"A tarefa '{task.title}' completou o passo '{completed_step.name}' e tem múltiplos caminhos. Avance manualmente.",
-                    priority='high'
-                )
+            
+            # ==============================================================================
+            # NEW: Get next steps information and send manual advance notification
+            # ==============================================================================
+            try:
+                next_steps_available = []
+                for step_id in next_step_ids:
+                    try:
+                        step = WorkflowStep.objects.get(id=step_id)
+                        next_steps_available.append({
+                            'id': str(step.id),
+                            'name': step.name,
+                            'description': step.description or '',
+                            'assign_to': step.assign_to.username if step.assign_to else None,
+                            'requires_approval': step.requires_approval
+                        })
+                    except WorkflowStep.DoesNotExist:
+                        logger.warning(f"Passo com ID {step_id} não encontrado ao preparar notificação de escolha manual")
+                        continue
+                
+                if next_steps_available:
+                    # Send notification for manual advance needed
+                    NotificationService.notify_manual_advance_needed(
+                        task=task,
+                        workflow_step=completed_step,
+                        next_steps_available=next_steps_available
+                    )
+                else:
+                    logger.error(f"Nenhum passo válido encontrado para escolha manual na tarefa {task.id}")
+                    
+            except Exception as e:
+                logger.error(f"Erro ao processar notificação de escolha manual para tarefa {task.id}: {e}")
+                # Fallback to original behavior if notification fails
+                responsible_user = task.assigned_to or task.created_by # Fallback
+                if responsible_user and responsible_user.is_active:
+                    NotificationService.create_notification(
+                        user=responsible_user, task=task, workflow_step=completed_step,
+                        notification_type='manual_advance_needed',
+                        title=f"Escolha o próximo passo para: {task.title}",
+                        message=f"A tarefa '{task.title}' completou o passo '{completed_step.name}' e tem múltiplos caminhos. Avance manualmente.",
+                        priority='high'
+                    )
 
     @action(detail=True, methods=['post'])
     def advance_workflow(self, request, pk=None): # Manual advance
@@ -1744,13 +1776,13 @@ class TaskApprovalViewSet(viewsets.ModelViewSet):
                 if workflow_step.approver_role.lower() not in profile.role.lower():
                     raise PermissionDenied("Seu papel não permite aprovar/rejeitar este passo.")
             elif not can_approve_this_step: # No general perm and no specific role match
-                 raise PermissionDenied("Você não tem permissão para aprovar/rejeitar este passo.")
+                raise PermissionDenied("Você não tem permissão para aprovar/rejeitar este passo.")
 
             if task.client.organization != profile.organization and not profile.is_org_admin:
-                 raise PermissionDenied("Não pode aprovar/rejeitar passo de tarefa de outra organização.")
+                raise PermissionDenied("Não pode aprovar/rejeitar passo de tarefa de outra organização.")
 
             if task.current_workflow_step != workflow_step:
-                 raise ValidationError(f"Só é possível aprovar/rejeitar o passo atual '{task.current_workflow_step.name if task.current_workflow_step else 'N/A'}'. Este passo é '{workflow_step.name}'.")
+                raise ValidationError(f"Só é possível aprovar/rejeitar o passo atual '{task.current_workflow_step.name if task.current_workflow_step else 'N/A'}'. Este passo é '{workflow_step.name}'.")
 
         except Profile.DoesNotExist:
             if not user.is_superuser:
@@ -1769,21 +1801,22 @@ class TaskApprovalViewSet(viewsets.ModelViewSet):
             comment=approval.comment or f"Passo {workflow_step.name} {action_taken.split('_')[1]}."
         )
         
+        # ==============================================================================
+        # NEW: Add notification for approval completion
+        # ==============================================================================
+        NotificationService.notify_approval_completed(
+            task=approval.task,
+            workflow_step=approval.workflow_step,
+            approval_record=approval,
+            approved_by=approval.approved_by
+        )
+        
         if approval.approved:
-            NotificationService.create_notification(
-                user=workflow_step.assign_to if workflow_step.assign_to and workflow_step.assign_to.is_active else task.assigned_to, # Notify step assignee or task assignee
-                task=task, workflow_step=workflow_step, notification_type='approval_completed',
-                title=f"Passo Aprovado: {workflow_step.name}",
-                message=f"O passo '{workflow_step.name}' da tarefa '{task.title}' foi APROVADO por {user.username}.",
-                created_by=user
-            )
             logger.info(f"Passo {workflow_step.name} da tarefa {task.id} APROVADO por {user.username}")
             # Consider auto-advancing workflow if all required approvals are met (if multiple approvers were possible)
             # For now, single approval is sufficient. The _advance_workflow_step will check this approval.
         else: 
-            NotificationService.notify_step_rejected(task, workflow_step, user, approval.comment or "")
             logger.info(f"Passo {workflow_step.name} da tarefa {task.id} REJEITADO por {user.username}")
-
 
 class WorkflowStepDetailViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = WorkflowStepSerializer

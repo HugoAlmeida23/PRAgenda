@@ -167,7 +167,120 @@ class NotificationService:
                 notifications.append(notification)
         
         return notifications
-    
+
+    @staticmethod
+    def notify_approval_completed(task, workflow_step, approval_record, approved_by):
+        """
+        Notifica sobre aprovação concluída (aprovada ou rejeitada)
+        """
+        notifications = []
+        
+        users_to_notify_set = set()
+        
+        # Notificar responsável pelo passo
+        if workflow_step.assign_to and workflow_step.assign_to.is_active:
+            users_to_notify_set.add(workflow_step.assign_to)
+        
+        # Notificar responsável pela tarefa
+        if task.assigned_to and task.assigned_to.is_active:
+            users_to_notify_set.add(task.assigned_to)
+        
+        # Notificar criador da tarefa
+        if task.created_by and task.created_by.is_active:
+            users_to_notify_set.add(task.created_by)
+        
+        # Determinar título e mensagem baseado no resultado
+        if approval_record.approved:
+            title = f"Aprovação Concluída: {workflow_step.name}"
+            message = f"O passo '{workflow_step.name}' da tarefa '{task.title}' foi APROVADO por {approved_by.username}."
+            priority = 'normal'
+            notification_type = 'approval_completed'
+        else:
+            title = f"Passo Rejeitado: {workflow_step.name}"
+            message = f"O passo '{workflow_step.name}' da tarefa '{task.title}' foi REJEITADO por {approved_by.username}."
+            if approval_record.comment:
+                message += f" Comentário: {approval_record.comment}"
+            priority = 'high'
+            notification_type = 'step_rejected'  # Usar tipo existente para rejeições
+        
+        for user_to_notify in users_to_notify_set:
+            if user_to_notify == approved_by:  # Não notificar quem aprovou
+                continue
+                
+            notification = NotificationService.create_notification(
+                user=user_to_notify,
+                task=task,
+                workflow_step=workflow_step,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                priority=priority,
+                created_by=approved_by,
+                metadata={
+                    'approval_result': approval_record.approved,
+                    'approval_comment': approval_record.comment or '',
+                    'approver': approved_by.username
+                }
+            )
+            if notification:
+                notifications.append(notification)
+        
+        return notifications
+
+    @staticmethod
+    def notify_manual_advance_needed(task, workflow_step, next_steps_available):
+        """
+        Notifica quando há múltiplos próximos passos e é necessário escolha manual
+        """
+        notifications = []
+        
+        # Determinar quem deve ser notificado para fazer a escolha
+        users_to_notify_set = set()
+        
+        # Responsável pelo passo atual
+        if workflow_step.assign_to and workflow_step.assign_to.is_active:
+            users_to_notify_set.add(workflow_step.assign_to)
+        
+        # Responsável pela tarefa
+        if task.assigned_to and task.assigned_to.is_active:
+            users_to_notify_set.add(task.assigned_to)
+        
+        # Se nenhum responsável específico, notificar criador
+        if not users_to_notify_set and task.created_by and task.created_by.is_active:
+            users_to_notify_set.add(task.created_by)
+        
+        # Se ainda não há ninguém, notificar admins da organização
+        if not users_to_notify_set and task.client and task.client.organization:
+            from ..models import Profile
+            admin_profiles = Profile.objects.filter(
+                organization=task.client.organization,
+                is_org_admin=True,
+                user__is_active=True
+            )
+            users_to_notify_set.update(p.user for p in admin_profiles)
+        
+        next_steps_names = [step['name'] for step in next_steps_available]
+        
+        for user_to_notify in users_to_notify_set:
+            notification = NotificationService.create_notification(
+                user=user_to_notify,
+                task=task,
+                workflow_step=workflow_step,
+                notification_type='manual_advance_needed',
+                title=f"Escolha o próximo passo: {task.title}",
+                message=f"A tarefa '{task.title}' completou o passo '{workflow_step.name}' e tem múltiplos caminhos possíveis: {', '.join(next_steps_names)}. É necessário escolher manualmente o próximo passo.",
+                priority='high',
+                metadata={
+                    'next_steps_available': next_steps_available,
+                    'requires_manual_choice': True,
+                    'completed_step': workflow_step.name
+                }
+            )
+            if notification:
+                notifications.append(notification)
+        
+        return notifications
+
     @staticmethod
     def notify_step_completed(task, workflow_step, completed_by):
         """
