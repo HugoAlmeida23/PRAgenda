@@ -68,6 +68,26 @@ const NavDropdown = ({ group, currentPath, onNavigate }) => {
     );
 };
 
+// Single navigation item component (no dropdown)
+const NavItem = ({ item, currentPath, onNavigate }) => {
+    const isActive = currentPath === item.path;
+    
+    return (
+        <button 
+            onClick={() => onNavigate(item.path)}
+            style={{
+                background: isActive ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                border: 'none', color: 'white', display: 'flex', alignItems: 'center',
+                gap: '0.5rem', padding: '0.5rem 1rem', borderRadius: '8px',
+                cursor: 'pointer', transition: 'background 0.2s'
+            }}
+        >
+            {item.icon}
+            <span>{item.name}</span>
+        </button>
+    );
+};
+
 const ProfileDropdown = ({ userProfile, onNavigate }) => {
     const [isOpen, setIsOpen] = useState(false);
 
@@ -138,13 +158,25 @@ const Layout = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const { theme, toggleTheme } = useTheme(); // ✨ Use the theme hook
 
+  // Single item for Dashboard (no dropdown structure)
+  const dashboardItem = {
+    name: 'Dashboard',
+    icon: <Home size={16} />,
+    path: "/"
+  };
+
+  const aiItem = {
+    name: 'Consultor AI',
+    icon: <Bot size={16} />,
+    path: "/ai-advisor"
+  };
+
   // Agrupamento dos Menus
   const navGroups = [
     {
         name: 'Operacional',
         icon: <Home size={16} />,
         items: [
-            { path: "/", icon: Home, label: "Dashboard" },
             { path: "/tasks", icon: CheckSquare, label: "Tarefas" },
             { path: "/clients", icon: Users, label: "Clientes" },
             { path: "/timeentry", icon: Clock, label: "Registo de Tempos" },
@@ -164,7 +196,6 @@ const Layout = ({ children }) => {
         icon: <BarChart3 size={16} />,
         items: [
             { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade" },
-            { path: "/ai-advisor", icon: Bot, label: "Consultor AI" },
         ]
     }
   ];
@@ -211,7 +242,6 @@ const Layout = ({ children }) => {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
         style={headerStyle} // Use the dynamic style object
-
       >
         {/* Lado Esquerdo: Logo e Navegação Principal */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
@@ -221,6 +251,18 @@ const Layout = ({ children }) => {
             </Link>
             <div style={{height: '24px', width: '1px', background: 'rgba(255,255,255,0.2)'}} />
             <nav style={{ display: 'flex', gap: '0.5rem' }}>
+                {/* Single Dashboard item */}
+                <NavItem 
+                    item={dashboardItem} 
+                    currentPath={location.pathname} 
+                    onNavigate={handleNavigation} 
+                />
+                <NavItem 
+                    item={aiItem} 
+                    currentPath={location.pathname} 
+                    onNavigate={handleNavigation} 
+                />
+                {/* Dropdown groups */}
                 {navGroups.map(group => (
                     <NavDropdown key={group.name} group={group} currentPath={location.pathname} onNavigate={handleNavigation} />
                 ))}
