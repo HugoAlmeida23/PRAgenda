@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Download, Grid, List, Loader2, Brain, AlertTriangle, RefreshCw } from "lucide-react";
+import { Plus, Download, Grid, List, Loader2, Brain, AlertTriangle, RefreshCw, AlertCircle } from "lucide-react";
 
 import api from "../api";
 import { usePermissions } from "../contexts/PermissionsContext";
@@ -15,6 +15,7 @@ import ClientFilters from "../components/client/ClientFilters";
 import ClientForm from "../components/client/ClientForm";
 import ClientGrid from "../components/client/ClientGrid";
 import ClientTable from "../components/client/ClientTable";
+import { useClientStore } from "../stores/useClientStore";
 
 const glassStyle = {
   background: 'rgba(255, 255, 255, 0.1)',
@@ -33,7 +34,6 @@ const itemVariants = {
   visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 200, damping: 20 } }
 };
 
-
 const fetchClientsData = async () => {
   const [clientsRes, usersRes] = await Promise.all([
     api.get("/clients/"),
@@ -44,33 +44,28 @@ const fetchClientsData = async () => {
     users: usersRes.data || []
   };
 };
+
 // Componente principal
 const ClientManagement = () => {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortConfig, setSortConfig] = useState({ key: "name", direction: "asc" });
-  const [filters, setFilters] = useState({
-    active: true, hasEmail: null, hasPhone: null, hasNif: null,
-    hasMonthlyFee: null, accountManager: '', minMonthlyFee: '', maxMonthlyFee: ''
-  });
-  const [viewMode, setViewMode] = useState('grid');
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedClient, setSelectedClient] = useState(null);
-  const [showClientModal, setShowClientModal] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "", nif: "", email: "", phone: "", address: "",
-    monthly_fee: "", notes: "", fiscal_tags: [], is_active: true
-  });
+  // Get ALL UI state and actions from the Zustand store
+  const {
+    searchTerm, sortConfig, filters, viewMode, showFilters, showForm,
+    selectedClient, showClientModal, formData,
+    setSortConfig, setViewMode, toggleShowFilters, openFormForNew,
+    closeForm, openDetailsModal, closeDetailsModal, openFormForEdit,
+    setFormData
+  } = useClientStore();
 
+  // Data fetching and mutations remain here
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['clientsData'],
     queryFn: fetchClientsData,
     staleTime: 5 * 60 * 1000,
   });
-
+  
   const clients = data?.clients || [];
   const users = data?.users || [];
 
@@ -79,7 +74,7 @@ const ClientManagement = () => {
     onSuccess: () => {
       toast.success("Cliente criado com sucesso");
       queryClient.invalidateQueries({ queryKey: ['clientsData'] });
-      resetForm();
+      closeForm();
     },
     onError: (err) => {
       toast.error(`Falha ao criar cliente: ${err.response?.data?.detail || err.message}`);
@@ -91,7 +86,8 @@ const ClientManagement = () => {
     onSuccess: () => {
       toast.success("Cliente atualizado com sucesso");
       queryClient.invalidateQueries({ queryKey: ['clientsData'] });
-      setShowClientModal(false);
+      closeDetailsModal();
+      closeForm();
     },
     onError: (err) => {
       toast.error(`Falha ao atualizar cliente: ${err.response?.data?.detail || err.message}`);
@@ -137,6 +133,7 @@ const ClientManagement = () => {
     if (filters.active) {
       result = result.filter(client => client.is_active);
     }
+    
     // Filtro por email
     if (filters.hasEmail === true) {
       result = result.filter(client => client.email && client.email.trim() !== '');
@@ -207,53 +204,44 @@ const ClientManagement = () => {
     return result;
   }, [clients, searchTerm, filters, sortConfig]);
 
-  const handleSearchChange = useCallback((e) => setSearchTerm(e.target.value), []);
-  const handleFilterChange = useCallback((e) => {
-    const { name, type, checked, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
-  }, []);
   const handleSort = useCallback((key) => {
     setSortConfig(current => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" }));
-  }, []);
-  const handleInputChange = useCallback((e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
-  }, []);
-  const resetForm = useCallback(() => {
-    setFormData({ name: "", nif: "", email: "", phone: "", address: "", monthly_fee: "", notes: "", fiscal_tags: [], is_active: true });
-    setSelectedClient(null);
-    setShowForm(false);
-  }, []);
-  const handleSubmit = useCallback((e) => {
-    e.preventDefault();
+  }, [setSortConfig]);
+
+  const handleSubmit = useCallback((formData) => {
     if (selectedClient) {
-      if (!permissions.isOrgAdmin && !permissions.canEditClients) { toast.error("Sem permissão para editar clientes"); return; }
+      if (!permissions.isOrgAdmin && !permissions.canEditClients) { 
+        toast.error("Sem permissão para editar clientes"); 
+        return; 
+      }
       updateClientMutation.mutate({ id: selectedClient.id, updatedData: formData });
     } else {
-      if (!permissions.isOrgAdmin && !permissions.canCreateClients) { toast.error("Sem permissão para criar clientes"); return; }
+      if (!permissions.isOrgAdmin && !permissions.canCreateClients) { 
+        toast.error("Sem permissão para criar clientes"); 
+        return; 
+      }
       createClientMutation.mutate(formData);
     }
-  }, [selectedClient, formData, createClientMutation, updateClientMutation, permissions]);
-  const selectClientForEdit = useCallback((client) => {
-    setSelectedClient(client);
-    setFormData({
-      name: client.name || "", nif: client.nif || "", email: client.email || "", phone: client.phone || "",
-      address: client.address || "", monthly_fee: client.monthly_fee || "", notes: client.notes || "", is_active: client.is_active
-    });
-    setShowForm(true);
-  }, []);
-  const handleViewClientDetails = useCallback((client) => {
-    setSelectedClient(client);
-    setShowClientModal(true);
-  }, []);
+  }, [selectedClient, createClientMutation, updateClientMutation, permissions]);
+
   const toggleClientStatus = useCallback((client) => {
-    if (!permissions.isOrgAdmin && !permissions.canChangeClientStatus) { toast.error("Sem permissão para alterar status de clientes"); return; }
+    if (!permissions.isOrgAdmin && !permissions.canChangeClientStatus) { 
+      toast.error("Sem permissão para alterar status de clientes"); 
+      return; 
+    }
     toggleClientStatusMutation.mutate({ id: client.id, is_active: !client.is_active });
   }, [toggleClientStatusMutation, permissions]);
+
   const confirmDelete = useCallback((clientId) => {
-    if (!permissions.isOrgAdmin && !permissions.canDeleteClients) { toast.error("Sem permissão para excluir clientes"); return; }
-    if (window.confirm("Tem certeza que deseja excluir este cliente?")) { deleteClientMutation.mutate(clientId); }
+    if (!permissions.isOrgAdmin && !permissions.canDeleteClients) { 
+      toast.error("Sem permissão para excluir clientes"); 
+      return; 
+    }
+    if (window.confirm("Tem certeza que deseja excluir este cliente?")) { 
+      deleteClientMutation.mutate(clientId); 
+    }
   }, [deleteClientMutation, permissions]);
+  
   if (permissions.loading || isLoading) {
     return (
       <div style={{
@@ -381,47 +369,36 @@ const ClientManagement = () => {
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
-      <BackgroundElements businessStatus="optimal" />
+      <BackgroundElements/>
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }} />
 
       <motion.div initial="hidden" animate="visible" variants={containerVariants} style={{ position: 'relative', zIndex: 10, padding: '2rem', paddingTop: '1rem' }}>
-
         {/* Header */}
         <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' }}>
           <div>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0 0 0.5rem 0' }}>Gestão de Clientes</h1>
-            <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>Gerencie seus clientes e relacionamentos</p>
+            <h1 style={{ color: 'rgb(255, 255, 255)',fontSize: '1.8rem', fontWeight: '700' }}>Gestão de Clientes</h1>
+            <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)' }}>Gerencie seus clientes e relacionamentos</p>
           </div>
-          {/* Header Buttons */}
           <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <motion.button onClick={() => setShowForm(true)} whileHover={{ scale: 1.05 }} style={{ ...glassStyle, padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Plus size={18} /> Novo Cliente</motion.button>
-            <motion.button whileHover={{ scale: 1.05 }} style={{ ...glassStyle, padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Download size={18} /> Exportar</motion.button>
+            <motion.button onClick={openFormForNew} whileHover={{ scale: 1.05 }} style={{ ...glassStyle, padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: '1px solid rgba(255, 255, 255, 0.15)', color: 'white', cursor: 'pointer' }}>
+              <Plus size={18}/> Novo Cliente
+            </motion.button>
+            <motion.button whileHover={{ scale: 1.05 }} style={{ ...glassStyle, padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: '1px solid rgba(255, 255, 255, 0.15)', color: 'white', cursor: 'pointer' }}>
+              <Download size={18}/> Exportar
+            </motion.button>
           </div>
         </motion.div>
 
         <AnimatePresence>
           {showForm && (
-            <ClientForm
-              formData={formData}
-              onInputChange={handleInputChange}
+            <ClientForm 
               onSubmit={handleSubmit}
-              onCancel={resetForm}
-              selectedClient={selectedClient}
               isSaving={createClientMutation.isPending || updateClientMutation.isPending}
             />
           )}
         </AnimatePresence>
 
-        <ClientFilters
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          searchTerm={searchTerm}
-          onSearchChange={handleSearchChange}
-          users={users}
-          showFilters={showFilters}
-          onToggleFilters={() => setShowFilters(prev => !prev)}
-        />
-
+        <ClientFilters users={users} />
         <ClientStats clients={clients} />
 
         <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden' }}>
@@ -431,48 +408,42 @@ const ClientManagement = () => {
               <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>{filteredClients.length} clientes encontrados</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <button onClick={() => setViewMode('grid')} style={{ background: viewMode === 'grid' ? 'rgba(59, 130, 246, 0.3)' : 'transparent', border: 'none', padding: '0.5rem', borderRadius: '8px', color: 'white', cursor: 'pointer' }}><Grid size={16} /></button>
-              <button onClick={() => setViewMode('list')} style={{ background: viewMode === 'list' ? 'rgba(59, 130, 246, 0.3)' : 'transparent', border: 'none', padding: '0.5rem', borderRadius: '8px', color: 'white', cursor: 'pointer' }}><List size={16} /></button>
+              <button onClick={() => setViewMode('grid')} style={{ background: viewMode === 'grid' ? 'rgba(59, 130, 246, 0.3)' : 'transparent', border: 'none', padding: '0.5rem', borderRadius: '8px', color: 'white', cursor: 'pointer' }}>
+                <Grid size={16} />
+              </button>
+              <button onClick={() => setViewMode('list')} style={{ background: viewMode === 'list' ? 'rgba(59, 130, 246, 0.3)' : 'transparent', border: 'none', padding: '0.5rem', borderRadius: '8px', color: 'white', cursor: 'pointer' }}>
+                <List size={16} />
+              </button>
             </div>
           </div>
           <div style={{ padding: '1.5rem' }}>
             {viewMode === 'grid' ? (
               <ClientGrid
                 clients={filteredClients}
-                onEdit={selectClientForEdit}
                 onToggleStatus={toggleClientStatus}
                 onDelete={confirmDelete}
                 permissions={permissions}
-                onCardClick={handleViewClientDetails}
               />
             ) : (
               <ClientTable
                 clients={filteredClients}
                 onSort={handleSort}
                 sortConfig={sortConfig}
-                onEdit={selectClientForEdit}
                 onToggleStatus={toggleClientStatus}
                 onDelete={confirmDelete}
                 permissions={permissions}
-                onRowClick={handleViewClientDetails}
               />
             )}
           </div>
         </motion.div>
-
       </motion.div>
 
       <AnimatePresence>
-        {showClientModal && selectedClient && (
-          <ClientDetailsModal
-            client={selectedClient}
-            onClose={() => setShowClientModal(false)}
-            onSave={(updatedData) => {
-              updateClientMutation.mutate({
-                id: selectedClient.id,
-                updatedData
-              });
-            }}
+        {showClientModal && (
+          <ClientDetailsModal 
+            client={selectedClient} 
+            onClose={closeDetailsModal}
+            onSave={(updatedData) => { updateClientMutation.mutate({ id: selectedClient.id, updatedData }); }}
             permissions={permissions}
           />
         )}
@@ -481,4 +452,4 @@ const ClientManagement = () => {
   );
 };
 
-export default ClientManagement;                                
+export default ClientManagement;

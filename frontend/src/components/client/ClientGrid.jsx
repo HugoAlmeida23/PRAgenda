@@ -3,8 +3,12 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import ClientCard from './ClientCard';
 import { Users } from 'lucide-react';
+import { useClientStore } from '../../stores/useClientStore';
 
-const ClientGrid = ({ clients, onEdit, onToggleStatus, onDelete, permissions, onCardClick }) => {
+const ClientGrid = ({ clients, onToggleStatus, onDelete, permissions }) => {
+    // Get actions directly from the store instead of props
+    const { openFormForEdit, openDetailsModal } = useClientStore();
+
     if (clients.length === 0) {
         return (
             <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
@@ -26,11 +30,12 @@ const ClientGrid = ({ clients, onEdit, onToggleStatus, onDelete, permissions, on
                 >
                     <ClientCard
                         client={client}
-                        onEdit={onEdit}
-                        onToggleStatus={onToggleStatus}
-                        onDelete={onDelete}
+                        // Pass the actions from the store to the card
+                        onEdit={openFormForEdit}
+                        onToggleStatus={onToggleStatus} // These can still come from parent
+                        onDelete={onDelete}             // if they involve mutations.
                         permissions={permissions}
-                        onClick={() => onCardClick(client)}
+                        onClick={() => openDetailsModal(client)} // Use store action
                     />
                 </motion.div>
             ))}
