@@ -13,7 +13,6 @@ import {
   Trash2,
   Calendar,
   AlertTriangle,
-  FileText,
   User,
   ChevronDown,
   ChevronUp,
@@ -31,23 +30,14 @@ import {
   Briefcase, // For client
   Tag as TagIcon, // For category
   UserCheck, // For assigned to
-  Paperclip, // Generic task icon
   Loader2, // For loading
   SlidersHorizontal, // For filter button
-  EyeOff,
   X,
   Info,
   Network,
-  Users,
   ArrowRight,
-  Sparkles,
   CheckCircle2,
-  Clock4,
-  User2,
-  Star,
-  Workflow,
-  GitBranch,
-  Route,
+  Workflow
 } from "lucide-react";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from "../contexts/PermissionsContext";
@@ -1790,7 +1780,7 @@ const TaskManagement = () => {
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+      
       {/* Task Summary Stats */}
       <motion.div
         variants={itemVariants}
@@ -2957,6 +2947,7 @@ const TaskManagement = () => {
           transform: scale(1.05);
         }
       `}</style>
+      </motion.div>
     </div>
   );
 };

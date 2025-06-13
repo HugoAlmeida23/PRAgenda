@@ -79,8 +79,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
         minHeight: '320px', // Ensure it has some height
         border: '1px solid rgba(255, 255, 255, 0.1)',
         display: 'flex', // Added for better structure if content is short
-        flexDirection: 'column', // Fixed: changed from 'grid' to 'column'
-        marginTop: '1.5rem'
+        flexDirection: 'column'
     };
 
     const headerStyle = {

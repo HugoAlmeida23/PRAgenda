@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../api';
 import { toast, ToastContainer } from 'react-toastify';
 import { motion } from 'framer-motion';
-import { BarChart2, AlertTriangle, Calendar, PlayCircle, Settings, Loader2, RefreshCw, Clock, CheckCircle, Archive, Users, Zap, TrendingUp, FileText, Eye, Activity } from 'lucide-react';
+import { BarChart2, ListChecks, AlertTriangle, Calendar, PlayCircle, Settings, Loader2, RefreshCw, Clock, CheckCircle, Archive, Users, Zap, TrendingUp, FileText, Eye, Activity, ListCheck } from 'lucide-react';
 import BackgroundElements from '../../components/HeroSection/BackgroundElements';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { Link } from 'react-router-dom'; // For navigation links
@@ -14,6 +14,17 @@ const glassStyle = {
     border: '1px solid rgba(255, 255, 255, 0.15)',
     borderRadius: '16px',
     color: 'white',
+};
+
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1,
+            delayChildren: 0.2
+        }
+    }
 };
 
 const inputStyle = {
@@ -35,28 +46,41 @@ const labelStyle = {
     color: 'rgba(255, 255, 255, 0.8)'
 };
 
+const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+        y: 0,
+        opacity: 1,
+        transition: {
+            type: "spring",
+            stiffness: 200,
+            damping: 20
+        }
+    }
+};
+
 const StatCard = ({ title, value, icon, color = 'rgb(59, 130, 246)', unit = '', linkTo, isLoading }) => {
     const IconComponent = icon;
     const cardContent = (
         <motion.div
-            style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: `rgba(${color.replace('rgb(','').replace(')','')}, 0.1)`, border: `1px solid rgba(${color.replace('rgb(','').replace(')','')}, 0.2)` }}
-            whileHover={{ scale: 1.03, y: -5, boxShadow: `0 0 20px rgba(${color.replace('rgb(','').replace(')','')}, 0.3)` }}
+            style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: `rgba(${color.replace('rgb(', '').replace(')', '')}, 0.1)`, border: `1px solid rgba(${color.replace('rgb(', '').replace(')', '')}, 0.2)` }}
+            whileHover={{ scale: 1.03, y: -5, boxShadow: `0 0 20px rgba(${color.replace('rgb(', '').replace(')', '')}, 0.3)` }}
         >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
-                <div style={{ padding: '0.75rem', backgroundColor: `rgba(${color.replace('rgb(','').replace(')','')}, 0.2)`, borderRadius: '12px', marginRight: '1rem' }}>
+                <div style={{ padding: '0.75rem', backgroundColor: `rgba(${color.replace('rgb(', '').replace(')', '')}, 0.2)`, borderRadius: '12px', marginRight: '1rem' }}>
                     <IconComponent size={24} style={{ color }} />
                 </div>
                 <h3 style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)', textAlign: 'left', flexGrow: 1 }}>{title}</h3>
             </div>
             {isLoading ? (
-                 <Loader2 size={36} className="animate-spin" style={{ color, margin: '0.5rem auto' }}/>
+                <Loader2 size={36} className="animate-spin" style={{ color, margin: '0.5rem auto' }} />
             ) : (
-                 <p style={{ margin: '0.5rem 0 0 0', fontSize: '2rem', fontWeight: '700', color }}>
+                <p style={{ margin: '0.5rem 0 0 0', fontSize: '2rem', fontWeight: '700', color }}>
                     {value}
                     {unit && <span style={{ fontSize: '1rem', marginLeft: '0.25rem', opacity: 0.7 }}>{unit}</span>}
                 </p>
             )}
-           
+
         </motion.div>
     );
 
@@ -87,12 +111,12 @@ const FiscalDashboardPage = () => {
         staleTime: 5 * 60 * 1000,
     });
 
-     const { data: upcomingDeadlines = [], isLoading: isLoadingDeadlines, refetch: refetchDeadlines } = useQuery({
+    const { data: upcomingDeadlines = [], isLoading: isLoadingDeadlines, refetch: refetchDeadlines } = useQuery({
         queryKey: ['upcomingFiscalDeadlines'],
         queryFn: async () => {
             try {
                 // Adjust params as needed, e.g., days=7 for next week
-                const response = await api.get('/fiscal/upcoming-deadlines/?days=30&limit=10'); 
+                const response = await api.get('/fiscal/upcoming-deadlines/?days=30&limit=10');
                 return response.data; // Assuming the backend returns an array of tasks directly
             } catch (e) {
                 console.error("Error fetching upcoming fiscal deadlines:", e);
@@ -105,7 +129,7 @@ const FiscalDashboardPage = () => {
     });
 
     // Manual Generation Mutation
-     const manualGenerateMutation = useMutation({
+    const manualGenerateMutation = useMutation({
         mutationFn: (params) => api.post('/fiscal/generate-manual/', params),
         onSuccess: (data) => {
             toast.success(data.data.message || 'Geração manual concluída!');
@@ -116,7 +140,7 @@ const FiscalDashboardPage = () => {
             toast.error(`Falha na geração manual: ${err.response?.data?.error || err.message}`);
         }
     });
-    
+
     const handleManualGenerationParamChange = (e) => {
         const { name, value, type, checked } = e.target;
         setManualGenerationParams(prev => ({
@@ -157,33 +181,45 @@ const FiscalDashboardPage = () => {
             <ToastContainer position="top-right" autoClose={4000} theme="dark" />
 
             <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
+                initial="hidden"
+                animate="visible"
+                variants={containerVariants}
+                style={{
+                    position: 'relative',
+                    zIndex: 10,
+                    padding: '2rem',
+                    paddingTop: '1rem',
+                }}
             >
-                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{ padding: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', borderRadius: '12px', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
-                            <Archive size={28} style={{ color: 'rgb(52, 211, 153)' }} />
-                        </div>
+                        <ListChecks size={36} style={{ color: 'rgb(52,211,153)' }} />
                         <div>
-                            <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>Dashboard Fiscal</h1>
-                            <p style={{ color: 'rgba(191, 219, 254, 1)', margin: 0 }}>
-                                Visão geral e gestão do sistema de obrigações fiscais.
-                            </p>
+                            <h1 style={{
+                                fontSize: '1.8rem',
+                                fontWeight: '700',
+                                margin: '0 0 0.5rem 0',
+                                // Use the more specific 'backgroundImage' property instead of the 'background' shorthand
+                                backgroundImage: 'linear-gradient(135deg, white, rgba(255,255,255,0.8))',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent'
+                            }}>
+                                Obrigações Fiscais
+                            </h1>
+                            <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>Organize e acompanhe todas as suas tarefas.</p>
                         </div>
                     </div>
-                   <motion.button
-              onClick={() => { refetchStats(); refetchDeadlines(); }} // Update to refetch both
-              disabled={isLoadingStats || isLoadingDeadlines}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              style={{ ...glassStyle, padding: '0.75rem 1.5rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-          >
-              {(isLoadingStats || isLoadingDeadlines) ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
-              Atualizar
-          </motion.button>
-                </header>
+                    <motion.button
+                        onClick={() => { refetchStats(); refetchDeadlines(); }} // Update to refetch both
+                        disabled={isLoadingStats || isLoadingDeadlines}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        style={{ ...glassStyle, padding: '0.75rem 1.5rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        {(isLoadingStats || isLoadingDeadlines) ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+                        Atualizar
+                    </motion.button>
+                </motion.div>
 
                 {/* Stats Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
@@ -213,7 +249,7 @@ const FiscalDashboardPage = () => {
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '0.1rem' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <input type="checkbox" name="clean_old" id="clean_old" checked={manualGenerationParams.clean_old} onChange={handleManualGenerationParamChange} style={{width: '18px', height: '18px'}}/>
+                                        <input type="checkbox" name="clean_old" id="clean_old" checked={manualGenerationParams.clean_old} onChange={handleManualGenerationParamChange} style={{ width: '18px', height: '18px' }} />
                                         <label htmlFor="clean_old" style={{ fontSize: '0.875rem' }}>Limpar Antigas?</label>
                                     </div>
                                 </div>
@@ -244,13 +280,13 @@ const FiscalDashboardPage = () => {
                                 {upcomingDeadlines.map(task => (
                                     <div key={task.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                         <div>
-                                            <Link to={`/tasks?taskId=${task.id}`} style={{ textDecoration: 'none', color: 'white', fontWeight: '500', fontSize: '0.9rem', display:'block', marginBottom:'0.25rem' }}>
+                                            <Link to={`/tasks?taskId=${task.id}`} style={{ textDecoration: 'none', color: 'white', fontWeight: '500', fontSize: '0.9rem', display: 'block', marginBottom: '0.25rem' }}>
                                                 {task.title}
                                             </Link>
                                             <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>{task.client_name || 'Cliente não especificado'}</span>
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
-                                            <span style={{ display:'block', color: PRIORITY_COLOR_MAP[task.priority] || PRIORITY_COLOR_MAP[3], fontWeight: '500', fontSize: '0.8rem', marginBottom:'0.25rem' }}>
+                                            <span style={{ display: 'block', color: PRIORITY_COLOR_MAP[task.priority] || PRIORITY_COLOR_MAP[3], fontWeight: '500', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                                                 {PRIORITY_MAP[task.priority] || 'Média'}
                                             </span>
                                             <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)' }}>{formatDate(task.deadline)}</span>
@@ -261,29 +297,29 @@ const FiscalDashboardPage = () => {
                         )}
                     </motion.section>
                 </div>
-                
+
                 {/* Links to other Fiscal Pages */}
-                 <motion.section style={{ ...glassStyle, padding: '1.5rem', marginTop: '2rem' }}>
-                     <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+                <motion.section style={{ ...glassStyle, padding: '1.5rem', marginTop: '2rem' }}>
+                    <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
                         <Activity size={20} style={{ color: 'rgb(147, 51, 234)' }} /> Ações e Gestão
                     </h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
                         <Link to="/fiscal-definitions" style={{ textDecoration: 'none' }}>
-                            <motion.div style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: 'rgba(147, 51, 234, 0.15)', border: '1px solid rgba(147, 51, 234, 0.25)'}} whileHover={{scale:1.05}}>
+                            <motion.div style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: 'rgba(147, 51, 234, 0.15)', border: '1px solid rgba(147, 51, 234, 0.25)' }} whileHover={{ scale: 1.05 }}>
                                 <Archive size={32} style={{ color: 'rgb(147, 51, 234)', marginBottom: '0.5rem' }} />
                                 <h3 style={{ fontSize: '1rem', fontWeight: '600', margin: '0.5rem 0' }}>Gerir Definições</h3>
                                 <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', margin: 0 }}>Criar e editar regras fiscais.</p>
                             </motion.div>
                         </Link>
                         <Link to="/fiscal-settings" style={{ textDecoration: 'none' }}>
-                            <motion.div style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: 'rgba(147, 51, 234, 0.15)', border: '1px solid rgba(147, 51, 234, 0.25)'}} whileHover={{scale:1.05}}>
+                            <motion.div style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: 'rgba(147, 51, 234, 0.15)', border: '1px solid rgba(147, 51, 234, 0.25)' }} whileHover={{ scale: 1.05 }}>
                                 <Settings size={32} style={{ color: 'rgb(147, 51, 234)', marginBottom: '0.5rem' }} />
                                 <h3 style={{ fontSize: '1rem', fontWeight: '600', margin: '0.5rem 0' }}>Configurações</h3>
                                 <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', margin: 0 }}>Ajustar sistema e notificações.</p>
                             </motion.div>
                         </Link>
-                         <Link to="/clients" style={{ textDecoration: 'none' }}>
-                            <motion.div style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: 'rgba(147, 51, 234, 0.15)', border: '1px solid rgba(147, 51, 234, 0.25)'}} whileHover={{scale:1.05}}>
+                        <Link to="/clients" style={{ textDecoration: 'none' }}>
+                            <motion.div style={{ ...glassStyle, padding: '1.5rem', textAlign: 'center', background: 'rgba(147, 51, 234, 0.15)', border: '1px solid rgba(147, 51, 234, 0.25)' }} whileHover={{ scale: 1.05 }}>
                                 <Users size={32} style={{ color: 'rgb(147, 51, 234)', marginBottom: '0.5rem' }} />
                                 <h3 style={{ fontSize: '1rem', fontWeight: '600', margin: '0.5rem 0' }}>Gerir Tags de Clientes</h3>
                                 <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', margin: 0 }}>Atribuir tags fiscais aos clientes.</p>

@@ -16,6 +16,31 @@ const glassStyle = {
     color: 'white',
 };
 
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1,
+            delayChildren: 0.2
+        }
+    }
+};
+
+const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+        y: 0,
+        opacity: 1,
+        transition: {
+            type: "spring",
+            stiffness: 200,
+            damping: 20
+        }
+    }
+};
+
+
 const inputStyle = {
     width: '100%',
     padding: '0.75rem',
@@ -91,7 +116,7 @@ const FiscalSystemSettingsPage = () => {
             toast.error(`Falha ao atualizar: ${err.response?.data?.detail || Object.values(err.response?.data || {}).flat().join(', ') || err.message}`);
         }
     });
-    
+
     const testWebhookMutation = useMutation({
         mutationFn: () => api.post('/fiscal-system-settings/test_webhook/'),
         onSuccess: (data) => toast.success(data.data.message || 'Webhook testado com sucesso!'),
@@ -116,16 +141,16 @@ const FiscalSystemSettingsPage = () => {
     const handleRecipientsChange = (newRecipients) => {
         setFormData(prev => ({ ...prev, notification_recipients: newRecipients }));
     };
-    
+
     const handleAdvancedSettingsChange = (e) => {
         const { name, value } = e.target;
         try {
             const parsedValue = value ? JSON.parse(value) : {};
-            setFormData(prev => ({...prev, advanced_settings: parsedValue }));
+            setFormData(prev => ({ ...prev, advanced_settings: parsedValue }));
         } catch (jsonError) {
             // Handle JSON parsing error, maybe show a message
             console.warn("Invalid JSON for advanced settings:", jsonError);
-             toast.warn("JSON inválido para configurações avançadas.");
+            toast.warn("JSON inválido para configurações avançadas.");
         }
     };
 
@@ -154,12 +179,12 @@ const FiscalSystemSettingsPage = () => {
             </div>
         );
     }
-    
+
     if (isLoading && !settings) {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh', color: 'white' }}>
                 <Loader2 size={48} className="animate-spin" />
-                <span style={{marginLeft: '1rem'}}>Carregando configurações...</span>
+                <span style={{ marginLeft: '1rem' }}>Carregando configurações...</span>
             </div>
         );
     }
@@ -173,7 +198,7 @@ const FiscalSystemSettingsPage = () => {
                     {error?.response?.data?.detail || error?.message || "Não foi possível carregar os dados."}
                 </p>
                 <button onClick={() => refetch()} style={{ ...glassStyle, padding: '0.75rem 1.5rem', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', cursor: 'pointer' }}>
-                    <RefreshCw size={16} style={{marginRight: '0.5rem'}}/> Tentar Novamente
+                    <RefreshCw size={16} style={{ marginRight: '0.5rem' }} /> Tentar Novamente
                 </button>
             </div>
         );
@@ -184,32 +209,47 @@ const FiscalSystemSettingsPage = () => {
             <BackgroundElements />
             <ToastContainer position="top-right" autoClose={4000} theme="dark" />
 
-            <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                style={{ maxWidth: '900px', margin: '0 auto' }}
+            <motion.div
+                initial="hidden"
+                animate="visible"
+                variants={containerVariants}
+                style={{
+                    position: 'relative',
+                    zIndex: 10,
+                    padding: '2rem',
+                    paddingTop: '1rem',
+                }}
             >
-                <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+                {/* CORRECTED STRUCTURE: Header Block */}
+                <motion.div 
+                    variants={itemVariants} 
+                    style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '1rem', 
+                        marginBottom: '2rem' 
+                    }}
+                >
                     <div style={{ padding: '0.75rem', background: 'rgba(147, 51, 234, 0.2)', borderRadius: '12px', border: '1px solid rgba(147, 51, 234, 0.3)' }}>
                         <Settings size={28} style={{ color: 'rgb(147, 51, 234)' }} />
                     </div>
                     <div>
-                        <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>Configurações do Sistema Fiscal</h1>
+                        <h1 style={{ color: 'rgb(255, 255, 255)',fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>Configurações do Sistema Fiscal</h1>
                         <p style={{ color: 'rgba(191, 219, 254, 1)', margin: 0 }}>
                             Ajuste o comportamento da geração de obrigações e notificações.
                         </p>
                     </div>
-                </header>
+                </motion.div>
 
+                {/* CORRECTED STRUCTURE: Form block is now a sibling to the header, not a child of its flex container */}
                 <form onSubmit={handleSubmit}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                         {/* Geração Automática */}
-                        <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
-                            <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><Clock size={20}/>Geração Automática</h2>
+                        <motion.section variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem' }}>
+                            <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><Clock size={20} />Geração Automática</h2>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <input type="checkbox" name="auto_generation_enabled" id="auto_generation_enabled" checked={formData.auto_generation_enabled} onChange={handleChange} style={{width: '18px', height: '18px'}} />
+                                    <input type="checkbox" name="auto_generation_enabled" id="auto_generation_enabled" checked={formData.auto_generation_enabled} onChange={handleChange} style={{ width: '18px', height: '18px' }} />
                                     <label htmlFor="auto_generation_enabled" style={labelStyle}>Ativar Geração Automática</label>
                                 </div>
                                 <div>
@@ -224,34 +264,34 @@ const FiscalSystemSettingsPage = () => {
                         </motion.section>
 
                         {/* Limpeza Automática */}
-                        <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
-                            <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><Trash2 size={20}/>Limpeza Automática</h2>
+                        <motion.section variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem' }}>
+                            <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><Trash2 size={20} />Limpeza Automática</h2>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <input type="checkbox" name="auto_cleanup_enabled" id="auto_cleanup_enabled" checked={formData.auto_cleanup_enabled} onChange={handleChange} style={{width: '18px', height: '18px'}}/>
+                                    <input type="checkbox" name="auto_cleanup_enabled" id="auto_cleanup_enabled" checked={formData.auto_cleanup_enabled} onChange={handleChange} style={{ width: '18px', height: '18px' }} />
                                     <label htmlFor="auto_cleanup_enabled" style={labelStyle}>Ativar Limpeza Automática</label>
                                 </div>
                                 <div>
                                     <label htmlFor="cleanup_days_threshold" style={labelStyle}>Considerar Obsoleto Após (dias)</label>
-                                    <input type="number" name="cleanup_days_threshold" id="cleanup_days_threshold" value={formData.cleanup_days_threshold} onChange={handleChange} min="1" max="365" style={inputStyle} disabled={!formData.auto_cleanup_enabled}/>
+                                    <input type="number" name="cleanup_days_threshold" id="cleanup_days_threshold" value={formData.cleanup_days_threshold} onChange={handleChange} min="1" max="365" style={inputStyle} disabled={!formData.auto_cleanup_enabled} />
                                 </div>
                             </div>
                         </motion.section>
 
                         {/* Notificações */}
-                        <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
-                             <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><Bell size={20}/>Notificações</h2>
+                        <motion.section variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem' }}>
+                            <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><Bell size={20} />Notificações</h2>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem 1rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <input type="checkbox" name="notify_on_generation" id="notify_on_generation" checked={formData.notify_on_generation} onChange={handleChange} style={{width: '18px', height: '18px'}}/>
+                                    <input type="checkbox" name="notify_on_generation" id="notify_on_generation" checked={formData.notify_on_generation} onChange={handleChange} style={{ width: '18px', height: '18px' }} />
                                     <label htmlFor="notify_on_generation" style={labelStyle}>Notificar Conclusão da Geração</label>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <input type="checkbox" name="notify_on_errors" id="notify_on_errors" checked={formData.notify_on_errors} onChange={handleChange} style={{width: '18px', height: '18px'}}/>
+                                    <input type="checkbox" name="notify_on_errors" id="notify_on_errors" checked={formData.notify_on_errors} onChange={handleChange} style={{ width: '18px', height: '18px' }} />
                                     <label htmlFor="notify_on_errors" style={labelStyle}>Notificar Erros na Geração</label>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <input type="checkbox" name="email_notifications_enabled" id="email_notifications_enabled" checked={formData.email_notifications_enabled} onChange={handleChange} style={{width: '18px', height: '18px'}}/>
+                                    <input type="checkbox" name="email_notifications_enabled" id="email_notifications_enabled" checked={formData.email_notifications_enabled} onChange={handleChange} style={{ width: '18px', height: '18px' }} />
                                     <label htmlFor="email_notifications_enabled" style={labelStyle}>Ativar Notificações por Email</label>
                                 </div>
                             </div>
@@ -265,14 +305,14 @@ const FiscalSystemSettingsPage = () => {
                                     validationRegex={/^[^\s@]+@[^\s@]+\.[^\s@]+$/} // Basic email regex
                                     validationMessage="Por favor, insira um email válido."
                                 />
-                                <button type="button" onClick={() => sendTestEmailMutation.mutate()} disabled={sendTestEmailMutation.isPending || !formData.email_notifications_enabled || formData.notification_recipients.length === 0} style={{...inputStyle, width:'auto', padding: '0.5rem 1rem', marginTop:'0.5rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', cursor: 'pointer', display:'flex', alignItems:'center', gap:'0.5rem'}} >
-                                    {sendTestEmailMutation.isPending ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} Enviar Email de Teste
+                                <button type="button" onClick={() => sendTestEmailMutation.mutate()} disabled={sendTestEmailMutation.isPending || !formData.email_notifications_enabled || formData.notification_recipients.length === 0} style={{ ...inputStyle, width: 'auto', padding: '0.5rem 1rem', marginTop: '0.5rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }} >
+                                    {sendTestEmailMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Enviar Email de Teste
                                 </button>
                             </div>
                         </motion.section>
-                        
+
                         {/* Integração Webhook */}
-                        {/* <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
+                        {/* <motion.section variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem' }}>
                             <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}><LinkIcon size={20}/>Integração Webhook</h2>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
                                 <div>
@@ -290,7 +330,7 @@ const FiscalSystemSettingsPage = () => {
                         </motion.section> */}
 
                         {/* Configurações Avançadas */}
-                         {/* <motion.section style={{ ...glassStyle, padding: '1.5rem' }}>
+                        {/* <motion.section variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem' }}>
                             <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
                                 <HelpCircle size={20}/>Configurações Avançadas (JSON)
                             </h2>
@@ -306,7 +346,7 @@ const FiscalSystemSettingsPage = () => {
                         </motion.section> */}
 
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                        <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
                             <motion.button
                                 type="submit"
                                 disabled={updateSettingsMutation.isPending}
@@ -317,11 +357,11 @@ const FiscalSystemSettingsPage = () => {
                                 {updateSettingsMutation.isPending ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
                                 Salvar Configurações
                             </motion.button>
-                        </div>
+                        </motion.div>
                     </div>
                 </form>
             </motion.div>
-             <style jsx global>{`
+            <style jsx global>{`
                 input[type="time"]::-webkit-calendar-picker-indicator {
                     filter: invert(0.8); /* Lighten the icon for dark themes */
                 }

@@ -151,6 +151,31 @@ const FiscalObligationDefinitionsPage = () => {
         setSearchTerm('');
     };
 
+    const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.2
+      }
+    }
+  };
+
+  
+const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 200,
+        damping: 20
+      }
+    }
+  };
+  
     const filteredDefinitions = useMemo(() => {
         if (!definitions) return [];
         let results = definitions;
@@ -207,13 +232,25 @@ const FiscalObligationDefinitionsPage = () => {
             <BackgroundElements />
             <ToastContainer position="top-right" autoClose={3000} theme="dark" />
 
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+<motion.div
+        initial="hidden"
+        animate="visible"
+        variants={containerVariants}
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          padding: '2rem',
+          paddingTop: '1rem',
+        }}
+      >
+                           <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+        
                 <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
                     <div style={{ padding: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', borderRadius: '12px', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
                         <Archive size={28} style={{color: 'rgb(52,211,153)'}}/>
                     </div>
                     <div>
-                        <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>Definições de Obrigações Fiscais</h1>
+                        <h1 style={{ color: 'rgb(255, 255, 255)',fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>Definições de Obrigações Fiscais</h1>
                         <p style={{ color: 'rgba(191, 219, 254, 1)', margin: 0 }}>
                             Gerir as regras para a geração automática de obrigações fiscais.
                         </p>
@@ -229,16 +266,9 @@ const FiscalObligationDefinitionsPage = () => {
                             <Plus size={18} /> Nova Definição
                         </motion.button>
                     )}
-                    <Link to="/fiscal-settings" style={{textDecoration: 'none'}}>
-                        <motion.button
-                            whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }}
-                            style={{ ...glassStyle, padding: '0.75rem 1.5rem', background: 'rgba(147, 51, 234, 0.2)', border: '1px solid rgba(147, 51, 234, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500', color: 'white' }}
-                        >
-                            <Settings2 size={18} /> Configurações Gerais
-                        </motion.button>
-                    </Link>
                 </div>
-            </header>
+                
+            </motion.div>
 
             {/* Search and Filters */}
             <motion.div style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
@@ -300,6 +330,7 @@ const FiscalObligationDefinitionsPage = () => {
                     )}
                 </AnimatePresence>
             </motion.div>
+         
 
             {/* Definitions List/Grid */}
             {isLoading && filteredDefinitions.length === 0 ? (
@@ -388,7 +419,9 @@ const FiscalObligationDefinitionsPage = () => {
                     color: white !important;
                 }
             `}</style>
+               </motion.div>
         </div>
+        
     );
 };
 

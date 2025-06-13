@@ -866,10 +866,12 @@ class WorkflowStep(models.Model):
         null=True,
         verbose_name="Papel do Aprovador"
     )
-    next_steps = models.JSONField(
-        default=list, 
-        verbose_name="Próximos Passos",
-        help_text="List of possible next step IDs"
+    next_steps = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='previous_steps_rel', # Use a different related_name to avoid clash
+        blank=True,
+        verbose_name="Próximos Passos"
     )
     previous_steps = models.JSONField(
         default=list, 
@@ -1110,60 +1112,59 @@ class Task(models.Model):
             
         super(Task, self).save(*args, **kwargs)
 
+    # ==============================================================================
+    #  NEW MODEL METHODS: Logic moved from serializer for performance and SRP
+    # ==============================================================================
     def get_workflow_progress_data(self):
         """
-        Retorna dados precisos do progresso do workflow
+        Calcula o progresso do workflow de forma eficiente.
+        Esta lógica foi movida do TaskSerializer para o modelo.
         """
         if not self.workflow:
             return None
-            
-        from django.db import models
-        
-        # Buscar todos os passos ordenados
-        all_steps = self.workflow.steps.order_by('order')
-        total_steps = all_steps.count()
-        
+
+        # Usar prefetch_related para otimizar. O ViewSet deve prefetch 'workflow__steps'
+        try:
+            # Check if steps are already prefetched
+            if hasattr(self.workflow, '_prefetched_objects_cache') and 'steps' in self.workflow._prefetched_objects_cache:
+                all_steps = self.workflow.steps.all()
+            else:
+                # Fallback to query if not prefetched (less optimal but safe)
+                all_steps = self.workflow.steps.order_by('order')
+        except WorkflowDefinition.steps.RelatedObjectDoesNotExist:
+             all_steps = []
+
+        total_steps = len(all_steps)
         if total_steps == 0:
-            return None
+            return {'current_step': 0, 'completed_steps': 0, 'total_steps': 0, 'percentage': 0, 'is_completed': False}
         
-        # Determinar passos concluídos
-        completed_step_ids = set()
-        
-        # Verificar se workflow foi marcado como completo
-        workflow_completed = WorkflowHistory.objects.filter(
-            task=self,
-            action='workflow_completed'
-        ).exists()
-        
+        # O histórico deve ser pré-carregado no queryset da view para máxima eficiência
+        # Aqui, estamos assumindo que `workflow_history` foi pré-carregado no objeto `task`
+        task_history = self.workflow_history.all() if hasattr(self, 'workflow_history') else []
+
+        workflow_completed = any(h.action == 'workflow_completed' for h in task_history)
+
         if workflow_completed:
-            # Se o workflow está completo, todos os passos estão concluídos
             completed_count = total_steps
             current_step_number = total_steps
             percentage = 100.0
-        else:
-            # Buscar passos explicitamente concluídos no histórico
-            completed_histories = WorkflowHistory.objects.filter(
-                task=self,
-                action__in=['step_completed', 'step_advanced'],
-                from_step__isnull=False
-            ).values_list('from_step_id', flat=True)
+        elif self.current_workflow_step:
+            current_order = self.current_workflow_step.order
+            completed_step_ids = {h.from_step_id for h in task_history if h.action in ['step_completed', 'step_advanced'] and h.from_step_id}
             
-            completed_step_ids.update(completed_histories)
-            
-            # Marcar passos anteriores ao atual como concluídos
-            if self.current_workflow_step:
-                current_order = self.current_workflow_step.order
-                for step in all_steps:
-                    if step.order < current_order:
-                        completed_step_ids.add(step.id)
-                
-                current_step_number = len(completed_step_ids) + 1
-            else:
-                current_step_number = len(completed_step_ids)
-            
+            # Adicionar todos os passos anteriores ao atual como concluídos
+            for step in all_steps:
+                if step.order < current_order:
+                    completed_step_ids.add(step.id)
+
             completed_count = len(completed_step_ids)
+            current_step_number = current_order
             percentage = (completed_count / total_steps) * 100 if total_steps > 0 else 0
-        
+        else: # Workflow não iniciado ou concluído sem passo atual
+            completed_count = 0
+            current_step_number = 1
+            percentage = 0.0
+
         return {
             'current_step': current_step_number,
             'completed_steps': completed_count,
@@ -1171,36 +1172,29 @@ class Task(models.Model):
             'percentage': round(percentage, 1),
             'is_completed': workflow_completed
         }
-    
-    def is_workflow_step_completed(self, step):
-        """
-        Verifica se um passo específico do workflow foi concluído
-        """
-        if not self.workflow or not step:
-            return False
+
+    def get_available_next_steps(self):
+        """Retorna os próximos passos disponíveis de forma eficiente."""
+        if not self.current_workflow_step:
+            return []
             
-        # Verificar se há registro de conclusão no histórico
-        step_completed = WorkflowHistory.objects.filter(
-            task=self,
-            from_step=step,
-            action__in=['step_completed', 'step_advanced']
-        ).exists()
-        
-        if step_completed:
-            return True
+        try:
+            next_step_ids = self.current_workflow_step.get_next_steps()
             
-        # Se é um passo anterior ao atual, considerar como concluído
-        if self.current_workflow_step and step.order < self.current_workflow_step.order:
-            return True
-            
-        # Se o workflow foi marcado como completo, todos os passos estão concluídos
-        workflow_completed = WorkflowHistory.objects.filter(
-            task=self,
-            action='workflow_completed'
-        ).exists()
-        
-        return workflow_completed
- 
+            # Para otimizar, o ViewSet deve fazer prefetch de workflow.steps.
+            # Desta forma, não atingimos a BD aqui.
+            if hasattr(self.workflow, '_prefetched_objects_cache') and 'steps' in self.workflow._prefetched_objects_cache:
+                all_steps = self.workflow.steps.all()
+                next_steps = [s for s in all_steps if str(s.id) in next_step_ids or s.id in next_step_ids]
+            else:
+                # Fallback (menos eficiente)
+                next_steps = WorkflowStep.objects.filter(id__in=next_step_ids)
+
+            return [{'id': str(step.id), 'name': step.name, 'assign_to': step.assign_to.username if step.assign_to else None} 
+                    for step in next_steps]
+        except Exception:
+            # Captura erros de JSON ou outros problemas
+            return []
  
 class FiscalObligationDefinition(models.Model):
     PERIODICITY_CHOICES = [

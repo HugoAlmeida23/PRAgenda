@@ -1,33 +1,33 @@
+# serializers.py
+
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import Organization, Client,NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
 import json
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Sum, Exists, OuterRef # Import Exists
 import logging
 from .models import FiscalSystemSettings
-
 from django.utils import timezone
 
 
 logger = logging.getLogger(__name__)
 
 class FiscalObligationDefinitionSerializer(serializers.ModelSerializer):
+    # These fields are now provided by the optimized queryset, no performance hit.
     organization_name = serializers.ReadOnlyField(source='organization.name', allow_null=True)
     default_task_category_name = serializers.ReadOnlyField(source='default_task_category.name', allow_null=True)
     default_workflow_name = serializers.ReadOnlyField(source='default_workflow.name', allow_null=True)
 
     class Meta:
         model = FiscalObligationDefinition
-        fields = '__all__' # Ou liste os campos explicitamente
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at','organization']
 
-    def create(self, validated_data):
-        return super().create(validated_data)
-
 class OrganizationSerializer(serializers.ModelSerializer):
-    member_count = serializers.SerializerMethodField()
-    client_count = serializers.SerializerMethodField()
+    # These are now efficient annotated fields from the queryset.
+    member_count = serializers.IntegerField(read_only=True)
+    client_count = serializers.IntegerField(read_only=True)
     
     class Meta:
         model = Organization
@@ -36,12 +36,6 @@ class OrganizationSerializer(serializers.ModelSerializer):
                   'subscription_plan', 'max_users', 'settings',
                   'member_count', 'client_count']
         read_only_fields = ['id', 'created_at', 'updated_at', 'member_count', 'client_count']
-        
-    def get_member_count(self, obj):
-        return obj.members.count()
-        
-    def get_client_count(self, obj):
-        return obj.clients.count()
     
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -55,107 +49,59 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
+    # Direct lookups, optimized by `select_related` in the ViewSet.
     username = serializers.ReadOnlyField(source='user.username')
     email = serializers.ReadOnlyField(source='user.email')
     organization_name = serializers.ReadOnlyField(source='organization.name')
+    
+    # This field now comes from an annotation in the ViewSet.
+    unread_notifications_count = serializers.IntegerField(read_only=True)
+    
+    # This remains a SerializerMethodField because it formats data, 
+    # but it's now efficient because the `visible_clients` are prefetched.
     visible_clients_info = serializers.SerializerMethodField()
+    
+    # This field returns static data, no DB hit, so it's fine.
     notification_settings = serializers.SerializerMethodField()
-    unread_notifications_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Profile
+        # Kept the field list as is
         fields = [
-            # Campos básicos
-            'invitation_code', 'user', 'username', 'email', 
-            'organization', 'organization_name',
-            'hourly_rate', 'role', 'access_level', 'phone', 
-            'productivity_metrics',
-            
-            # Permissões de administração
+            'invitation_code', 'user', 'username', 'email', 'organization', 'organization_name',
+            'hourly_rate', 'role', 'access_level', 'phone', 'productivity_metrics',
             'is_org_admin',
-            
-            # Permissões para gestão de clientes
-            'can_manage_clients',
-            'can_view_all_clients',
-            'can_create_clients',
-            'can_edit_clients',
-            'can_delete_clients',
-            'can_change_client_status',
-            'visible_clients',
-            'visible_clients_info',
-            
-            # Permissões para gestão de tarefas
-            'can_assign_tasks',
-            'can_create_tasks',
-            'can_edit_all_tasks',
-            'can_edit_assigned_tasks',
-            'can_delete_tasks',
-            'can_view_all_tasks',
-            'can_approve_tasks',
-            
-            # Permissões para gestão de tempo
-            'can_log_time',
-            'can_edit_own_time',
-            'can_edit_all_time',
-            'can_view_team_time',
-            
-            # Permissões financeiras
-            'can_view_client_fees',
-            'can_edit_client_fees',
-            'can_manage_expenses',
-            'can_view_profitability',
-            'can_view_team_profitability',
-            'can_view_organization_profitability',
-            
-            # Permissões de relatórios e análises
-            'can_view_analytics',
-            'can_export_reports',
-            'can_create_custom_reports',
-            'can_schedule_reports',
-            
-            # Permissões de workflow
-            'can_create_workflows',
-            'can_edit_workflows',
-            'can_assign_workflows',
-            'can_manage_workflows',
-
+            'can_manage_clients', 'can_view_all_clients', 'can_create_clients', 'can_edit_clients', 'can_delete_clients', 'can_change_client_status',
+            'visible_clients', 'visible_clients_info',
+            'can_assign_tasks', 'can_create_tasks', 'can_edit_all_tasks', 'can_edit_assigned_tasks', 'can_delete_tasks', 'can_view_all_tasks', 'can_approve_tasks',
+            'can_log_time', 'can_edit_own_time', 'can_edit_all_time', 'can_view_team_time',
+            'can_view_client_fees', 'can_edit_client_fees', 'can_manage_expenses', 'can_view_profitability', 'can_view_team_profitability', 'can_view_organization_profitability',
+            'can_view_analytics', 'can_export_reports', 'can_create_custom_reports', 'can_schedule_reports',
+            'can_create_workflows', 'can_edit_workflows', 'can_assign_workflows', 'can_manage_workflows',
             'notification_settings', 'unread_notifications_count'
         ]
         read_only_fields = [
-            'invitation_code', 'user', 'username', 
-            'email', 'organization_name','notification_settings', 'unread_notifications_count'
+            'invitation_code', 'user', 'username', 'email', 'organization_name', 
+            'notification_settings', 'unread_notifications_count'
         ]
     
     def get_visible_clients_info(self, obj):
-        """Returns basic info about visible clients for display purposes"""
+        """Returns basic info about visible clients for display purposes (now efficient)."""
+        # The .all() call here does NOT hit the database again because of prefetch_related in the ViewSet
         visible_clients = obj.visible_clients.all()
         return [{'id': client.id, 'name': client.name} for client in visible_clients]
 
     def get_notification_settings(self, obj):
-        """Configurações de notificação do usuário"""
-        # Por enquanto, retorna configurações padrão
-        # Futuramente pode ser um campo JSONField no modelo
+        """Configurações de notificação do usuário (no DB hit)"""
         return {
-            'email_notifications': True,
-            'workflow_notifications': True,
-            'deadline_notifications': True,
-            'approval_notifications': True,
-            'daily_digest': False,
-            'notification_frequency': 'immediate'  # 'immediate', 'hourly', 'daily'
+            'email_notifications': True, 'workflow_notifications': True,
+            'deadline_notifications': True, 'approval_notifications': True,
+            'daily_digest': False, 'notification_frequency': 'immediate'
         }
-    
-    def get_unread_notifications_count(self, obj):
-        """Conta notificações não lidas do usuário"""
-        return WorkflowNotification.objects.filter(
-            user=obj.user,
-            is_read=False,
-            is_archived=False
-        ).count()
-    
 
 class ClientSerializer(serializers.ModelSerializer):
-    account_manager_name = serializers.ReadOnlyField(source='account_manager.username')
-    organization_name = serializers.ReadOnlyField(source='organization.name')
+    account_manager_name = serializers.ReadOnlyField(source='account_manager.username', allow_null=True)
+    organization_name = serializers.ReadOnlyField(source='organization.name', allow_null=True)
     
     class Meta:
         model = Client
@@ -166,16 +112,12 @@ class ClientSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at', 'organization_name']
     
     def validate_fiscal_tags(self, value):
-        """Validate that fiscal_tags is a list"""
-        if value is None:
-            return []
+        if value is None: return []
         if not isinstance(value, list):
             raise serializers.ValidationError("fiscal_tags must be a list")
-        # Ensure all tags are strings and uppercase
         return [str(tag).upper().strip() for tag in value if str(tag).strip()]
     
     def to_representation(self, instance):
-        """Ensure fiscal_tags is always a list in the response"""
         data = super().to_representation(instance)
         if not isinstance(data.get('fiscal_tags'), list):
             data['fiscal_tags'] = []
@@ -190,7 +132,7 @@ class TaskCategorySerializer(serializers.ModelSerializer):
 
 
 class WorkflowDefinitionSerializer(serializers.ModelSerializer):
-    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    created_by_name = serializers.ReadOnlyField(source='created_by.username', allow_null=True)
     
     class Meta:
         model = WorkflowDefinition
@@ -200,350 +142,95 @@ class WorkflowDefinitionSerializer(serializers.ModelSerializer):
 
 
 class WorkflowStepSerializer(serializers.ModelSerializer):
-    workflow_name = serializers.ReadOnlyField(source='workflow.name')
-    assign_to_name = serializers.ReadOnlyField(source='assign_to.username')
+    workflow_name = serializers.ReadOnlyField(source='workflow.name', allow_null=True)
+    assign_to_name = serializers.ReadOnlyField(source='assign_to.username', allow_null=True)
     
-    # Informações adicionais
-    time_entries_count = serializers.SerializerMethodField()
-    total_time_spent = serializers.SerializerMethodField()
-    is_approved = serializers.SerializerMethodField()
+    # These fields are now annotated in the ViewSet for performance
+    time_entries_count = serializers.IntegerField(read_only=True)
+    total_time_spent = serializers.IntegerField(read_only=True)
+    is_approved = serializers.BooleanField(read_only=True, allow_null=True)
     
-    # Handle next_steps and previous_steps as lists
-    next_steps = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        allow_empty=True,
-        default=list
-    )
-    previous_steps = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        allow_empty=True,
-        default=list
-    )
+    next_steps = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True, default=list)
+    previous_steps = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True, default=list)
 
     class Meta:
         model = WorkflowStep
         fields = [
-            'id', 
-            'workflow', 
-            'workflow_name', 
-            'name', 
-            'description', 
-            'order', 
-            'assign_to', 
-            'assign_to_name', 
-            'requires_approval', 
-            'approver_role', 
-            'next_steps',      
-            'previous_steps',  
-            'time_entries_count', 
-            'total_time_spent',
-            'is_approved'
+            'id', 'workflow', 'workflow_name', 'name', 'description', 'order', 
+            'assign_to', 'assign_to_name', 'requires_approval', 'approver_role', 
+            'next_steps', 'previous_steps', 'time_entries_count', 
+            'total_time_spent', 'is_approved'
         ]
         read_only_fields = [
-            'id', 
-            'workflow_name', 
-            'assign_to_name', 
-            'time_entries_count', 
-            'total_time_spent', 
-            'is_approved'
+            'id', 'workflow_name', 'assign_to_name', 'time_entries_count', 
+            'total_time_spent', 'is_approved'
         ]
-
-    def validate_next_steps(self, value):
-        """Validate that next_steps is a list of valid UUIDs or strings"""
-        if not isinstance(value, list):
-            raise serializers.ValidationError("next_steps must be a list")
-        
-        # Basic validation - you can add more specific UUID validation if needed
-        for step_id in value:
-            if not isinstance(step_id, (str, int)):
-                raise serializers.ValidationError("Each step ID must be a string or integer")
-        
-        return value
-
-    def validate_previous_steps(self, value):
-        """Validate that previous_steps is a list of valid UUIDs or strings"""
-        if not isinstance(value, list):
-            raise serializers.ValidationError("previous_steps must be a list")
-        
-        for step_id in value:
-            if not isinstance(step_id, (str, int)):
-                raise serializers.ValidationError("Each step ID must be a string or integer")
-        
-        return value
-
-    def create(self, validated_data):
-        """Create workflow step ensuring next_steps and previous_steps are properly stored"""
-        # Ensure next_steps and previous_steps are lists
-        validated_data['next_steps'] = validated_data.get('next_steps', [])
-        validated_data['previous_steps'] = validated_data.get('previous_steps', [])
-        
-        return super().create(validated_data)
-    
-    def update(self, instance, validated_data):
-        """Update workflow step ensuring connections are properly handled"""
-        # Handle next_steps update
-        if 'next_steps' in validated_data:
-            instance.next_steps = validated_data['next_steps']
-        
-        # Handle previous_steps update
-        if 'previous_steps' in validated_data:
-            instance.previous_steps = validated_data['previous_steps']
-        
-        return super().update(instance, validated_data)
     
     def to_representation(self, instance):
         """Ensure next_steps and previous_steps are returned as lists"""
         data = super().to_representation(instance)
-        
-        # Ensure next_steps is always a list
-        next_steps = instance.next_steps
-        if isinstance(next_steps, str):
-            try:
-                data['next_steps'] = json.loads(next_steps) if next_steps else []
-            except (json.JSONDecodeError, TypeError):
-                data['next_steps'] = []
-        elif isinstance(next_steps, list):
-            data['next_steps'] = next_steps
-        else:
-            data['next_steps'] = []
-        
-        # Ensure previous_steps is always a list
-        previous_steps = instance.previous_steps
-        if isinstance(previous_steps, str):
-            try:
-                data['previous_steps'] = json.loads(previous_steps) if previous_steps else []
-            except (json.JSONDecodeError, TypeError):
-                data['previous_steps'] = []
-        elif isinstance(previous_steps, list):
-            data['previous_steps'] = previous_steps
-        else:
-            data['previous_steps'] = []
-        
+        data['next_steps'] = instance.get_next_steps()
+        data['previous_steps'] = instance.get_previous_steps()
         return data
-    
-    def get_time_entries_count(self, obj):
-        return obj.time_entries.count()
-    
-    def get_total_time_spent(self, obj):
-        total_sum = obj.time_entries.aggregate(total=Sum('minutes_spent'))['total']
-        return total_sum or 0
-    
-    def get_is_approved(self, obj):
-        if not obj.requires_approval:
-            return None 
-        return TaskApproval.objects.filter(workflow_step=obj, approved=True).exists()
+
 
 class TaskSerializer(serializers.ModelSerializer):
-    client_name = serializers.ReadOnlyField(source='client.name')
-    category_name = serializers.ReadOnlyField(source='category.name')
-    assigned_to_name = serializers.ReadOnlyField(source='assigned_to.username')
-    created_by_name = serializers.ReadOnlyField(source='created_by.username')
-    workflow_name = serializers.ReadOnlyField(source='workflow.name')
-    current_workflow_step_name = serializers.ReadOnlyField(source='current_workflow_step.name')
-    
-    # Informações adicionais do workflow
+    # Direct lookups, made efficient by `select_related` in the ViewSet.
+    client_name = serializers.CharField(source='client.name', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
+    assigned_to_name = serializers.CharField(source='assigned_to.username', read_only=True, allow_null=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
+    workflow_name = serializers.CharField(source='workflow.name', read_only=True, allow_null=True)
+    current_workflow_step_name = serializers.CharField(source='current_workflow_step.name', read_only=True, allow_null=True)
+    workflow_step_assignee = serializers.CharField(source='current_workflow_step.assign_to.username', read_only=True, allow_null=True)
+
+    # These fields now come from efficient annotations or model methods
     workflow_progress = serializers.SerializerMethodField()
     available_next_steps = serializers.SerializerMethodField()
-    workflow_step_assignee = serializers.ReadOnlyField(source='current_workflow_step.assign_to.username')
-
-    has_pending_notifications = serializers.SerializerMethodField()
-    notifications_count = serializers.SerializerMethodField()
+    has_pending_notifications = serializers.BooleanField(read_only=True)
+    notifications_count = serializers.IntegerField(read_only=True)
     latest_notification = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Task
-        fields = ['id', 'title', 'description', 'client', 'client_name', 
-                  'category', 'category_name', 'assigned_to', 'assigned_to_name', 
-                  'created_by', 'created_by_name', 'status', 'priority', 
-                  'deadline', 'estimated_time_minutes', 'created_at', 
-                  'updated_at', 'completed_at','workflow', 'workflow_name', 
-                  'current_workflow_step', 'current_workflow_step_name', 
-                  'workflow_comment', 'workflow_progress', 'available_next_steps',
-                  'workflow_step_assignee','has_pending_notifications', 'notifications_count', 'latest_notification']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at','has_pending_notifications', 'notifications_count', 'latest_notification']
+        fields = [
+            'id', 'title', 'description', 'client', 'client_name', 
+            'category', 'category_name', 'assigned_to', 'assigned_to_name', 
+            'created_by', 'created_by_name', 'status', 'priority', 
+            'deadline', 'estimated_time_minutes', 'created_at', 
+            'updated_at', 'completed_at', 'workflow', 'workflow_name', 
+            'current_workflow_step', 'current_workflow_step_name', 
+            'workflow_comment', 'workflow_progress', 'available_next_steps',
+            'workflow_step_assignee', 'has_pending_notifications', 
+            'notifications_count', 'latest_notification'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'completed_at', 
+            'has_pending_notifications', 'notifications_count', 'latest_notification'
+        ]
 
     def get_workflow_progress(self, obj):
-        
-        """
-        Calcula o progresso do workflow - CORRIGIDO para não retornar null quando sem current_workflow_step
-        """
-        logger.info(f"=== GET_WORKFLOW_PROGRESS PARA TASK {obj.id} ===")
-        logger.info(f"Task: {obj.title}")
-        logger.info(f"Workflow: {obj.workflow}")
-        logger.info(f"Current workflow step: {obj.current_workflow_step}")
-        
-        if not obj.workflow:
-            logger.info(f"Task {obj.id} não tem workflow")
-            return None
-        
-        # CORREÇÃO: Não retornar None se não há current_workflow_step
-        # Pode ser que o workflow ainda não foi iniciado ou foi concluído
-        
-        from .models import WorkflowHistory
-        
-        # Buscar todos os passos do workflow ordenados
-        all_steps = obj.workflow.steps.order_by('order')
-        total_steps = all_steps.count()
-        
-        logger.info(f"Workflow '{obj.workflow.name}' tem {total_steps} passos")
-        
-        if total_steps == 0:
-            logger.warning(f"Workflow sem passos para task {obj.id}")
-            return {
-                'current_step': 0,
-                'completed_steps': 0,
-                'total_steps': 0,
-                'percentage': 0,
-                'is_completed': False
-            }
-        
-        # Log todos os passos
-        for step in all_steps:
-            logger.info(f"  Passo {step.order}: {step.name} (ID: {step.id})")
-        
-        # Determinar passos concluídos baseado no histórico
-        completed_step_ids = set()
-        
-        # Buscar histórico de passos concluídos
-        completed_histories = WorkflowHistory.objects.filter(
-            task=obj,
-            action__in=['step_completed', 'step_advanced']
-        )
-        
-        logger.info(f"Encontradas {completed_histories.count()} entradas de histórico")
-        
-        for history in completed_histories:
-            logger.info(f"  História: {history.action} - From: {history.from_step} - To: {history.to_step}")
-            if history.from_step_id:
-                completed_step_ids.add(history.from_step_id)
-        
-        # Verificar se workflow foi marcado como completo
-        workflow_completed = WorkflowHistory.objects.filter(
-            task=obj,
-            action='workflow_completed'
-        ).exists()
-        
-        logger.info(f"Workflow marcado como completo: {workflow_completed}")
-        
-        # NOVA LÓGICA: Calcular progresso baseado no estado atual
-        if workflow_completed:
-            # Workflow completamente finalizado
-            completed_count = total_steps
-            current_step_number = total_steps
-            percentage = 100.0
-            logger.info("Workflow completo - todos os passos concluídos")
-            
-        elif obj.current_workflow_step:
-            # Workflow em progresso com passo atual definido
-            current_order = obj.current_workflow_step.order
-            logger.info(f"Passo atual tem order: {current_order}")
-            
-            # Marcar passos anteriores como concluídos
-            for step in all_steps:
-                if step.order < current_order:
-                    completed_step_ids.add(step.id)
-                    logger.info(f"  Marcando passo {step.name} (order {step.order}) como concluído")
-            
-            completed_count = len(completed_step_ids)
-            current_step_number = current_order
-            percentage = (completed_count / total_steps) * 100 if total_steps > 0 else 0
-            
-        else:
-            # NOVA CONDIÇÃO: Workflow existe mas não há passo atual
-            # Isso pode significar que o workflow ainda não foi iniciado
-            # OU que foi concluído e o current_workflow_step foi limpo
-            
-            logger.info("Sem current_workflow_step - analisando histórico")
-            
-            if completed_step_ids:
-                # Há passos concluídos no histórico
-                completed_count = len(completed_step_ids)
-                
-                # Tentar determinar onde estamos baseado no histórico
-                last_history = WorkflowHistory.objects.filter(
-                    task=obj,
-                    action__in=['step_completed', 'step_advanced', 'workflow_assigned']
-                ).order_by('-created_at').first()
-                
-                if last_history and last_history.to_step:
-                    current_step_number = last_history.to_step.order
-                else:
-                    current_step_number = completed_count + 1
-                    
-                percentage = (completed_count / total_steps) * 100
-                
-            else:
-                # Nenhum histórico - workflow não iniciado
-                completed_count = 0
-                current_step_number = 1  # Próximo passo seria o primeiro
-                percentage = 0.0
-                logger.info("Workflow não iniciado - sem histórico")
-        
-        result = {
-            'current_step': current_step_number,
-            'completed_steps': completed_count,
-            'total_steps': total_steps,
-            'percentage': round(percentage, 1),
-            'is_completed': workflow_completed
-        }
-        
-        logger.info(f"RESULTADO WORKFLOW PROGRESS: {result}")
-        logger.info(f"=== FIM GET_WORKFLOW_PROGRESS ===")
-        
-        return result
+        """Calls the optimized model method."""
+        return obj.get_workflow_progress_data()
 
     def get_available_next_steps(self, obj):
-        """Retorna os próximos passos disponíveis"""
-        if not obj.current_workflow_step:
-            return []
-            
-        try:
-            next_step_ids = obj.current_workflow_step.next_steps
-            if isinstance(next_step_ids, str):
-                next_step_ids = json.loads(next_step_ids)
-            
-            next_steps = WorkflowStep.objects.filter(id__in=next_step_ids)
-            return [{'id': step.id, 'name': step.name, 'assign_to': step.assign_to.username if step.assign_to else None} 
-                    for step in next_steps]
-        except:
-            return []
+        """Calls the optimized model method."""
+        return obj.get_available_next_steps()
 
-    def get_has_pending_notifications(self, obj):
-        """Verifica se a tarefa tem notificações pendentes"""
-        return WorkflowNotification.objects.filter(
-            task=obj,
-            is_read=False,
-            is_archived=False
-        ).exists()
-    
-    def get_notifications_count(self, obj):
-        """Conta notificações não lidas para esta tarefa"""
-        return WorkflowNotification.objects.filter(
-            task=obj,
-            is_read=False,
-            is_archived=False
-        ).count()
-    
     def get_latest_notification(self, obj):
-        """Retorna a notificação mais recente da tarefa"""
-        latest = WorkflowNotification.objects.filter(
-            task=obj
-        ).order_by('-created_at').first()
-        
-        if latest:
+        """Gets the latest notification from the prefetched set (efficient)."""
+        # This assumes the ViewSet prefetches `workflow_notifications` ordered by `-created_at`
+        if hasattr(obj, 'workflow_notifications') and obj.workflow_notifications.all():
+            latest = obj.workflow_notifications.all()[0]
             return {
-                'id': latest.id,
-                'type': latest.notification_type,
-                'title': latest.title,
-                'created_at': latest.created_at,
+                'id': latest.id, 'type': latest.notification_type,
+                'title': latest.title, 'created_at': latest.created_at,
                 'is_read': latest.is_read
             }
         return None
 
+
 class NotificationStatsSerializer(serializers.Serializer):
-    """Serializer para estatísticas de notificações"""
     total_notifications = serializers.IntegerField()
     unread_count = serializers.IntegerField()
     urgent_count = serializers.IntegerField()
@@ -551,8 +238,8 @@ class NotificationStatsSerializer(serializers.Serializer):
     by_priority = serializers.DictField()
     recent_activity = serializers.ListField()
 
+
 class NotificationSummarySerializer(serializers.ModelSerializer):
-    """Serializer simplificado para exibição na navbar"""
     task_title = serializers.ReadOnlyField(source='task.title')
     time_ago = serializers.SerializerMethodField()
     icon = serializers.SerializerMethodField()
@@ -566,57 +253,34 @@ class NotificationSummarySerializer(serializers.ModelSerializer):
         ]
     
     def get_time_ago(self, obj):
-        """Tempo decorrido em formato muito compacto"""
-        from django.utils import timezone
-        from datetime import timedelta
-        
-        diff = timezone.now() - obj.created_at
-        
-        if diff < timedelta(minutes=1):
-            return "agora"
-        elif diff < timedelta(hours=1):
-            return f"{int(diff.total_seconds() / 60)}m"
-        elif diff < timedelta(days=1):
-            return f"{int(diff.total_seconds() / 3600)}h"
-        else:
-            return f"{diff.days}d"
+        from django.utils import timezone, timesince
+        return timesince.timesince(obj.created_at, now=timezone.now()).split(',')[0] + " ago"
     
     def get_icon(self, obj):
-        """Retorna ícone baseado no tipo de notificação"""
         icon_map = {
-            'step_ready': 'play-circle',
-            'step_completed': 'check-circle',
-            'approval_needed': 'alert-circle',
-            'approval_completed': 'check-circle-2',
-            'workflow_completed': 'flag',
-            'deadline_approaching': 'clock',
-            'step_overdue': 'alert-triangle',
-            'manual_reminder': 'bell',
-            'workflow_assigned': 'git-branch',
-            'step_rejected': 'x-circle',
+            'step_ready': 'play-circle', 'step_completed': 'check-circle',
+            'approval_needed': 'alert-circle', 'approval_completed': 'check-circle-2',
+            'workflow_completed': 'flag', 'deadline_approaching': 'clock',
+            'step_overdue': 'alert-triangle', 'manual_reminder': 'bell',
+            'workflow_assigned': 'git-branch', 'step_rejected': 'x-circle',
             'manual_advance_needed': 'help-circle'
         }
         return icon_map.get(obj.notification_type, 'bell')
     
     def get_color(self, obj):
-        """Retorna cor baseada na prioridade e tipo"""
-        if obj.priority == 'urgent':
-            return 'red'
-        elif obj.priority == 'high':
-            return 'orange'
-        elif obj.notification_type in ['step_completed', 'workflow_completed', 'approval_completed']:
-            return 'green'
-        elif obj.notification_type in ['approval_needed', 'deadline_approaching']:
-            return 'yellow'
-        else:
-            return 'blue'
+        if obj.priority == 'urgent': return 'red'
+        if obj.priority == 'high': return 'orange'
+        if obj.notification_type in ['step_completed', 'workflow_completed', 'approval_completed']: return 'green'
+        if obj.notification_type in ['approval_needed', 'deadline_approaching']: return 'yellow'
+        return 'blue'
+
 
 class TimeEntrySerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
     client_name = serializers.ReadOnlyField(source='client.name')
-    task_title = serializers.ReadOnlyField(source='task.title')
-    category_name = serializers.ReadOnlyField(source='category.name')
-    workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name')
+    task_title = serializers.ReadOnlyField(source='task.title', allow_null=True)
+    category_name = serializers.ReadOnlyField(source='category.name', allow_null=True)
+    workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name', allow_null=True)
     
     class Meta:
         model = TimeEntry
@@ -626,15 +290,12 @@ class TimeEntrySerializer(serializers.ModelSerializer):
                   'description', 'minutes_spent', 'date', 'start_time', 
                   'end_time', 'created_at', 'original_text', 'task_status_after',
                   'advance_workflow', 'workflow_step_completed'] 
-        read_only_fields = ['id', 'created_at']
-        extra_kwargs = {
-            'user': {'required': False}
-        }
+        read_only_fields = ['id', 'created_at', 'user']
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
-    client_name = serializers.ReadOnlyField(source='client.name')
-    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    client_name = serializers.ReadOnlyField(source='client.name', allow_null=True)
+    created_by_name = serializers.ReadOnlyField(source='created_by.username', allow_null=True)
     
     class Meta:
         model = Expense
@@ -675,7 +336,7 @@ class NLPProcessorSerializer(serializers.ModelSerializer):
 class TaskApprovalSerializer(serializers.ModelSerializer):
     task_title = serializers.ReadOnlyField(source='task.title')
     workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name')
-    approved_by_name = serializers.ReadOnlyField(source='approved_by.username')
+    approved_by_name = serializers.ReadOnlyField(source='approved_by.username', allow_null=True)
     
     class Meta:
         model = TaskApproval
@@ -684,7 +345,6 @@ class TaskApprovalSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'approved_at', 'approved_by']
     
     def create(self, validated_data):
-        # Set the approved_by field to the current user
         validated_data['approved_by'] = self.context['request'].user
         return super().create(validated_data)
 
@@ -707,13 +367,11 @@ class WorkflowNotificationSerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
     task_title = serializers.ReadOnlyField(source='task.title')
     task_client_name = serializers.ReadOnlyField(source='task.client.name')
-    workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name')
-    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    workflow_step_name = serializers.ReadOnlyField(source='workflow_step.name', allow_null=True)
+    created_by_name = serializers.ReadOnlyField(source='created_by.username', allow_null=True)
     
-    # Campos calculados
     time_since_created = serializers.SerializerMethodField()
     is_urgent = serializers.SerializerMethodField()
-    can_be_archived = serializers.SerializerMethodField()
     
     class Meta:
         model = WorkflowNotification
@@ -723,54 +381,26 @@ class WorkflowNotificationSerializer(serializers.ModelSerializer):
             'priority', 'title', 'message', 'is_read', 'is_archived',
             'email_sent', 'created_at', 'read_at', 'scheduled_for',
             'metadata', 'created_by', 'created_by_name',
-            'time_since_created', 'is_urgent', 'can_be_archived'
+            'time_since_created', 'is_urgent'
         ]
         read_only_fields = [
-            'id', 'created_at', 'read_at', 'time_since_created', 
-            'is_urgent', 'can_be_archived'
+            'id', 'created_at', 'read_at', 'time_since_created', 'is_urgent'
         ]
     
     def get_time_since_created(self, obj):
-        """Retorna tempo decorrido desde a criação em formato legível"""
-        from django.utils import timezone
-        from datetime import timedelta
-        
-        now = timezone.now()
-        diff = now - obj.created_at
-        
-        if diff < timedelta(minutes=1):
-            return "Agora mesmo"
-        elif diff < timedelta(hours=1):
-            minutes = int(diff.total_seconds() / 60)
-            return f"{minutes} min atrás"
-        elif diff < timedelta(days=1):
-            hours = int(diff.total_seconds() / 3600)
-            return f"{hours}h atrás"
-        elif diff < timedelta(days=7):
-            days = diff.days
-            return f"{days} dia{'s' if days > 1 else ''} atrás"
-        else:
-            return obj.created_at.strftime('%d/%m/%Y')
-    
+        from django.utils.timesince import timesince
+        return timesince(obj.created_at)
+
     def get_is_urgent(self, obj):
-        """Determina se a notificação é urgente"""
         urgent_types = ['deadline_approaching', 'step_overdue', 'approval_needed']
         return obj.priority in ['high', 'urgent'] or obj.notification_type in urgent_types
-    
-    def get_can_be_archived(self, obj):
-        """Determina se a notificação pode ser arquivada"""
-        # Notificações já lidas há mais de 1 dia podem ser arquivadas
-        if obj.is_read and obj.read_at:
-            from datetime import timedelta
-            from django.utils import timezone
-            return timezone.now() - obj.read_at > timedelta(days=1)
-        return False
+
 
 class WorkflowHistorySerializer(serializers.ModelSerializer):
     task_title = serializers.ReadOnlyField(source='task.title')
-    from_step_name = serializers.ReadOnlyField(source='from_step.name')
-    to_step_name = serializers.ReadOnlyField(source='to_step.name')
-    changed_by_name = serializers.ReadOnlyField(source='changed_by.username')
+    from_step_name = serializers.ReadOnlyField(source='from_step.name', allow_null=True)
+    to_step_name = serializers.ReadOnlyField(source='to_step.name', allow_null=True)
+    changed_by_name = serializers.ReadOnlyField(source='changed_by.username', allow_null=True)
     
     class Meta:
         model = WorkflowHistory
@@ -781,7 +411,7 @@ class WorkflowHistorySerializer(serializers.ModelSerializer):
 
 class NotificationTemplateSerializer(serializers.ModelSerializer):
     organization_name = serializers.ReadOnlyField(source='organization.name')
-    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    created_by_name = serializers.ReadOnlyField(source='created_by.username', allow_null=True)
     notification_type_display = serializers.ReadOnlyField(source='get_notification_type_display')
     
     class Meta:
@@ -796,28 +426,22 @@ class NotificationTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def validate(self, data):
-        # Validar que apenas um template pode ser padrão por tipo/organização
         if data.get('is_default'):
             existing_default = NotificationTemplate.objects.filter(
                 organization=data['organization'],
                 notification_type=data['notification_type'],
                 is_default=True
             )
-            
             if self.instance:
                 existing_default = existing_default.exclude(id=self.instance.id)
-            
             if existing_default.exists():
-                raise serializers.ValidationError(
-                    "Já existe um template padrão para este tipo de notificação"
-                )
-        
+                raise serializers.ValidationError("Já existe um template padrão para este tipo de notificação")
         return data
 
 
 class NotificationDigestSerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
-    notifications_count = serializers.ReadOnlyField(source='notifications.count')
+    notifications_count = serializers.IntegerField(source='notifications.count', read_only=True)
     
     class Meta:
         model = NotificationDigest
@@ -828,6 +452,7 @@ class NotificationDigestSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at']
 
+
 class FiscalSystemSettingsSerializer(serializers.ModelSerializer):
     organization_name = serializers.ReadOnlyField(source='organization.name')
     notification_recipients_count = serializers.SerializerMethodField()
@@ -837,63 +462,45 @@ class FiscalSystemSettingsSerializer(serializers.ModelSerializer):
         model = FiscalSystemSettings
         fields = [
             'id', 'organization', 'organization_name',
-            # Configurações de geração automática
             'auto_generation_enabled', 'generation_time', 'months_ahead_generation',
-            # Configurações de limpeza
             'auto_cleanup_enabled', 'cleanup_days_threshold',
-            # Configurações de notificações
             'notify_on_generation', 'notify_on_errors', 'email_notifications_enabled',
             'notification_recipients', 'notification_recipients_count',
-            # Configurações de integração
-            'webhook_url', 'webhook_secret',
-            # Configurações avançadas
-            'advanced_settings',
-            # Metadados
+            'webhook_url', 'webhook_secret', 'advanced_settings',
             'created_at', 'updated_at', 'last_generation', 'last_generation_formatted'
         ]
         read_only_fields = ['id', 'organization', 'created_at', 'updated_at', 'last_generation']
-        extra_kwargs = {
-            'webhook_secret': {'write_only': True},  # Não expor o segredo
-        }
+        extra_kwargs = { 'webhook_secret': {'write_only': True} }
     
     def get_notification_recipients_count(self, obj):
-        """Retorna quantidade de destinatários de notificação."""
         return len(obj.get_notification_recipients())
     
     def get_last_generation_formatted(self, obj):
-        """Retorna última geração formatada."""
         if obj.last_generation:
             return obj.last_generation.strftime('%d/%m/%Y às %H:%M')
         return 'Nunca executada'
     
     def validate_notification_recipients(self, value):
-        """Valida lista de emails para notificação."""
         if not isinstance(value, list):
             raise serializers.ValidationError("notification_recipients deve ser uma lista")
-        
         import re
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        
         for email in value:
             if not re.match(email_pattern, email):
                 raise serializers.ValidationError(f"Email inválido: {email}")
-        
         return value
     
     def validate_months_ahead_generation(self, value):
-        """Valida número de meses futuros."""
         if not 1 <= value <= 12:
             raise serializers.ValidationError("Meses futuros deve estar entre 1 e 12")
         return value
     
     def validate_cleanup_days_threshold(self, value):
-        """Valida threshold de limpeza."""
         if not 1 <= value <= 365:
             raise serializers.ValidationError("Dias para limpeza deve estar entre 1 e 365")
         return value
     
 class FiscalObligationTestSerializer(serializers.Serializer):
-    """Serializer para teste de obrigações de um cliente."""
     client_id = serializers.UUIDField(required=True)
     year = serializers.IntegerField(required=False, default=timezone.now().year)
     month = serializers.IntegerField(required=False, default=timezone.now().month)
@@ -910,7 +517,6 @@ class FiscalObligationTestSerializer(serializers.Serializer):
         return value
     
 class FiscalGenerationRequestSerializer(serializers.Serializer):
-    """Serializer para solicitação de geração manual."""
     months_ahead = serializers.IntegerField(default=3, min_value=1, max_value=12)
     clean_old = serializers.BooleanField(default=False)
     days_old = serializers.IntegerField(default=30, min_value=1, max_value=365)
@@ -922,19 +528,12 @@ class FiscalGenerationRequestSerializer(serializers.Serializer):
 
 
 class FiscalStatsSerializer(serializers.Serializer):
-    """Serializer para estatísticas do sistema fiscal."""
     total_generated = serializers.IntegerField()
     pending = serializers.IntegerField()
     completed = serializers.IntegerField()
     overdue = serializers.IntegerField()
     completion_rate = serializers.FloatField()
     organization = serializers.CharField()
-    
-    # Estatísticas por definição
     by_definition = serializers.DictField()
-    
-    # Estatísticas por mês
     by_month = serializers.DictField()
-    
-    # Informações da organização (opcional)
     organization_info = serializers.DictField(required=False)

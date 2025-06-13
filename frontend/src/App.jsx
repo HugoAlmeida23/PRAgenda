@@ -1,28 +1,38 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+// --- Context Providers ---
+import { PermissionsProvider } from './contexts/PermissionsContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+
+// --- Components & Layouts ---
+import ProtectedRoute from "./components/ProtectedRoute";
+import Layout from './components/Layout/Layout';
+
+// --- Page Imports ---
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import NotFound from "./pages/NotFound";
-import ProtectedRoute from "./components/ProtectedRoute";
 import Profile from "./pages/Profile";
 import TimeEntry from "./pages/TimeEntry";
-import { ToastContainer } from 'react-toastify';
 import ClientManagement from "./pages/ClientManagement";
 import TaskManagement from "./pages/TaskManagement";
 import ClientProfitability from "./pages/ClientProfitability";
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import OrganizationRouter from "./pages/OrganizationRouter";
 import TaskOverflow from "./pages/TaskOverflow";
 import WorkflowManagement from "./pages/WorkflowManagement";
 import DashboardRouter from "./pages/DashboardRouter";
-import { PermissionsProvider } from './contexts/PermissionsContext';
-import Layout from './components/Layout/Layout'; // O nosso novo Layout
 import NotificationsPage from "./pages/NotificationsPage";
 import FiscalDashboardPage from "./components/fiscal/FiscalDashboardPage";
 import FiscalObligationDefinitionsPage from "./components/fiscal/FiscalObligationDefinitionsPage";
 import FiscalSystemSettingsPage from "./components/fiscal/FiscalSystemSettingsPage";
 import AIAdvisorPage from "./pages/AIAdvisorPage";
 
+
+// --- React Query Client Configuration ---
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -32,6 +42,7 @@ const queryClient = new QueryClient({
   },
 });
 
+// --- Helper Components for Authentication Flow ---
 function Logout() {
   localStorage.clear();
   return <Navigate to="/login" />;
@@ -42,49 +53,53 @@ function RegisterAndLogout() {
   return <Register />;
 }
 
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <PermissionsProvider>
-        <BrowserRouter>
-          <ToastContainer theme="dark" position="bottom-right" />
-          <Routes>
-            {/* Rotas que NÃO usam o Layout */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/logout" element={<Logout />} />
-            <Route path="/register" element={<RegisterAndLogout />} />
+        <ThemeProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* === Public Routes (No Layout) === */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/logout" element={<Logout />} />
+              <Route path="/register" element={<RegisterAndLogout />} />
 
-            {/* Rotas Protegidas que usam o novo Layout */}
-            <Route
-              path="/*" // Usar um wildcard para apanhar todas as outras rotas
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Routes>
-                      {/* As rotas filhas são agora definidas aqui, dentro do Outlet do Layout */}
-                      <Route index element={<DashboardRouter />} />
-                      <Route path="profile" element={<Profile />} />
-                      <Route path="clients" element={<ClientManagement />} />
-                      <Route path="timeentry" element={<TimeEntry />} />
-                      <Route path="tasks" element={<TaskManagement />} />
-                      <Route path="clientprofitability" element={<ClientProfitability />} />
-                      <Route path="organization" element={<OrganizationRouter />} />
-                      <Route path="task-workflow/:taskId" element={<TaskOverflow />} />
-                      <Route path="workflow-management" element={<WorkflowManagement />} />
-                      <Route path="notifications" element={<NotificationsPage />} />
-                      <Route path="fiscal-dashboard" element={<FiscalDashboardPage />} />
-                      <Route path="fiscal-definitions" element={<FiscalObligationDefinitionsPage />} />
-                      <Route path="fiscal-settings" element={<FiscalSystemSettingsPage />} />
-                      <Route path="ai-advisor" element={<AIAdvisorPage />} />
-                      {/* Fallback para rotas desconhecidas dentro da área protegida */}
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </BrowserRouter>
+              {/* === Protected Routes (Wrapped in Layout) === */}
+              {/* This is the Layout Route. It protects and provides the layout for all its children. */}
+              <Route 
+                element={
+                  <ProtectedRoute>
+                    <Layout />
+                  </ProtectedRoute>
+                }
+              >
+                {/* The Dashboard is the default page for the root path "/" */}
+                <Route index element={<DashboardRouter />} /> 
+                
+                {/* All other protected pages are nested here */}
+                <Route path="profile" element={<Profile />} />
+                <Route path="clients" element={<ClientManagement />} />
+                <Route path="timeentry" element={<TimeEntry />} />
+                <Route path="tasks" element={<TaskManagement />} />
+                <Route path="clientprofitability" element={<ClientProfitability />} />
+                <Route path="organization" element={<OrganizationRouter />} />
+                <Route path="task-workflow/:taskId" element={<TaskOverflow />} />
+                <Route path="workflow-management" element={<WorkflowManagement />} />
+                <Route path="notifications" element={<NotificationsPage />} />
+                <Route path="fiscal-dashboard" element={<FiscalDashboardPage />} />
+                <Route path="fiscal-definitions" element={<FiscalObligationDefinitionsPage />} />
+                <Route path="fiscal-settings" element={<FiscalSystemSettingsPage />} />
+                <Route path="ai-advisor" element={<AIAdvisorPage />} />
+              </Route>
+              
+              {/* Fallback for any route that doesn't match */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+          <ToastContainer theme="dark" position="bottom-right" />
+        </ThemeProvider>
       </PermissionsProvider>
     </QueryClientProvider>
   );

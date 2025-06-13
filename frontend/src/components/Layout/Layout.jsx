@@ -1,21 +1,17 @@
-import React, { useState, useEffect, useRef, Children } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
   Bell, Search, X, LogOut, User as UserIcon,
   Briefcase, Sparkles, Brain, ChevronDown, Archive as ArchiveIcon,
-  BarChart3, Settings2, Bot
+  BarChart3, Settings2, Bot, Sun, Moon
 } from 'lucide-react';
+import { Outlet } from 'react-router-dom'; // Add Outlet
 import api from '../../api'; // Ajuste o caminho se necessário
 import BackgroundElements from '../HeroSection/BackgroundElements';
 import './Layout.css'; // Mantenha o seu CSS para o scrollbar, etc.
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'react-toastify';
-
-// O AISearchBar pode ser movido para seu próprio ficheiro, mas por simplicidade, mantemos aqui.
-// ... (código do AISearchBar e AINavigationService, que já está bom e pode ser copiado do seu ficheiro original)
-// Para ser breve, vou omiti-los aqui, mas você deve mantê-los.
+import { useTheme } from '../../contexts/ThemeContext'; // ✨ Import useTheme hook
 
 const NavDropdown = ({ group, currentPath, onNavigate }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -140,6 +136,7 @@ const Layout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [userProfile, setUserProfile] = useState(null);
+  const { theme, toggleTheme } = useTheme(); // ✨ Use the theme hook
 
   // Agrupamento dos Menus
   const navGroups = [
@@ -191,6 +188,20 @@ const Layout = ({ children }) => {
     navigate(path);
   };
 
+  const headerStyle = useMemo(() => ({
+    position: 'sticky', top: 0, zIndex: 100,
+    background: theme === 'light' ? 'rgba(249, 250, 251, 0.7)' : 'rgba(17, 24, 39, 0.8)',
+    backdropFilter: 'blur(20px)',
+    borderBottom: theme === 'light' ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.1)',
+    padding: '0.75rem 2rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    color: theme === 'light' ? '#111827' : 'white',
+    transition: 'background 0.3s ease, border-color 0.3s ease, color 0.3s ease',
+  }), [theme]);
+
+
   return (
     <div style={{ minHeight: '100vh', position: 'relative', fontFamily: 'Inter, sans-serif' }}>
       <BackgroundElements />
@@ -199,17 +210,8 @@ const Layout = ({ children }) => {
         initial={{ y: -80, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        style={{
-          position: 'sticky', top: 0, zIndex: 100,
-          background: 'rgba(17, 24, 39, 0.8)', // Um pouco mais escuro
-          backdropFilter: 'blur(20px)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          padding: '0.75rem 2rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          color: 'white'
-        }}
+        style={headerStyle} // Use the dynamic style object
+
       >
         {/* Lado Esquerdo: Logo e Navegação Principal */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
@@ -234,6 +236,35 @@ const Layout = ({ children }) => {
           <div style={{height: '24px', width: '1px', background: 'rgba(255,255,255,0.2)'}} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {/* O seu componente NotificationsDropdown pode ir aqui, com o seu botão de Bell */}
+             <motion.button
+              onClick={toggleTheme}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '0.5rem',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: theme === 'light' ? '#4b5563' : '#d1d5db'
+              }}
+              whileHover={{ scale: 1.1, background: theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)' }}
+              whileTap={{ scale: 0.9 }}
+              aria-label="Toggle theme"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={theme}
+                  initial={{ y: -20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 20, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+                </motion.div>
+              </AnimatePresence>
+            </motion.button>
             <ProfileDropdown userProfile={userProfile} onNavigate={handleNavigation} />
           </div>
         </div>
@@ -246,8 +277,7 @@ const Layout = ({ children }) => {
         transition={{ duration: 0.4, delay: 0.1 }}
         style={{ position: 'relative', zIndex: 1, minHeight: 'calc(100vh - 73px)', padding: '2rem' }}
       >
-        {children} {/* O <Outlet> agora está dentro de {children} vindo do App.jsx */}
-      </motion.main>
+<Outlet />      </motion.main>
     </div>
   );
 };

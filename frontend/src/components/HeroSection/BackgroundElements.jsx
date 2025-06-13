@@ -1,306 +1,151 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { useTheme } from '../../contexts/ThemeContext';
 
-const BackgroundElements = ({ businessStatus }) => {
-    // Generate random positions for floating particles
-    const generateParticles = (count) => {
-        return Array.from({ length: count }, (_, i) => ({
-            id: i,
-            x: Math.random() * 100,
-            y: Math.random() * 100,
-            delay: Math.random() * 2,
-            duration: 3 + Math.random() * 4,
-            size: 4 + Math.random() * 8
-        }));
-    };
+const generateParticles = (count) => {
+    return Array.from({ length: count }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        delay: Math.random() * 2,
+        duration: 4 + Math.random() * 5,
+        size: 3 + Math.random() * 5
+    }));
+};
 
-    const particles = generateParticles(12);
-    businessStatus = 'optimal'; // For testing purposes, you can change this to 'warning' or 'critical'
+const BackgroundElements = () => {
+    const { theme } = useTheme();
+    const particles = useMemo(() => generateParticles(15), []);
 
-    const getGradientColors = () => {
+    const colors = useMemo(() => {
+        if (theme === 'light') {
+            return {
+                background: 'linear-gradient(135deg, rgb(249, 250, 251) 0%, rgb(229, 231, 235) 100%)',
+                overlay: 'rgba(255, 255, 255, 0.1)',
+                meshAnimate: [
+                    'radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.08) 0%, transparent 40%)',
+                    'radial-gradient(circle at 80% 20%, rgba(147, 51, 234, 0.08) 0%, transparent 40%)',
+                    'radial-gradient(circle at 40% 40%, rgba(52, 211, 153, 0.08) 0%, transparent 40%)'
+                ],
+                particle: { color: 'rgb(55, 65, 81)', opacity: 0.4 },
+                shapeBorder: 'rgba(0, 0, 0, 0.06)',
+                pulseRing: 'rgba(0, 0, 0, 0.04)',
+                grid: 'rgba(0, 0, 0, 0.05)',
+                lightBeam: 'rgba(0, 0, 0, 0.15)',
+                cornerAccent: 'rgba(0, 0, 0, 0.07)',
+            };
+        }
         return {
-                    from: 'linear-gradient(135deg, rgb(19, 41, 77) 0%, rgb(18, 7, 29) 50%, rgb(3, 53, 61) 100%)',
-                    accent: 'rgb(255, 255, 255)'
-                };
-    };
-    const colors = getGradientColors();
+            background: 'linear-gradient(135deg, rgb(19, 41, 77) 0%, rgb(18, 7, 29) 50%, rgb(3, 53, 61) 100%)',
+            overlay: 'rgba(0, 0, 0, 0.1)',
+            meshAnimate: [
+                'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
+                'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
+                'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
+            ],
+            particle: { color: 'rgb(255, 255, 255)', opacity: 0.2 },
+            shapeBorder: 'rgba(255, 255, 255, 0.1)',
+            pulseRing: 'rgba(255, 255, 255, 0.05)',
+            grid: 'rgba(255, 255, 255, 0.02)',
+            lightBeam: 'rgba(255, 255, 255, 0.4)',
+            cornerAccent: 'rgba(255, 255, 255, 0.1)',
+        };
+    }, [theme]);
 
-    const floatingVariants = {
-        animate: {
-            y: [-20, 20],
-            x: [-10, 10],
-            transition: {
-                duration: 4,
-                repeat: Infinity,
-                repeatType: "reverse",
-                ease: "easeInOut"
-            }
-        }
-    };
+    // --- Animation Variants (unchanged) ---
+    const floatingVariants = { animate: { y: [-15, 15], x: [-10, 10], transition: { duration: 6, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } } };
+    const pulseVariants = { animate: { scale: [1, 1.15, 1], opacity: [0.4, 0.7, 0.4], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } } };
+    const lightBeamVariants = { animate: { scaleY: [0.5, 1, 0.5], opacity: [0.3, 0.7, 0.3], transition: { duration: 5, repeat: Infinity, ease: "easeInOut" } } };
+    const meshVariants = { transition: { duration: 10, repeat: Infinity, repeatType: "reverse" } };
+    
+    // --- Style Objects ---
+    const containerStyle = { position: 'absolute', inset: 0, overflow: 'hidden', transition: 'background 0.5s ease-in-out' };
+    const mainGradientStyle = { position: 'absolute', inset: 0, background: colors.background };
+    const overlayStyle = { position: 'absolute', inset: 0, backgroundColor: colors.overlay };
+    const meshGradientStyle = { position: 'absolute', inset: 0, opacity: 0.5 };
+    const gridStyle = { position: 'absolute', inset: 0, opacity: 1, backgroundImage: `linear-gradient(${colors.grid} 1px, transparent 1px), linear-gradient(90deg, ${colors.grid} 1px, transparent 1px)`, backgroundSize: '50px 50px' };
+    const lightBeamStyle = { position: 'absolute', top: '-80px', left: '50%', width: '1px', height: '160px', background: `linear-gradient(to bottom, ${colors.lightBeam}, transparent)` };
+    const shapeStyle1 = { position: 'absolute', top: '2.5rem', right: '2.5rem', width: '128px', height: '128px', border: `1px solid ${colors.shapeBorder}`, borderRadius: '50%' };
+    const shapeStyle2 = { position: 'absolute', bottom: '5rem', left: '2.5rem', width: '96px', height: '96px', border: `1px solid ${colors.shapeBorder}`, borderRadius: '8px', transform: 'rotate(45deg)' };
+    const pulseRing1Style = { position: 'absolute', top: '50%', left: '25%', width: '192px', height: '192px', border: `1px solid ${colors.pulseRing}`, borderRadius: '50%' };
+    const pulseRing2Style = { position: 'absolute', top: '33%', right: '25%', width: '128px', height: '128px', border: `1px solid ${colors.pulseRing}`, borderRadius: '50%' };
+    
+    // ================== THE FIX IS HERE ==================
 
-    const pulseVariants = {
-        animate: {
-            scale: [1, 1.2, 1],
-            opacity: [0.3, 0.6, 0.3],
-            transition: {
-                duration: 3,
-                repeat: Infinity,
-                ease: "easeInOut"
-            }
-        }
-    };
-
-    const waveVariants = {
-        animate: {
-            pathLength: [0, 1],
-            transition: {
-                duration: 2,
-                repeat: Infinity,
-                ease: "linear"
-            }
-        }
-    };
-
-    const containerStyle = {
-        position: 'absolute',
-        inset: 0,
-        overflow: 'hidden'
-    };
-
-    const mainGradientStyle = {
-        position: 'absolute',
-        inset: 0,
-        background: colors.from
-    };
-
-    const overlayStyle = {
-        position: 'absolute',
-        inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.1)'
-    };
-
-    const meshGradientStyle = {
-        position: 'absolute',
-        inset: 0,
-        opacity: 0.4
-    };
-
-    const particleStyle = (particle) => ({
-        position: 'absolute',
-        width: '8px',
-        height: '8px',
-        backgroundColor: colors.accent,
-        borderRadius: '50%',
-        opacity: 0.2,
-        left: `${particle.x}%`,
-        top: `${particle.y}%`
-    });
-
-    const shapeStyle1 = {
-        position: 'absolute',
-        top: '2.5rem',
-        right: '2.5rem',
-        width: '128px',
-        height: '128px',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: '50%'
-    };
-
-    const shapeStyle2 = {
-        position: 'absolute',
-        bottom: '5rem',
-        left: '2.5rem',
-        width: '96px',
-        height: '96px',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        borderRadius: '8px',
-        transform: 'rotate(45deg)'
-    };
-
-    const pulseRing1Style = {
-        position: 'absolute',
-        top: '50%',
-        left: '25%',
-        width: '192px',
-        height: '192px',
-        border: '1px solid rgba(255, 255, 255, 0.05)',
-        borderRadius: '50%'
-    };
-
-    const pulseRing2Style = {
-        position: 'absolute',
-        top: '33.333333%',
-        right: '25%',
-        width: '128px',
-        height: '128px',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: '50%'
-    };
-
-    const waveStyle = {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        width: '100%',
-        height: '128px',
-        opacity: 0.1
-    };
-
-    const gridStyle = {
-        position: 'absolute',
-        inset: 0,
-        opacity: 0.02,
-        backgroundImage: `
-            linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-        `,
-        backgroundSize: '50px 50px'
-    };
-
-    const lightBeamStyle = {
-        position: 'absolute',
-        top: '-80px',
-        left: '50%',
-        width: '1px',
-        height: '160px',
-        background: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.4), transparent)'
-    };
-
-    const cornerAccentStyle = {
+    // 1. The base style NO LONGER contains the 'border' shorthand property.
+    const cornerAccentBaseStyle = {
         position: 'absolute',
         width: '80px',
         height: '80px',
-        border: '2px solid rgba(255, 255, 255, 0.1)'
     };
 
+    // 2. Each specific style now EXPLICITLY defines its borders using longhand properties.
     const cornerTopLeftStyle = {
-        ...cornerAccentStyle,
+        ...cornerAccentBaseStyle,
         top: 0,
         left: 0,
+        borderTop: `2px solid ${colors.cornerAccent}`,
+        borderLeft: `2px solid ${colors.cornerAccent}`,
         borderRight: 'none',
         borderBottom: 'none',
         borderTopLeftRadius: '16px'
     };
-
     const cornerTopRightStyle = {
-        ...cornerAccentStyle,
+        ...cornerAccentBaseStyle,
         top: 0,
         right: 0,
+        borderTop: `2px solid ${colors.cornerAccent}`,
+        borderRight: `2px solid ${colors.cornerAccent}`,
         borderLeft: 'none',
         borderBottom: 'none',
         borderTopRightRadius: '16px'
     };
-
     const cornerBottomLeftStyle = {
-        ...cornerAccentStyle,
+        ...cornerAccentBaseStyle,
         bottom: 0,
         left: 0,
-        borderRight: 'none',
+        borderBottom: `2px solid ${colors.cornerAccent}`,
+        borderLeft: `2px solid ${colors.cornerAccent}`,
         borderTop: 'none',
+        borderRight: 'none',
         borderBottomLeftRadius: '16px'
     };
-
     const cornerBottomRightStyle = {
-        ...cornerAccentStyle,
+        ...cornerAccentBaseStyle,
         bottom: 0,
         right: 0,
-        borderLeft: 'none',
+        borderBottom: `2px solid ${colors.cornerAccent}`,
+        borderRight: `2px solid ${colors.cornerAccent}`,
         borderTop: 'none',
+        borderLeft: 'none',
         borderBottomRightRadius: '16px'
     };
 
+    // ================== END OF FIX ==================
+
     return (
         <div style={containerStyle}>
-            {/* Main Gradient Background */}
             <div style={mainGradientStyle} />
-            
-            {/* Overlay for depth */}
             <div style={overlayStyle} />
+            <motion.div style={meshGradientStyle} animate={{ background: colors.meshAnimate }} transition={meshVariants.transition} />
 
-            {/* Animated Mesh Gradient */}
-            <motion.div 
-                style={meshGradientStyle}
-                animate={{
-                    background: [
-                        'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%)',
-                        'radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%)',
-                        'radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'
-                    ]
-                }}
-                transition={{
-                    duration: 8,
-                    repeat: Infinity,
-                    repeatType: "reverse"
-                }}
-            />
-
-            {/* Floating Particles */}
-            {particles.map((particle) => (
+            {particles.map((p) => (
                 <motion.div
-                    key={particle.id}
-                    style={particleStyle(particle)}
-                    animate={{
-                        y: [-particle.size, particle.size],
-                        x: [-particle.size/2, particle.size/2],
-                        opacity: [0.1, 0.4, 0.1],
-                        scale: [0.5, 1, 0.5]
-                    }}
-                    transition={{
-                        duration: particle.duration,
-                        repeat: Infinity,
-                        repeatType: "reverse",
-                        delay: particle.delay,
-                        ease: "easeInOut"
-                    }}
+                    key={p.id}
+                    style={{ position: 'absolute', width: `${p.size}px`, height: `${p.size}px`, backgroundColor: colors.particle.color, borderRadius: '50%', left: `${p.x}%`, top: `${p.y}%` }}
+                    animate={{ y: [-p.size, p.size], x: [-p.size / 2, p.size / 2], opacity: [0, colors.particle.opacity, 0], scale: [0.5, 1, 0.5] }}
+                    transition={{ duration: p.duration, repeat: Infinity, repeatType: "reverse", delay: p.delay, ease: "easeInOut" }}
                 />
             ))}
 
-            {/* Geometric Shapes */}
-            <motion.div
-                style={shapeStyle1}
-                variants={floatingVariants}
-                animate="animate"
-            />
-            
-            <motion.div
-                style={shapeStyle2}
-                variants={floatingVariants}
-                animate="animate"
-                transition={{ delay: 1 }}
-            />
-
-            {/* Pulse Rings */}
-            <motion.div
-                style={pulseRing1Style}
-                variants={pulseVariants}
-                animate="animate"
-            />
-            
-            <motion.div
-                style={pulseRing2Style}
-                variants={pulseVariants}
-                animate="animate"
-                transition={{ delay: 1.5 }}
-            />
-
-            {/* Grid Pattern Overlay */}
             <div style={gridStyle} />
-
-            {/* Top Light Beam */}
-            <motion.div
-                style={lightBeamStyle}
-                animate={{
-                    scaleY: [0.5, 1, 0.5],
-                    opacity: [0.2, 0.6, 0.2]
-                }}
-                transition={{
-                    duration: 4,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                }}
-            />
-
-            {/* Corner Accents */}
+            <motion.div style={shapeStyle1} variants={floatingVariants} animate="animate" />
+            <motion.div style={shapeStyle2} variants={floatingVariants} animate="animate" transition={{ delay: 1 }} />
+            <motion.div style={pulseRing1Style} variants={pulseVariants} animate="animate" />
+            <motion.div style={pulseRing2Style} variants={pulseVariants} animate="animate" transition={{ delay: 1.5 }} />
+            <motion.div style={lightBeamStyle} variants={lightBeamVariants} animate="animate" />
+            
+            {/* These divs now use the corrected, unambiguous styles */}
             <div style={cornerTopLeftStyle} />
             <div style={cornerTopRightStyle} />
             <div style={cornerBottomLeftStyle} />
