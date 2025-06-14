@@ -38,6 +38,7 @@ from .services.fiscal_notification_service import FiscalNotificationService
 from .services.ai_advisor_service import AIAdvisorService
 from .utils import CustomJSONEncoder, update_client_profitability
 from django.db.models import ExpressionWrapper, fields
+from .services.workflow_service import WorkflowService
 
 
 logger = logging.getLogger(__name__) # Redundant
@@ -615,185 +616,76 @@ class TaskViewSet(viewsets.ModelViewSet):
                 return Response(self.get_serializer(task).data)
             raise PermissionDenied("Perfil de usuário não encontrado")
 
-    def _advance_workflow_step(self, task, completed_step, user, comment_for_advance=""):
-        logger.info(f"Avançando workflow da tarefa {task.id} a partir do passo {completed_step.name if completed_step else 'N/A'}")
-        
-        if not completed_step:
-            logger.error(f"Tentativa de avançar workflow sem um completed_step para tarefa {task.id}")
-            return
-
-        if completed_step.requires_approval:
-            is_approved = TaskApproval.objects.filter(
-                task=task,
-                workflow_step=completed_step,
-                approved=True
-            ).exists()
-            if not is_approved:
-                logger.info(f"Passo {completed_step.name} da tarefa {task.id} requer aprovação antes de avançar.")
-                NotificationService.notify_approval_needed(task, completed_step) # Uses service
-                return
-
-        try:
-            next_step_ids = completed_step.get_next_steps() # Use model's method
-        except Exception as e: # Catch potential errors from get_next_steps if it parses JSON badly
-            logger.error(f"Erro ao obter next_steps para o passo {completed_step.id} ({completed_step.name}): {e}")
-            next_step_ids = []
-
-        if not next_step_ids: # No more steps, workflow ends
-            task.current_workflow_step = None
-            if task.status != 'completed': # Avoid re-setting if already completed
-                task.status = 'completed'
-                task.completed_at = timezone.now()
-            task.save(update_fields=['current_workflow_step', 'status', 'completed_at'])
-            
-            WorkflowHistory.objects.create(
-                task=task, from_step=completed_step, to_step=None, changed_by=user,
-                action='workflow_completed',
-                comment=f"Workflow concluído após passo: {completed_step.name}. {comment_for_advance}".strip()
-            )
-            NotificationService.notify_workflow_completed(task, user) # Uses service
-            logger.info(f"Workflow concluído para tarefa {task.id} após passo {completed_step.name}.")
-            return
-
-        if len(next_step_ids) == 1:
-            try:
-                next_step = WorkflowStep.objects.get(id=next_step_ids[0])
-                task.current_workflow_step = next_step
-                task.save(update_fields=['current_workflow_step'])
-                
-                WorkflowHistory.objects.create(
-                    task=task, from_step=completed_step, to_step=next_step, changed_by=user,
-                    action='step_advanced',
-                    comment=f"Avançado de '{completed_step.name}' para '{next_step.name}'. {comment_for_advance}".strip()
-                )
-                NotificationService.notify_step_completed(task, completed_step, user) # Uses service
-                NotificationService.notify_step_ready(task, next_step, user) # Uses service
-                logger.info(f"Workflow para tarefa {task.id} avançado de {completed_step.name} para {next_step.name}.")
-            except WorkflowStep.DoesNotExist:
-                logger.error(f"Próximo passo com ID {next_step_ids[0]} não encontrado para tarefa {task.id}.")
-        else: # Multiple next steps
-            logger.info(f"Múltiplos próximos passos ({len(next_step_ids)}) para tarefa {task.id} a partir do passo {completed_step.name}. Requer escolha manual.")
-            
-            # ==============================================================================
-            # NEW: Get next steps information and send manual advance notification
-            # ==============================================================================
-            try:
-                next_steps_available = []
-                for step_id in next_step_ids:
-                    try:
-                        step = WorkflowStep.objects.get(id=step_id)
-                        next_steps_available.append({
-                            'id': str(step.id),
-                            'name': step.name,
-                            'description': step.description or '',
-                            'assign_to': step.assign_to.username if step.assign_to else None,
-                            'requires_approval': step.requires_approval
-                        })
-                    except WorkflowStep.DoesNotExist:
-                        logger.warning(f"Passo com ID {step_id} não encontrado ao preparar notificação de escolha manual")
-                        continue
-                
-                if next_steps_available:
-                    # Send notification for manual advance needed
-                    NotificationService.notify_manual_advance_needed(
-                        task=task,
-                        workflow_step=completed_step,
-                        next_steps_available=next_steps_available
-                    )
-                else:
-                    logger.error(f"Nenhum passo válido encontrado para escolha manual na tarefa {task.id}")
-                    
-            except Exception as e:
-                logger.error(f"Erro ao processar notificação de escolha manual para tarefa {task.id}: {e}")
-                # Fallback to original behavior if notification fails
-                responsible_user = task.assigned_to or task.created_by # Fallback
-                if responsible_user and responsible_user.is_active:
-                    NotificationService.create_notification(
-                        user=responsible_user, task=task, workflow_step=completed_step,
-                        notification_type='manual_advance_needed',
-                        title=f"Escolha o próximo passo para: {task.title}",
-                        message=f"A tarefa '{task.title}' completou o passo '{completed_step.name}' e tem múltiplos caminhos. Avance manualmente.",
-                        priority='high'
-                    )
-
     @action(detail=True, methods=['post'])
-    def advance_workflow(self, request, pk=None): # Manual advance
+    def advance_workflow(self, request, pk=None): # Manual advance action
         task = self.get_object()
         
         if not task.workflow or not task.current_workflow_step:
             return Response({"error": "Esta tarefa não possui workflow ativo ou passo atual definido"}, status=status.HTTP_400_BAD_REQUEST)
         
-        next_step_id = request.data.get('next_step_id')
+        next_step_id_manual = request.data.get('next_step_id') # This is the ID chosen by the user
         comment = request.data.get('comment', '')
         
-        if not next_step_id:
-            return Response({"error": "ID do próximo passo é obrigatório"}, status=status.HTTP_400_BAD_REQUEST)
-        
+        # Permission check to manually advance (similar to your existing logic)
         try:
             profile = Profile.objects.get(user=request.user)
-            current_step = task.current_workflow_step
+            current_step_being_advanced_from = task.current_workflow_step
 
-            can_advance = (
+            can_advance_permission = (
                 profile.is_org_admin or 
-                profile.can_edit_all_tasks or # or specific workflow management perm
+                profile.can_edit_all_tasks or 
                 (profile.can_edit_assigned_tasks and task.assigned_to == request.user) or
-                (current_step.assign_to == request.user) 
+                (current_step_being_advanced_from.assign_to == request.user) 
             )
-            if not can_advance:
+            if not can_advance_permission:
                 raise PermissionDenied("Você não tem permissão para avançar este workflow")
 
-            possible_next_step_ids = current_step.get_next_steps()
-            
-            if str(next_step_id) not in possible_next_step_ids and next_step_id != 'complete_workflow':
-                return Response({"error": "Passo inválido para esta transição."}, status=status.HTTP_400_BAD_REQUEST)
-            
-            if current_step.requires_approval:
-                if not TaskApproval.objects.filter(task=task, workflow_step=current_step, approved=True).exists():
-                    return Response({"error": "Este passo requer aprovação antes de avançar"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Mark current step as completed (if not already marked through other means like time entry)
-            if not WorkflowHistory.objects.filter(task=task, from_step=current_step, action__in=['step_completed', 'step_advanced']).exists():
-                WorkflowHistory.objects.create(
-                    task=task, from_step=current_step, to_step=None, 
-                    changed_by=request.user, action='step_completed',
-                    comment=comment or f"Passo '{current_step.name}' concluído manualmente para avançar."
+            # If the UI implies the current step is "done" by choosing a next step manually
+            # we should first mark the current step as completed.
+            if not WorkflowHistory.objects.filter(task=task, from_step=current_step_being_advanced_from, action__in=['step_completed', 'step_advanced', 'workflow_completed']).exists():
+                 WorkflowService.complete_step_and_advance(
+                    task=task,
+                    step_to_complete=current_step_being_advanced_from,
+                    user=request.user,
+                    completion_comment=comment or f"Passo '{current_step_being_advanced_from.name}' concluído para avançar manualmente.",
+                    next_step_id_manual=next_step_id_manual if next_step_id_manual != 'complete_workflow' else None
                 )
-                NotificationService.notify_step_completed(task, current_step, request.user)
+                 # Special case: if user chose to complete workflow directly
+                 if next_step_id_manual == 'complete_workflow':
+                    task.refresh_from_db() # Ensure task status is updated
+                    if task.status == 'completed':
+                        return Response({"success": True, "message": "Workflow finalizado com sucesso."}, status=status.HTTP_200_OK)
+                    else:
+                        # This case should ideally not happen if complete_step_and_advance worked for completion
+                        return Response({"error": "Falha ao finalizar workflow."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            if next_step_id == 'complete_workflow':
-                task.current_workflow_step = None
-                if task.status != 'completed':
-                    task.status = 'completed'
-                    task.completed_at = timezone.now()
-                task.workflow_comment = comment
-                task.save()
-                
-                WorkflowHistory.objects.create(
-                    task=task, from_step=current_step, to_step=None, changed_by=request.user,
-                    action='workflow_completed',
-                    comment=comment or f"Workflow finalizado manualmente no passo '{current_step.name}'"
+            else: # Current step was already marked completed, just try to advance with the choice
+                success, message = WorkflowService.advance_task_workflow(
+                    task=task,
+                    completed_step=current_step_being_advanced_from, # The step we are advancing FROM
+                    user=request.user,
+                    comment_for_advance=comment,
+                    next_step_id_manual=next_step_id_manual if next_step_id_manual != 'complete_workflow' else None
                 )
-                NotificationService.notify_workflow_completed(task, request.user)
-                return Response({"success": True, "message": "Workflow finalizado com sucesso"}, status=status.HTTP_200_OK)
+                # Special case for completing workflow
+                if next_step_id_manual == 'complete_workflow' and success:
+                    task.refresh_from_db() # ensure status reflects completion
+                    return Response({"success": True, "message": "Workflow finalizado com sucesso."}, status=status.HTTP_200_OK)
 
-            next_step = WorkflowStep.objects.get(id=next_step_id)
-            task.current_workflow_step = next_step
-            task.workflow_comment = comment
-            task.save()
-            
-            WorkflowHistory.objects.create(
-                task=task, from_step=current_step, to_step=next_step, changed_by=request.user,
-                action='step_advanced',
-                comment=comment or f"Workflow avançado de '{current_step.name}' para '{next_step.name}'"
-            )
-            NotificationService.notify_step_ready(task, next_step, request.user)
-            
-            return Response({"success": True, "message": "Workflow avançado com sucesso"}, status=status.HTTP_200_OK)
-            
+
+            if success:
+                return Response({"success": True, "message": message}, status=status.HTTP_200_OK)
+            else:
+                # If advance_task_workflow returned False (e.g. still needs manual choice, or error)
+                return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
+
         except Profile.DoesNotExist:
             raise PermissionDenied("Perfil de usuário não encontrado")
-        except WorkflowStep.DoesNotExist:
+        except WorkflowStep.DoesNotExist: # Should be caught by WorkflowService now
             return Response({"error": "Passo do workflow não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error in TaskViewSet.advance_workflow: {e}", exc_info=True)
+            return Response({"error": f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['get'])
     def workflow_status(self, request, pk=None):
@@ -948,6 +840,7 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         user = self.request.user
+
         try:
             profile = Profile.objects.get(user=user)
             if not profile.can_log_time:
@@ -967,83 +860,79 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         # Client.DoesNotExist should be handled by serializer if client is required.
 
         time_entry = serializer.save(user=user)
-        # Use TaskViewSet's internal method if appropriate, or replicate logic carefully.
-        # Replicating for now, but ensure it's consistent.
-        task_viewset = TaskViewSet()
-        task_viewset.request = self.request # provide request to the other viewset if it needs it
+        
+        self._process_workflow_and_status_for_time_entry(time_entry)
 
-        self._process_workflow_step(time_entry, task_viewset) # Pass task_viewset instance
-        self._update_task_status_if_needed(time_entry) # This one is local
-        
-    def _process_workflow_step(self, time_entry, task_viewset_instance): # Added task_viewset_instance
-        if not time_entry.task or not time_entry.task.workflow:
+    def _process_workflow_and_status_for_time_entry(self, time_entry: TimeEntry): # New combined helper
+        if not time_entry.task:
             return
-            
+
         task = time_entry.task
-        step_being_worked_on = time_entry.workflow_step
+        user = time_entry.user
         
+        step_being_worked_on = time_entry.workflow_step
         if not step_being_worked_on and task.current_workflow_step:
             step_being_worked_on = task.current_workflow_step
-            time_entry.workflow_step = step_being_worked_on
-            time_entry.save(update_fields=['workflow_step'])
-        
-        if not step_being_worked_on:
-            logger.warning(f"Nenhum passo de workflow determinado para time entry {time_entry.id} da tarefa {task.id}")
-            return
+            time_entry.workflow_step = step_being_worked_on # Associate time entry with current step if not specified
+            # No need to save time_entry here if it's new, will be saved by serializer.
+            # If time_entry is existing and workflow_step is being updated, save is needed.
+            # However, this method is called after perform_create where it's already saved.
 
-        WorkflowHistory.objects.create(
-            task=task, from_step=step_being_worked_on, to_step=None, 
-            changed_by=time_entry.user, action='step_work_logged',
-            comment=f"Tempo: {time_entry.minutes_spent}m no passo '{step_being_worked_on.name}'. Desc: {time_entry.description}",
-            time_spent_minutes=time_entry.minutes_spent
-        )
+        if step_being_worked_on: # Log work against the step
+            WorkflowService._log_workflow_history(
+                task=task, from_step=step_being_worked_on, to_step=None, 
+                changed_by=user, action='step_work_logged',
+                comment=f"Tempo: {time_entry.minutes_spent}m no passo '{step_being_worked_on.name}'. Desc: {time_entry.description}",
+                time_spent_minutes=time_entry.minutes_spent
+            )
         
-        if time_entry.workflow_step_completed:
-            if not WorkflowHistory.objects.filter(task=task, from_step=step_being_worked_on,action='step_completed').exists():
-                WorkflowHistory.objects.create(
-                    task=task, from_step=step_being_worked_on, to_step=None, 
-                    changed_by=time_entry.user, action='step_completed',
-                    comment=f"Passo '{step_being_worked_on.name}' concluído via registro de tempo."
+        # Update task status based on time_entry.task_status_after
+        if time_entry.task_status_after != 'no_change':
+            old_status = task.status
+            new_status_from_time_entry = time_entry.task_status_after
+            
+            if new_status_from_time_entry not in [s[0] for s in Task.STATUS_CHOICES]:
+                logger.error(f"Status inválido '{new_status_from_time_entry}' para tarefa {task.id} em time_entry.")
+            else:
+                task.status = new_status_from_time_entry
+                if new_status_from_time_entry == 'completed':
+                    task.completed_at = timezone.now()
+                    # If completing task, also complete workflow if one is active
+                    if task.workflow and task.current_workflow_step:
+                        WorkflowService.advance_task_workflow(task, task.current_workflow_step, user, "Workflow finalizado: tarefa concluída via registro de tempo.")
+                        # advance_task_workflow will set current_workflow_step to None
+                elif old_status == 'completed' and new_status_from_time_entry != 'completed':
+                    task.completed_at = None
+                    # If reopening, and workflow was completed, potentially reset workflow
+                    if task.workflow and not task.current_workflow_step:
+                        first_step = task.workflow.steps.order_by('order').first()
+                        if first_step:
+                            task.current_workflow_step = first_step
+                            WorkflowService._log_workflow_history(
+                                task=task, from_step=None, to_step=first_step,
+                                changed_by=user, action='workflow_assigned', 
+                                comment=f"Workflow reativado para '{first_step.name}' ao reabrir tarefa (status: '{new_status_from_time_entry}')."
+                            )
+                            NotificationService.notify_step_ready(task, first_step, user)
+                task.save() # Save task status changes
+                logger.info(f"Status da tarefa {task.title} alterado de {old_status} para {new_status_from_time_entry} via time entry.")
+
+        # Advance workflow if requested and step was completed
+        if step_being_worked_on and time_entry.workflow_step_completed:
+            if task.current_workflow_step == step_being_worked_on: # Only advance if current
+                WorkflowService.complete_step_and_advance(
+                    task=task,
+                    step_to_complete=step_being_worked_on,
+                    user=user,
+                    completion_comment=f"Passo '{step_being_worked_on.name}' concluído via registro de tempo: {time_entry.description}",
+                    time_spent_on_step=time_entry.minutes_spent if time_entry.task_status_after == 'no_change' else None # Avoid double counting time if task status changed
+                    # next_step_id_manual is not typically provided from simple time entry
                 )
-                NotificationService.notify_step_completed(task, step_being_worked_on, time_entry.user)
-            
-            if time_entry.advance_workflow:
-                if task.current_workflow_step == step_being_worked_on:
-                    task_viewset_instance._advance_workflow_step(task, step_being_worked_on, time_entry.user, 
-                                                                f"Avançado após registro de tempo: {time_entry.description}")
-                else:
-                    logger.warning(f"Tentativa de avançar wf para tarefa {task.id} do passo {step_being_worked_on.name}, mas atual é {task.current_workflow_step.name if task.current_workflow_step else 'Nenhum'}. Ignorado.")
-    
-    def _update_task_status_if_needed(self, time_entry): # This is fine as a local method
-        if time_entry.task and time_entry.task_status_after != 'no_change':
-            old_status = time_entry.task.status
-            new_status = time_entry.task_status_after
-            
-            if new_status not in [s[0] for s in Task.STATUS_CHOICES]:
-                logger.error(f"Status inválido '{new_status}' para tarefa {time_entry.task.id} em time_entry.")
-                return
-
-            time_entry.task.status = new_status
-            if new_status == 'completed':
-                time_entry.task.completed_at = timezone.now()
-                if time_entry.task.workflow and time_entry.task.current_workflow_step:
-                    WorkflowHistory.objects.create(
-                        task=time_entry.task, from_step=time_entry.task.current_workflow_step, to_step=None,
-                        changed_by=time_entry.user, action='workflow_completed',
-                        comment=f"Workflow concluído: tarefa '{new_status}' via registro de tempo."
-                    )
-                    NotificationService.notify_workflow_completed(time_entry.task, time_entry.user)
-                    time_entry.task.current_workflow_step = None
-            elif old_status == 'completed' and new_status != 'completed':
-                time_entry.task.completed_at = None
-                if time_entry.task.workflow and not time_entry.task.current_workflow_step:
-                    first_step = time_entry.task.workflow.steps.order_by('order').first()
-                    if first_step:
-                        time_entry.task.current_workflow_step = first_step
-                        # Consider logging workflow reactivation
-            time_entry.task.save()
-            logger.info(f"Status da tarefa {time_entry.task.title} alterado de {old_status} para {new_status} via time entry.")
-    
+            else:
+                logger.warning(f"Time entry {time_entry.id} marked step '{step_being_worked_on.name}' as completed, "
+                               f"but task {task.id} is currently on step '{task.current_workflow_step.name if task.current_workflow_step else 'None'}'. "
+                               "Workflow advancement from this specific step might be skipped if not current.")
+                        
     def update(self, request, *args, **kwargs):
         try:
             profile = Profile.objects.get(user=request.user)
@@ -2319,185 +2208,6 @@ def dashboard_summary(request):
                  # ... other global stats ...
             })
         return Response({'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
-
-
-# --- New Scheduled Task Views ---
-
-@api_view(['POST']) 
-@permission_classes([IsAuthenticated]) 
-def check_deadlines_and_notify_view(request):
-    try:
-        profile = Profile.objects.select_related('organization').get(user=request.user)
-        if not (profile.is_org_admin): 
-            return Response({'error': 'Apenas administradores podem executar esta verificação.'}, status=status.HTTP_403_FORBIDDEN)
-        
-        organization = profile.organization
-        if not organization:
-            return Response({'error': 'Administrador não associado a uma organização.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        now = timezone.now()
-        thresholds_days = [3, 1, 0] 
-        notifications_created_total = 0
-        tasks_checked_total = 0
-
-        for days_ahead in thresholds_days:
-            target_deadline_date = (now + timedelta(days=days_ahead)).date()
-            
-            tasks_with_near_deadline = Task.objects.filter(
-                deadline=target_deadline_date,
-                status__in=['pending', 'in_progress'],
-                client__organization=organization 
-            ).select_related('assigned_to', 'current_workflow_step__assign_to', 'created_by', 'client') # Added client for service
-            
-            tasks_checked_total += tasks_with_near_deadline.count()
-
-            for task in tasks_with_near_deadline:
-                notifications = NotificationService.notify_deadline_approaching(task, days_ahead)
-                notifications_created_total += len(notifications)
-        
-        return Response({
-            'success': True,
-            'message': f'Verificação de deadlines concluída para a organização {organization.name}.',
-            'tasks_checked': tasks_checked_total,
-            'notifications_created': notifications_created_total
-        })
-        
-    except Profile.DoesNotExist:
-        return Response({'error': 'Perfil não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erro ao verificar deadlines: {str(e)}")
-        return Response({'error': f'Erro interno: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def check_overdue_steps_and_notify_view(request):
-    try:
-        profile = Profile.objects.select_related('organization').get(user=request.user)
-        if not profile.is_org_admin:
-            return Response({'error': 'Apenas administradores podem executar esta verificação.'}, status=status.HTTP_403_FORBIDDEN)
-        
-        organization = profile.organization
-        if not organization:
-            return Response({'error': 'Administrador não associado a uma organização.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        overdue_threshold_days = int(request.data.get('overdue_threshold_days', 5)) 
-        if overdue_threshold_days <= 0:
-            return Response({'error': 'overdue_threshold_days deve ser positivo.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        now = timezone.now()
-        
-        notifications_created_total = 0
-        tasks_processed_total = 0
-
-        active_workflow_tasks = Task.objects.filter(
-            client__organization=organization,
-            status__in=['pending', 'in_progress'],
-            workflow__isnull=False,
-            current_workflow_step__isnull=False
-        ).select_related('current_workflow_step', 'current_workflow_step__assign_to', 
-                         'assigned_to', 'created_by', 'client', 'client__account_manager') # Added client relations
-
-        for task in active_workflow_tasks:
-            tasks_processed_total += 1
-            last_significant_history = WorkflowHistory.objects.filter(
-                task=task, 
-                to_step=task.current_workflow_step, # When this step became current
-                action__in=['step_advanced', 'workflow_assigned'] 
-            ).order_by('-created_at').first()
-
-            # If no history of becoming current, use task's updated_at,
-            # but this might be less accurate for overdue calculation.
-            # A better approach might be to log when a step *becomes* current.
-            # For now, if it's current and no "advanced to this step" history, consider task.updated_at.
-            step_became_current_at = task.updated_at 
-            if last_significant_history:
-                step_became_current_at = last_significant_history.created_at
-            
-            days_on_current_step = (now - step_became_current_at).days
-
-            if days_on_current_step >= overdue_threshold_days:
-                notifications = NotificationService.notify_step_overdue(task, task.current_workflow_step, days_on_current_step)
-                notifications_created_total += len(notifications)
-        
-        return Response({
-            'success': True,
-            'message': f'Verificação de passos atrasados ({overdue_threshold_days} dias) concluída para {organization.name}.',
-            'tasks_with_active_workflow_step_checked': tasks_processed_total,
-            'overdue_step_notifications_created': notifications_created_total
-        })
-
-    except Profile.DoesNotExist:
-        return Response({'error': 'Perfil não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erro ao verificar passos atrasados: {str(e)}")
-        return Response({'error': f'Erro interno: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def check_pending_approvals_and_notify_view(request):
-    try:
-        profile = Profile.objects.select_related('organization').get(user=request.user)
-        if not profile.is_org_admin:
-            return Response({'error': 'Apenas administradores podem executar esta verificação.'}, status=status.HTTP_403_FORBIDDEN)
-
-        organization = profile.organization
-        if not organization:
-            return Response({'error': 'Administrador não associado a uma organização.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        reminder_threshold_days = int(request.data.get('reminder_threshold_days', 2))
-        if reminder_threshold_days <= 0:
-            return Response({'error': 'reminder_threshold_days deve ser positivo.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        now = timezone.now()
-        
-        tasks_needing_approval_reminder = Task.objects.filter(
-            client__organization=organization,
-            status__in=['pending', 'in_progress'],
-            current_workflow_step__requires_approval=True
-        ).exclude( # Exclude if already approved for the current step
-            id__in=TaskApproval.objects.filter(
-                task_id=models.F('task_id'), # Ensures we are checking approvals for the *same task*
-                workflow_step=models.F('task__current_workflow_step'), # And for the *current step*
-                approved=True
-            ).values_list('task_id', flat=True)
-        ).select_related('current_workflow_step', 'client', 'client__organization') # Added client.organization for service
-        
-        notifications_sent_total = 0
-        tasks_checked_count = 0
-
-        for task in tasks_needing_approval_reminder:
-            tasks_checked_count +=1
-            
-            # When did this current_workflow_step requiring approval become active?
-            step_became_current_history = WorkflowHistory.objects.filter(
-                task=task, to_step=task.current_workflow_step,
-                action__in=['step_advanced', 'workflow_assigned'] # Became current via advance or initial assignment
-            ).order_by('-created_at').first()
-
-            if step_became_current_history:
-                days_pending_approval = (now - step_became_current_history.created_at).days
-                if days_pending_approval >= reminder_threshold_days:
-                    reminders = NotificationService.notify_approval_needed(
-                        task, task.current_workflow_step, 
-                        approvers=None, # Let service find approvers
-                        is_reminder=True
-                    )
-                    notifications_sent_total += len(reminders)
-        
-        return Response({
-            'success': True,
-            'message': f'Verificação de aprovações pendentes ({reminder_threshold_days} dias) concluída para {organization.name}.',
-            'tasks_checked_for_pending_approval': tasks_checked_count,
-            'approval_reminder_notifications_sent': notifications_sent_total
-        })
-        
-    except Profile.DoesNotExist:
-        return Response({'error': 'Perfil não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erro ao verificar aprovações pendentes: {str(e)}")
-        return Response({'error': f'Erro interno: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ... (outros imports e ViewSets que já existem no seu views.py) ...
 

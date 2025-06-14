@@ -22,7 +22,30 @@ class FiscalObligationDefinitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = FiscalObligationDefinition
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at','organization']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        # Example validation: if periodicity is 'OTHER', custom_rule_trigger_month should be set.
+        if data.get('periodicity') == 'OTHER' and not data.get('custom_rule_trigger_month'):
+            raise serializers.ValidationError({
+                "custom_rule_trigger_month": "Para periodicidade 'Outra', o 'Mês de Gatilho para Regra Customizada' é obrigatório."
+            })
+        
+        # If calculation_basis is 'SPECIFIC_DATE' and periodicity is 'ANNUAL', specific_month_reference is often expected
+        if data.get('periodicity') == 'ANNUAL' and \
+           data.get('calculation_basis') == 'SPECIFIC_DATE' and \
+           not data.get('specific_month_reference'):
+            # This might be a warning or an error depending on your rules
+            # For now, let's make it a potential validation error, can be relaxed.
+             logger.info("Para obrigações anuais com base em data específica, 'Mês de Referência Específico' é recomendado.")
+            # raise serializers.ValidationError({
+            #     "specific_month_reference": "Para obrigações anuais com base em data específica, 'Mês de Referência Específico' é usualmente necessário."
+            # })
+
+
+        # Ensure organization is handled correctly based on user creating it (handled in ViewSet perform_create)
+        # No need to validate organization here if ViewSet handles it.
+        return data
 
 class OrganizationSerializer(serializers.ModelSerializer):
     # These are now efficient annotated fields from the queryset.

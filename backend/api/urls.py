@@ -42,11 +42,6 @@ urlpatterns = [
     path('dashboard-summary/', views.dashboard_summary, name='dashboard-summary'),
     path('update-profitability/', views.update_organization_profitability, name='update-profitability'),
     
-    # Sistema de verificações automáticas
-    path('system/check-deadlines/', views.check_deadlines_and_notify_view, name='check-deadlines'),
-    path('system/check-overdue-steps/', views.check_overdue_steps_and_notify_view, name='check-overdue-steps'),
-    path('system/check-pending-approvals/', views.check_pending_approvals_and_notify_view, name='check-pending-approvals'),
-    
     # NOVOS: Endpoints completos do sistema de notificações
     path('notifications/stats/', views.notification_stats, name='notification-stats'),
     path('notifications/organization-stats/', views.organization_notification_stats, name='organization-notification-stats'),

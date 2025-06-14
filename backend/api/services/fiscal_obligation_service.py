@@ -173,58 +173,73 @@ class FiscalObligationGenerator:
     @classmethod
     def _should_generate_for_period(cls, definition: FiscalObligationDefinition, year: int, month: int) -> bool:
         """
-        Verifica se uma definição deve gerar obrigação para o período especificado.
+        Verifica se uma definição deve gerar obrigação para o período (mês/ano) de geração.
+        'year' and 'month' here are the target generation period (e.g., when the cron job runs for).
+        The deadline calculation will look at reference periods based on this.
         """
-        current_date = datetime(year, month, 1)
         
         if definition.periodicity == 'MONTHLY':
-            return True  # Gera todo mês
+            return True
         
         elif definition.periodicity == 'QUARTERLY':
-            # Trimestres: Jan-Mar (Q1), Apr-Jun (Q2), Jul-Sep (Q3), Oct-Dec (Q4)
-            quarter_months = [3, 6, 9, 12]  # Meses finais de cada trimestre
-            return month in quarter_months
-        
+            # Example: If we are in April (month=4), this is Q2.
+            # A quarterly obligation might have its deadline in April, referring to Q1.
+            # This function checks if the definition *could* have a task generated *during* this month.
+            # The actual deadline calculation then determines the reference period.
+            # For QUARTERLY, it means a task related to a quarter *could* be generated every month,
+            # but the deadline calc & trigger offset will filter it.
+            # A more precise check: a quarterly task is typically due in the month *after* the quarter ends.
+            # e.g., Q1 (Jan-Mar) due in April. Q2 (Apr-Jun) due in July.
+            # So, we should consider generating if 'month' is 1 (for Q4 prev year), 4 (for Q1), 7 (for Q2), 10 (for Q3).
+            # These are the months when deadlines for quarterly tasks typically fall.
+            return month in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] # Let deadline calculation handle specifics for now
+                                                               # Or, more strictly:
+                                                               # return month in [1, 4, 7, 10] # Typical months when quarterly payments/declarations are due.
+
+
         elif definition.periodicity == 'ANNUAL':
+            # For annual obligations, they are generally considered once a year.
+            # If specific_month_reference is set (e.g., IES in July for previous year),
+            # this means the task generation cycle should consider it when 'month' is July.
             if definition.calculation_basis == 'SPECIFIC_DATE' and definition.specific_month_reference:
-                # Para obrigações anuais com mês específico (ex: IES em julho)
-                return month == definition.specific_month_reference
-            else:
-                # Para obrigações anuais baseadas no fim do ano fiscal
-                return month == 12  # Dezembro
-        
+                # The task for an annual obligation with a specific reference month (e.g. IES due July for year N)
+                # should be considered for generation when the current processing month aligns with that reference,
+                # or more commonly, when the current processing month is when its *deadline* typically falls.
+                # Let's assume `specific_month_reference` is the month the DEADLINE is in, or related to it.
+                # Example: IES for year 2023 (ends Dec 2023) is due July 2024.
+                # If specific_month_reference is 7 (July), we should check it when 'month' is 7.
+                # The current logic of `_calculate_deadline` for ANNUAL + SPECIFIC_DATE + specific_month_reference
+                # uses `year` (the processing year) and `definition.specific_month_reference`.
+                # `ref_date = datetime(year, definition.specific_month_reference, 1)`
+                # `deadline_date = ref_date + relativedelta(months=definition.deadline_month_offset)`
+                # So, if we are processing for July (month=7), and IES has specific_month_reference=7, offset=0, day=15,
+                # it would calculate deadline as July 15th of the processing year. This is correct if IES for *current year* is due.
+                # If IES for *previous year* is due (e.g. processing July 2024 for IES of year 2023),
+                # the `_calculate_deadline` needs to be robust to this.
+                # The `_should_generate_for_period` should return true if this definition *might* have a deadline in the current processing `month`.
+                # This is hard to determine without calculating the deadline.
+                # For simplicity here: an ANNUAL task is considered for generation *every month*,
+                # and the `_calculate_deadline` + `_should_generate_now` will filter it.
+                return True # Let deadline calc and trigger offset handle it.
+            else: # Annual, end of period (e.g. Mod22 for year N, due May N+1)
+                return True # Consider it every month.
+
         elif definition.periodicity == 'BIANNUAL':
-            # Semestral: junho e dezembro
-            return month in [6, 12]
-        
+            # Similar to QUARTERLY, consider it every month and let deadline logic filter.
+            # Or more strictly: return month in [1, 7] (typical months for bi-annual deadlines)
+            return True
+
         elif definition.periodicity == 'OTHER':
-            # Para periodicidades especiais, verificar regras customizadas
-            return cls._check_custom_periodicity(definition, year, month)
+            # NEW LOGIC: Use custom_rule_trigger_month
+            if definition.custom_rule_trigger_month:
+                return month == definition.custom_rule_trigger_month
+            else:
+                # If 'OTHER' has no custom_rule_trigger_month, it won't be generated by this rule.
+                # You might want a fallback or to log a warning for misconfigured 'OTHER' types.
+                logger.warning(f"Definição '{definition.name}' com periodicidade 'Outra' não tem 'Mês de Gatilho' configurado. Não será gerada.")
+                return False
         
-        return False
-    
-    @classmethod
-    def _check_custom_periodicity(cls, definition: FiscalObligationDefinition, year: int, month: int) -> bool:
-        """
-        Verifica periodicidades customizadas baseadas no nome da obrigação.
-        """
-        name_lower = definition.name.lower()
-        
-        # Exemplos de regras customizadas
-        if 'modelo 10' in name_lower or 'irs' in name_lower:
-            return month == 6  # IRS até 30 de junho
-        
-        if 'modelo 22' in name_lower or 'irc' in name_lower:
-            return month == 5  # IRC até 31 de maio
-        
-        if 'ies' in name_lower:
-            return month == 7  # IES até 15 de julho
-        
-        if 'intrastat' in name_lower:
-            return True  # Mensal
-        
-        # Default: não gera
-        return False
+        return False # Should not be reached if all periodicities are handled
     
     @classmethod
     def _get_eligible_clients(cls, definition: FiscalObligationDefinition, organization: Optional[Organization] = None) -> List[Client]:
@@ -240,100 +255,177 @@ class FiscalObligationGenerator:
         elif definition.organization:
             clients_query = clients_query.filter(organization=definition.organization)
         
-        # Filtro por tags fiscais
         if definition.applies_to_client_tags:
-            # Se a lista está vazia ou contém 'ALL', aplica a todos
             if not definition.applies_to_client_tags or 'ALL' in definition.applies_to_client_tags:
+                # If 'ALL' is present or list is empty, it applies to all clients within the organization scope.
                 return list(clients_query.select_related('organization', 'account_manager'))
             
-            # Filtrar clientes que possuem pelo menos uma das tags
             eligible_clients = []
+            # Pre-fetch fiscal_tags if it becomes a performance issue, though JSONField is generally okay for moderate use.
             for client in clients_query.select_related('organization', 'account_manager'):
-                client_tags = client.fiscal_tags or []
-                if any(tag in client_tags for tag in definition.applies_to_client_tags):
+                client_tags = client.fiscal_tags or [] # Ensure it's a list
+                # Check if *any* of the definition's required tags are present in the client's tags.
+                # Or should it be *all* required tags? The help text "Lista de tags que o cliente DEVE ter"
+                # implies an AND condition (client must have ALL listed tags).
+                # Current logic is OR (client must have AT LEAST ONE of the listed tags).
+                # Let's assume it's "client must have ALL tags from applies_to_client_tags"
+                if all(tag in client_tags for tag in definition.applies_to_client_tags):
                     eligible_clients.append(client)
             
             return eligible_clients
         
+        # No tags specified on definition, applies to all clients in scope
         return list(clients_query.select_related('organization', 'account_manager'))
     
     @classmethod
     def _calculate_deadline(cls, definition: FiscalObligationDefinition, year: int, month: int) -> Optional[Dict[str, Any]]:
         """
-        Calcula o deadline para uma obrigação baseada na definição.
-        
-        Returns:
-            Dict com 'deadline', 'period_description', 'reference_period'
+        Calcula o deadline para uma obrigação.
+        'year' e 'month' são o período de GERAÇÃO (e.g. cron job run date).
+        O período de REFERÊNCIA da obrigação é calculado internamente.
         """
         try:
-            reference_period = None
-            period_description = ""
+            reference_period_start_date = None # Start of the period the obligation refers to
+            # period_description will describe this reference_period_start_date
             
-            if definition.calculation_basis == 'END_OF_PERIOD':
-                # Baseado no fim do período de referência
-                if definition.periodicity == 'MONTHLY':
-                    # Período de referência é o mês anterior
-                    ref_date = datetime(year, month, 1) - relativedelta(months=1)
-                    reference_period = ref_date
-                    period_description = f"{ref_date.strftime('%B %Y')}"
-                    
-                elif definition.periodicity == 'QUARTERLY':
-                    # Período de referência é o trimestre que terminou
-                    quarter = (month - 1) // 3 + 1
-                    if quarter == 1:  # Q1 (Jan-Mar)
-                        ref_date = datetime(year - 1, 12, 31)  # Q4 do ano anterior
-                        period_description = f"4º Trimestre {year - 1}"
-                    else:
-                        quarter_end_months = {2: 6, 3: 9, 4: 12}
-                        ref_month = quarter_end_months[quarter]
-                        ref_date = datetime(year, ref_month, 1)
-                        period_description = f"{quarter - 1}º Trimestre {year}"
-                    reference_period = ref_date
-                    
-                elif definition.periodicity == 'ANNUAL':
-                    # Período de referência é o ano anterior
-                    ref_date = datetime(year - 1, 12, 31)
-                    reference_period = ref_date
-                    period_description = f"Ano {year - 1}"
-                
-                elif definition.periodicity == 'BIANNUAL':
-                    # Semestre anterior
-                    if month == 6:  # Primeiro semestre
-                        ref_date = datetime(year - 1, 12, 31)
-                        period_description = f"2º Semestre {year - 1}"
-                    else:  # month == 12, segundo semestre
-                        ref_date = datetime(year, 6, 30)
-                        period_description = f"1º Semestre {year}"
-                    reference_period = ref_date
-                
-            elif definition.calculation_basis == 'SPECIFIC_DATE':
-                # Baseado em uma data específica no ano
-                if definition.specific_month_reference:
-                    ref_date = datetime(year, definition.specific_month_reference, 1)
-                    reference_period = ref_date
-                    period_description = f"Ano {year}"
+            # --- Determine reference_period_start_date based on periodicity and current generation month/year ---
+            if definition.periodicity == 'MONTHLY':
+                # Refers to the previous month from the generation month.
+                reference_period_start_date = (datetime(year, month, 1) - relativedelta(months=1)).replace(day=1)
+            elif definition.periodicity == 'QUARTERLY':
+                # Refers to the quarter that ended *before* the start of the current generation quarter.
+                # Example: if generating in April (Q2), ref is Q1 (Jan-Mar).
+                current_gen_month_date = datetime(year, month, 1)
+                current_quarter_start_month = ((current_gen_month_date.month - 1) // 3 * 3) + 1
+                # The reference quarter ends just before this current_quarter_start_month
+                reference_quarter_end_date = current_gen_month_date.replace(month=current_quarter_start_month, day=1) - relativedelta(days=1)
+                reference_period_start_date = (reference_quarter_end_date - relativedelta(months=2)).replace(day=1) # Start of that reference quarter
+            elif definition.periodicity == 'ANNUAL':
+                # Typically refers to the previous calendar year if calculation_basis is END_OF_PERIOD
+                # Or, if calculation_basis is SPECIFIC_DATE, it refers to the 'year' of generation or year-1.
+                if definition.calculation_basis == 'SPECIFIC_DATE' and definition.specific_month_reference:
+                    # Example: IES for year N (ref period is Jan 1 N to Dec 31 N) due in July N+1.
+                    # If we are in July YYYY (year=YYYY, month=7), specific_month_reference=7.
+                    # The obligation is for year YYYY-1.
+                    # So, reference_period_start_date should be Jan 1 of (year - 1)
+                    reference_period_start_date = datetime(year -1 , 1, 1) # Default to previous year for annual specific date
+                                                                        # This needs careful thought. If IES for 2023 is due July 2024,
+                                                                        # when processing July 2024 (year=2024, month=7), ref period is 2023.
+                else: # END_OF_PERIOD for ANNUAL
+                    reference_period_start_date = datetime(year - 1, 1, 1)
+            elif definition.periodicity == 'BIANNUAL':
+                # Refers to the semester that ended *before* the current generation semester.
+                current_gen_month_date = datetime(year, month, 1)
+                is_first_half_generation = current_gen_month_date.month <= 6
+                if is_first_half_generation: # Gen in H1, ref is H2 of prev year
+                    reference_period_start_date = datetime(year - 1, 7, 1)
+                else: # Gen in H2, ref is H1 of current year
+                    reference_period_start_date = datetime(year, 1, 1)
+            elif definition.periodicity == 'OTHER':
+                if definition.custom_rule_trigger_month:
+                    # For 'OTHER', the reference period might be the year of the trigger month, or year-1.
+                    # Let's assume it refers to the calendar year containing the trigger month, or previous year
+                    # if the trigger month is early in the year for a late-year obligation.
+                    # This is complex. A simpler 'OTHER' might assume the reference period is the current year of generation.
+                    # For IRS (trigger June for year N-1), IES (trigger July for year N-1).
+                    # So, if month == custom_rule_trigger_month, the reference year is (year -1)
+                    reference_period_start_date = datetime(year -1, 1, 1) # Assume 'OTHER' triggered in M refers to Y-1
                 else:
-                    # Usar o ano fiscal padrão (janeiro a dezembro)
-                    ref_date = datetime(year, 1, 1)
-                    reference_period = ref_date
-                    period_description = f"Ano {year}"
+                    return None # Cannot determine reference for OTHER without trigger month
+
+            if not reference_period_start_date:
+                logger.warning(f"Could not determine reference_period_start_date for {definition.name} ({definition.periodicity}) in {month}/{year}")
+                return None
+
+            # --- Calculate period_end_for_deadline_calc from reference_period_start_date ---
+            # This is the date from which deadline_day and deadline_month_offset are applied.
+            period_end_for_deadline_calc = None
+            period_description = ""
+
+            if definition.calculation_basis == 'END_OF_PERIOD':
+                if definition.periodicity == 'MONTHLY':
+                    period_end_for_deadline_calc = reference_period_start_date + relativedelta(months=1) - relativedelta(days=1)
+                    period_description = f"{reference_period_start_date.strftime('%B %Y')}"
+                elif definition.periodicity == 'QUARTERLY':
+                    period_end_for_deadline_calc = reference_period_start_date + relativedelta(months=3) - relativedelta(days=1)
+                    quarter_num = (reference_period_start_date.month - 1) // 3 + 1
+                    period_description = f"{quarter_num}º Trimestre {reference_period_start_date.year}"
+                elif definition.periodicity == 'ANNUAL':
+                    period_end_for_deadline_calc = reference_period_start_date + relativedelta(years=1) - relativedelta(days=1)
+                    period_description = f"Ano {reference_period_start_date.year}"
+                elif definition.periodicity == 'BIANNUAL':
+                    period_end_for_deadline_calc = reference_period_start_date + relativedelta(months=6) - relativedelta(days=1)
+                    semester_num = 1 if reference_period_start_date.month <=6 else 2
+                    period_description = f"{semester_num}º Semestre {reference_period_start_date.year}"
+                elif definition.periodicity == 'OTHER': # For OTHER, END_OF_PERIOD might mean end of custom_rule_trigger_month of ref year
+                    if definition.custom_rule_trigger_month:
+                        # Assume end of the custom_rule_trigger_month in the reference year
+                        ref_year_of_trigger = reference_period_start_date.year # Since OTHER refers to Y-1
+                        # If custom_rule_trigger_month is late (e.g. Dec) for something due early next year.
+                        # This needs careful definition. For simplicity, assume it's the trigger month of *current generation year*.
+                        # This part is tricky. Let's assume for OTHER, calculation_basis 'END_OF_PERIOD'
+                        # means end of the trigger month in the *year of generation*.
+                        # NO, this is wrong. period_end_for_deadline_calc must be based on reference_period_start_date.
+                        # If 'OTHER' refers to year Y-1, and trigger is June Y, basis END_OF_PERIOD
+                        # should be relative to Y-1. This implies OTHER + END_OF_PERIOD is unusual.
+                        # Let's assume OTHER + END_OF_PERIOD uses the end of the reference_period_start_date's year.
+                        period_end_for_deadline_calc = datetime(reference_period_start_date.year, 12, 31)
+                        period_description = f"Ref. {definition.custom_rule_trigger_month}/{reference_period_start_date.year}"
+                    else: return None
             
-            # Calcular a data limite
-            if reference_period:
-                deadline_date = reference_period + relativedelta(months=definition.deadline_month_offset)
+            elif definition.calculation_basis == 'SPECIFIC_DATE':
+                # The deadline is based on a specific month/day, often in the year *following* the reference period for annual.
+                # `specific_month_reference` or `custom_rule_trigger_month` indicates this target month.
+                # The `deadline_month_offset` then applies from the 1st of this target month.
                 
-                # Ajustar para o dia específico
-                deadline_day = min(definition.deadline_day, monthrange(deadline_date.year, deadline_date.month)[1])
-                deadline = deadline_date.replace(day=deadline_day)
-                
-                return {
-                    'deadline': deadline.date(),
-                    'period_description': period_description,
-                    'reference_period': reference_period.date()
-                }
+                target_month_for_basis = None
+                base_year_for_specific_date = None
+
+                if definition.periodicity == 'ANNUAL' and definition.specific_month_reference:
+                    target_month_for_basis = definition.specific_month_reference
+                    # For annual, specific_month_reference usually implies the deadline year.
+                    # If ref period is 2023, and specific_month_reference is July (7),
+                    # this July is in 2024. So, base_year is ref_period_start_date.year + 1.
+                    base_year_for_specific_date = reference_period_start_date.year + 1
+                    period_description = f"Ano {reference_period_start_date.year}"
+                elif definition.periodicity == 'OTHER' and definition.custom_rule_trigger_month:
+                    target_month_for_basis = definition.custom_rule_trigger_month
+                    # For OTHER, if trigger is June for Year Y-1, this June is in Year Y.
+                    base_year_for_specific_date = reference_period_start_date.year + 1 # e.g. IRS for 2023, trigger June 2024
+                    period_description = f"Ref. {definition.name} {reference_period_start_date.year}"
+                else:
+                    # This case (SPECIFIC_DATE without specific_month_reference for ANNUAL or custom_rule_trigger_month for OTHER)
+                    # is underspecified for calculating the base date.
+                    logger.warning(f"Definição '{definition.name}' é SPECIFIC_DATE mas falta specific_month_reference (para Anual) ou custom_rule_trigger_month (para Outra).")
+                    return None
+
+                period_end_for_deadline_calc = datetime(base_year_for_specific_date, target_month_for_basis, 1)
+
+
+            if not period_end_for_deadline_calc:
+                logger.warning(f"Could not determine period_end_for_deadline_calc for {definition.name}")
+                return None
+
+            # Calculate the final deadline date
+            # The deadline_month_offset is from the period_end_for_deadline_calc
+            deadline_date_intermediate = period_end_for_deadline_calc + relativedelta(months=definition.deadline_month_offset)
+            
+            # Adjust to the specific day, ensuring it's valid for the month
+            try:
+                final_deadline_day = min(definition.deadline_day, monthrange(deadline_date_intermediate.year, deadline_date_intermediate.month)[1])
+                final_deadline = deadline_date_intermediate.replace(day=final_deadline_day)
+            except ValueError: # Should be caught by min with monthrange
+                 logger.error(f"Internal error calculating deadline day for {definition.name}")
+                 return None
+
+            return {
+                'deadline': final_deadline.date(),
+                'period_description': period_description,
+                'reference_period_start': reference_period_start_date.date() 
+            }
             
         except Exception as e:
-            logger.error(f"Erro ao calcular deadline para {definition.name}: {e}")
+            logger.error(f"Erro ao calcular deadline para {definition.name} (Gen: {month}/{year}): {e}", exc_info=True)
         
         return None
     
@@ -457,7 +549,9 @@ class FiscalObligationGenerator:
             'month': str(month).zfill(2),
             'month_name': datetime(year, month, 1).strftime('%B'),
             'quarter': f"Q{(month - 1) // 3 + 1}",
-            'deadline': deadline_info['deadline'].strftime('%d/%m/%Y')
+            'deadline': deadline_info['deadline'].strftime('%d/%m/%Y'),
+            'reference_year': deadline_info['reference_period_start'].year,
+            'reference_month_name': deadline_info['reference_period_start'].strftime('%B')
         }
         
         try:

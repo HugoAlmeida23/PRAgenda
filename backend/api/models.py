@@ -1209,6 +1209,10 @@ class FiscalObligationDefinition(models.Model):
         ('SPECIFIC_DATE', 'Data Específica no Ano'),
         ('EVENT_DRIVEN', 'Após um Evento'),
     ]
+    CUSTOM_RULE_TYPE_CHOICES = [
+        ('MONTHLY_ON_DAY', 'Mensal em Dia Específico'), # e.g. every month on the 15th (use periodicity MONTHLY for this)
+        ('SPECIFIC_MONTH_OCCURRENCE', 'Ocorrência em Mês Específico'), # For 'OTHER' periodicity that should trigger in a certain month
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, verbose_name="Nome da Obrigação")
@@ -1282,6 +1286,13 @@ class FiscalObligationDefinition(models.Model):
         related_name='fiscal_obligation_definitions',
         verbose_name="Organização",
         null=True, blank=True
+    )
+
+    custom_rule_trigger_month = models.PositiveIntegerField(
+        null=True, blank=True,
+        choices=[(i, str(i)) for i in range(1, 13)], # 1=Jan, ..., 12=Dec
+        verbose_name="Mês de Gatilho para Regra Customizada (1-12)",
+        help_text="Se Periodicidade='Outra', define o mês em que esta obrigação deve ser considerada para geração. Ex: IRS (junho), IRC (maio), IES (julho)."
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
