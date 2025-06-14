@@ -1,0 +1,36 @@
+# PRAgenda/Dockerfile.backend
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+WORKDIR /app
+
+# Install system dependencies that might be needed (e.g., for psycopg2, Pillow, etc.)
+# libpq-dev is needed for psycopg2 if not using psycopg2-binary
+# netcat-openbsd provides the 'nc' command for health checks
+# Add other system dependencies as your project requires
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    netcat-openbsd \
+    jpegoptim optipng pngquant gifsicle \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements first to leverage Docker cache
+COPY ./backend/requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the backend application code
+COPY ./backend /app/
+
+# Optional: If you have static files managed by Django (Whitenoise)
+# RUN python3 manage.py collectstatic --noinput
+
+# Expose the port Django/Gunicorn will run on
+EXPOSE 8000
+
+# The CMD will be overridden by docker-compose.yml for each service
+# but you can have a default one for direct `docker run` testing.
+# For example, to ensure manage.py is working:
+# CMD ["python3", "manage.py", "check"]
