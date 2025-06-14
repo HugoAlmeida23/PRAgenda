@@ -172,7 +172,7 @@ const DashboardRouter = () => {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', color: theme === 'light' ? '#374151' : 'white' }}>
                 <Loader2 size={48} className="animate-spin" style={{ color: 'rgb(147, 51, 234)' }} />
-                <p style={{ marginTop: '1rem', fontSize: '1.2rem' }}>Carregando seu dashboard...</p>
+                <p style={{ marginTop: '1rem', fontSize: '1.2rem' }}>Aguarde ...</p>
             </div>
         );
     }

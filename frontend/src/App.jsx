@@ -30,7 +30,7 @@ import FiscalDashboardPage from "./components/fiscal/FiscalDashboardPage";
 import FiscalObligationDefinitionsPage from "./components/fiscal/FiscalObligationDefinitionsPage";
 import FiscalSystemSettingsPage from "./components/fiscal/FiscalSystemSettingsPage";
 import AIAdvisorPage from "./pages/AIAdvisorPage";
-
+import NotificationDropdown from "./components/NotificationDropdown";
 
 // --- React Query Client Configuration ---
 const queryClient = new QueryClient({
@@ -92,6 +92,7 @@ function App() {
                 <Route path="fiscal-definitions" element={<FiscalObligationDefinitionsPage />} />
                 <Route path="fiscal-settings" element={<FiscalSystemSettingsPage />} />
                 <Route path="ai-advisor" element={<AIAdvisorPage />} />
+                <Route path="notification-dropdown" element={<NotificationDropdown />} />
               </Route>
               
               {/* Fallback for any route that doesn't match */}

@@ -3,7 +3,6 @@ import api from "../api";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast, ToastContainer } from "react-toastify";
-import TimeEntryForms from "../components/TimeEntryForms";
 import TaskOverflow from "./TaskOverflow"; // This might need to be components/task/TaskOverflow.jsx
 import {
   CheckCircle, Clock, Plus, Edit3 as EditIcon, Trash2, Calendar, AlertTriangle, User,
@@ -436,27 +435,6 @@ const TaskManagement = () => {
                 clientsData={clients}
             />
         </motion.div>
-
-        <AnimatePresence>
-          {showTimeEntryModal && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ ...glassStyle, width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', color: 'white' }}>
-                <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0 }}>Registar Tempo - {selectedTaskForTimeEntry?.title}</h3>
-                  <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={closeTimeEntryModal} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer' }}><X size={24} /></motion.button>
-                </div>
-                <div style={{ padding: '1.5rem' }}>
-                  <TimeEntryForms initialClientId={selectedTaskForTimeEntry?.client} initialTaskId={selectedTaskForTimeEntry?.id}
-                    onTimeEntryCreated={() => {
-                      queryClient.invalidateQueries({ queryKey: ['taskManagementData'] });
-                      closeTimeEntryModal();
-                      showSuccessNotification("Tempo Registado", "Registo de tempo adicionado.");
-                    }} permissions={permissions} />
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
 
         <AnimatePresence>
           {selectedTaskForWorkflowView && (

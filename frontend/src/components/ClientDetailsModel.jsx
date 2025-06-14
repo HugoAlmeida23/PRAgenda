@@ -159,7 +159,8 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
       exit={{ opacity: 0 }}
       style={{
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem'
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem',
+        marginTop: '4rem', borderRadius: '16px', overflow: 'hidden'
       }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >

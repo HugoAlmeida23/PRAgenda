@@ -37,6 +37,8 @@ from .services.fiscal_obligation_service import FiscalObligationGenerator
 from .services.fiscal_notification_service import FiscalNotificationService 
 from .services.ai_advisor_service import AIAdvisorService
 from .utils import CustomJSONEncoder, update_client_profitability
+from django.db.models import ExpressionWrapper, fields
+
 
 logger = logging.getLogger(__name__) # Redundant
 
@@ -4100,10 +4102,6 @@ def fiscal_upcoming_deadlines(request):
         logger.error(f"Erro ao buscar prazos fiscais futuros: {e}")
         return Response({'error': f'Erro interno: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-# views.py
-
-# ... (other imports and the beginning of get_ai_advisor_initial_context) ...
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_ai_advisor_initial_context(request):
@@ -4193,14 +4191,24 @@ def get_ai_advisor_initial_context(request):
         avg_completion_duration_data = completed_tasks_recent.annotate(duration=duration_expression).aggregate(avg_duration=Avg('duration'))
         
         avg_completion_days = None
-        if avg_completion_duration_data and avg_completion_duration_data['avg_duration']:
-            avg_completion_days = avg_completion_duration_data['avg_duration'].total_seconds() / (60*60*24)
+        if avg_completion_duration_data and avg_completion_duration_data.get('avg_duration') is not None:
+            avg_duration_value = avg_completion_duration_data['avg_duration']
+            # Add an explicit check for timedelta, though Avg(DurationField) should return this or None
+            if isinstance(avg_duration_value, timedelta):
+                avg_completion_days = avg_duration_value.total_seconds() / (60*60*24)
+            else:
+                # This case is unexpected with standard Django ORM usage but good for logging
+                logger.warning(
+                    f"Unexpected type for avg_duration: {type(avg_duration_value)}. Value: {avg_duration_value}. Org: {organization.id}"
+                )
+                avg_completion_days = None # Ensure it's None if not a timedelta
 
         context_data['tasks_overview'] = {
             "total_tasks": org_tasks.count(),
             "active_tasks": active_org_tasks.count(),
-            "overdue_tasks": active_org_tasks.filter(deadline__lt=today).count(), # Corrected: today instead of timezone.now().date()
+            "overdue_tasks": active_org_tasks.filter(deadline__lt=today).count(),
             "completed_last_90_days": completed_tasks_recent.count(),
+            # This line was already robust:
             "avg_task_completion_days_last_90_days": round(avg_completion_days, 1) if avg_completion_days is not None else None,
         }
 

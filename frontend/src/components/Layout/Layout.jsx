@@ -1,17 +1,17 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
-  Bell, Search, X, LogOut, User as UserIcon,
-  Briefcase, Sparkles, Brain, ChevronDown, Archive as ArchiveIcon,
-  BarChart3, Settings2, Bot, Sun, Moon
+  LogOut, User as UserIcon, Briefcase, ChevronDown, 
+  Archive as ArchiveIcon, BarChart3, Settings2, Bot, Sun, Moon
 } from 'lucide-react';
-import { Outlet } from 'react-router-dom'; // Add Outlet
-import api from '../../api'; // Ajuste o caminho se necessário
+import { Outlet } from 'react-router-dom';
+import api from '../../api';
 import BackgroundElements from '../HeroSection/BackgroundElements';
-import './Layout.css'; // Mantenha o seu CSS para o scrollbar, etc.
-import { useTheme } from '../../contexts/ThemeContext'; // ✨ Import useTheme hook
+import NotificationDropdown from '../NotificationDropdown';
+import './Layout.css';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const NavDropdown = ({ group, currentPath, onNavigate }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -68,7 +68,6 @@ const NavDropdown = ({ group, currentPath, onNavigate }) => {
     );
 };
 
-// Single navigation item component (no dropdown)
 const NavItem = ({ item, currentPath, onNavigate }) => {
     const isActive = currentPath === item.path;
     
@@ -150,15 +149,13 @@ const ProfileDropdown = ({ userProfile, onNavigate }) => {
     );
 };
 
-
-// O componente Layout principal, agora com o novo header
 const Layout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [userProfile, setUserProfile] = useState(null);
-  const { theme, toggleTheme } = useTheme(); // ✨ Use the theme hook
+  const { theme, toggleTheme } = useTheme();
 
-  // Single item for Dashboard (no dropdown structure)
+  // Navigation items
   const dashboardItem = {
     name: 'Dashboard',
     icon: <Home size={16} />,
@@ -171,7 +168,7 @@ const Layout = ({ children }) => {
     path: "/ai-advisor"
   };
 
-  // Agrupamento dos Menus
+  // Navigation groups
   const navGroups = [
     {
         name: 'Operacional',
@@ -200,6 +197,7 @@ const Layout = ({ children }) => {
     }
   ];
 
+  // Load user profile
   useEffect(() => {
     const loadUserProfile = async () => {
       try {
@@ -219,8 +217,11 @@ const Layout = ({ children }) => {
     navigate(path);
   };
 
+  // Header style based on theme
   const headerStyle = useMemo(() => ({
-    position: 'sticky', top: 0, zIndex: 100,
+    position: 'sticky', 
+    top: 0, 
+    zIndex: 100,
     background: theme === 'light' ? 'rgba(249, 250, 251, 0.7)' : 'rgba(17, 24, 39, 0.8)',
     backdropFilter: 'blur(20px)',
     borderBottom: theme === 'light' ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.1)',
@@ -232,7 +233,6 @@ const Layout = ({ children }) => {
     transition: 'background 0.3s ease, border-color 0.3s ease, color 0.3s ease',
   }), [theme]);
 
-
   return (
     <div style={{ minHeight: '100vh', position: 'relative', fontFamily: 'Inter, sans-serif' }}>
       <BackgroundElements />
@@ -241,44 +241,80 @@ const Layout = ({ children }) => {
         initial={{ y: -80, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        style={headerStyle} // Use the dynamic style object
+        style={headerStyle}
       >
-        {/* Lado Esquerdo: Logo e Navegação Principal */}
+        {/* Left Side: Logo and Main Navigation */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', color: 'white' }}>
-                 <div style={{width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(147, 51, 234, 0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700'}}>T</div>
-                 <span style={{fontWeight: '600'}}>TarefAi</span>
-            </Link>
-            <div style={{height: '24px', width: '1px', background: 'rgba(255,255,255,0.2)'}} />
-            <nav style={{ display: 'flex', gap: '0.5rem' }}>
-                {/* Single Dashboard item */}
-                <NavItem 
-                    item={dashboardItem} 
-                    currentPath={location.pathname} 
-                    onNavigate={handleNavigation} 
-                />
-                <NavItem 
-                    item={aiItem} 
-                    currentPath={location.pathname} 
-                    onNavigate={handleNavigation} 
-                />
-                {/* Dropdown groups */}
-                {navGroups.map(group => (
-                    <NavDropdown key={group.name} group={group} currentPath={location.pathname} onNavigate={handleNavigation} />
-                ))}
-            </nav>
+          <Link to="/" style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.5rem', 
+            textDecoration: 'none', 
+            color: theme === 'light' ? '#111827' : 'white' 
+          }}>
+            <div style={{
+              width: '32px', 
+              height: '32px', 
+              borderRadius: '8px', 
+              background: 'rgba(147, 51, 234, 0.8)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              fontWeight: '700',
+              color: 'white'
+            }}>
+              T
+            </div>
+            <span style={{fontWeight: '600'}}>TarefAi</span>
+          </Link>
+          
+          <div style={{
+            height: '24px', 
+            width: '1px', 
+            background: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)'
+          }} />
+          
+          <nav style={{ display: 'flex', gap: '0.5rem' }}>
+            <NavItem 
+              item={dashboardItem} 
+              currentPath={location.pathname} 
+              onNavigate={handleNavigation} 
+            />
+            <NavItem 
+              item={aiItem} 
+              currentPath={location.pathname} 
+              onNavigate={handleNavigation} 
+            />
+            {navGroups.map(group => (
+              <NavDropdown 
+                key={group.name} 
+                group={group} 
+                currentPath={location.pathname} 
+                onNavigate={handleNavigation} 
+              />
+            ))}
+          </nav>
         </div>
 
-        {/* Lado Direito: Pesquisa, Notificações e Perfil */}
+        {/* Right Side: Search, Notifications, Theme Toggle, and Profile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          <div style={{width: '400px'}}>
-             {/* O seu componente AISearchBar pode ir aqui */}
-             {/* <AISearchBar onNavigate={handleNavigation} /> */}
+          {/* Search area placeholder */}
+          <div style={{width: '300px'}}>
+            {/* AISearchBar component can go here */}
           </div>
-          <div style={{height: '24px', width: '1px', background: 'rgba(255,255,255,0.2)'}} />
+          
+          <div style={{
+            height: '24px', 
+            width: '1px', 
+            background: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)'
+          }} />
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            {/* O seu componente NotificationsDropdown pode ir aqui, com o seu botão de Bell */}
-             <motion.button
+            {/* Notifications */}
+            <NotificationDropdown onNavigate={handleNavigation} api={api} />
+            
+            {/* Theme Toggle */}
+            <motion.button
               onClick={toggleTheme}
               style={{
                 background: 'transparent',
@@ -291,7 +327,10 @@ const Layout = ({ children }) => {
                 justifyContent: 'center',
                 color: theme === 'light' ? '#4b5563' : '#d1d5db'
               }}
-              whileHover={{ scale: 1.1, background: theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)' }}
+              whileHover={{ 
+                scale: 1.1, 
+                background: theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)' 
+              }}
               whileTap={{ scale: 0.9 }}
               aria-label="Toggle theme"
             >
@@ -307,19 +346,27 @@ const Layout = ({ children }) => {
                 </motion.div>
               </AnimatePresence>
             </motion.button>
+            
+            {/* Profile */}
             <ProfileDropdown userProfile={userProfile} onNavigate={handleNavigation} />
           </div>
         </div>
       </motion.header>
 
       <motion.main
-        key={location.pathname} // Adicionar isto faz a animação correr a cada mudança de página
+        key={location.pathname}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.1 }}
-        style={{ position: 'relative', zIndex: 1, minHeight: 'calc(100vh - 73px)', padding: '2rem' }}
+        style={{ 
+          position: 'relative', 
+          zIndex: 1, 
+          minHeight: 'calc(100vh - 73px)', 
+          padding: '2rem' 
+        }}
       >
-<Outlet />      </motion.main>
+        <Outlet />
+      </motion.main>
     </div>
   );
 };
