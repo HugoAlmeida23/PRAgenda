@@ -57,12 +57,20 @@ export const useClientStore = create((set, get) => ({
         showForm: true,
     }),
     closeForm: () => set({ showForm: false, selectedClient: null, formData: initialFormData }),
-    setFormData: (e) => {
-        const { name, value, type, checked } = e.target;
+    setFormData: (eOrName, maybeValue) => {
+    if (typeof eOrName === 'string') { // Called as setFormData('fieldName', value)
+        const name = eOrName;
+        const value = maybeValue;
+        set((state) => ({
+            formData: { ...state.formData, [name]: value }
+        }));
+    } else { // Called with event e
+        const { name, value, type, checked } = eOrName.target;
         set((state) => ({
             formData: { ...state.formData, [name]: type === 'checkbox' ? checked : value }
         }));
-    },
+    }
+},
     
     // Client Details Modal Actions
     openDetailsModal: (client) => set({ selectedClient: client, showClientModal: true }),

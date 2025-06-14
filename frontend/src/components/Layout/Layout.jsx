@@ -4,7 +4,7 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
   LogOut, User as UserIcon, Briefcase, ChevronDown, 
-  Archive as ArchiveIcon, BarChart3, Settings2, Bot, Sun, Moon
+  Archive as ArchiveIcon, BarChart3, Settings2, Bot, Sun, Moon, GitBranch ,List, PlusCircle
 } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
 import api from '../../api';
@@ -188,6 +188,14 @@ const Layout = ({ children }) => {
           { path: "/fiscal-settings", icon: Settings2, label: "Configurações" },
         ]
     },
+   {
+    name: 'Workflows',
+    icon: <GitBranch size={16} />,
+    items: [
+      { path: "/workflow-management", icon: List, label: "Gerir Workflows" }, // or Table, Folder
+      { path: "/workflow-designer", icon: PlusCircle, label: "Criar Workflows" }, // or FilePlus
+    ]
+},
     {
         name: 'Análise',
         icon: <BarChart3 size={16} />,

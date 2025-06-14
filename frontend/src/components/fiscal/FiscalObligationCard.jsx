@@ -60,6 +60,12 @@ const FiscalObligationCard = ({ definition, onEdit, onDelete, permissions }) => 
                     <div style={{display:'flex', alignItems:'center', gap: '0.3rem'}}><Clock size={14} /> <strong>Periodicidade:</strong> {PERIODICITY_LABELS[periodicity] || periodicity}</div>
                     <div style={{display:'flex', alignItems:'center', gap: '0.3rem'}}><CheckCircle size={14} /> <strong>Prazo:</strong> Dia {deadline_day}, {deadline_month_offset} mês(es) após</div>
                     <div style={{display:'flex', alignItems:'center', gap: '0.3rem'}}><AlertTriangle size={14} /> <strong>Gatilho:</strong> {generation_trigger_offset_days} dias antes</div>
+                    {periodicity === 'OTHER' && definition.custom_rule_trigger_month && (
+    <div style={{display:'flex', alignItems:'center', gap: '0.3rem'}}>
+        <Zap size={14} /> {/* Or a better icon for custom trigger */}
+        <strong>Mês de Gatilho:</strong> {new Date(0, definition.custom_rule_trigger_month - 1).toLocaleString('pt-PT', { month: 'long' })}
+    </div>
+)}  
                     <div style={{display:'flex', alignItems:'center', gap: '0.3rem'}}>
                         <Tag size={14} /> <strong>Prioridade:</strong>
                         <span style={{ color: PRIORITY_COLORS[default_priority] || PRIORITY_COLORS[3], fontWeight: '500', marginLeft: '0.25rem' }}>

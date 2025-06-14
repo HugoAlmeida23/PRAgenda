@@ -16,8 +16,81 @@ from .services.notification_escalation import NotificationEscalationService
 from .services.fiscal_obligation_service import FiscalObligationGenerator
 from .services.fiscal_notification_service import FiscalNotificationService
 
+from .utils import update_profitability_for_period, update_client_profitability
+from dateutil.relativedelta import relativedelta
+from .models import Client
+
 
 logger = logging.getLogger(__name__)
+
+@shared_task(name="tasks.update_profitability_for_single_organization")
+def update_profitability_for_single_organization_task(organization_id, months_to_update_list):
+    """
+    Updates client profitability for a specific organization for specified months.
+    
+    Args:
+        organization_id: The ID of the organization to process.
+        months_to_update_list: A list of tuples, e.g., [(year1, month1), (year2, month2)].
+    """
+    try:
+        organization = Organization.objects.get(id=organization_id)
+        logger.info(f"Starting profitability update task for organization: {organization.name} ({organization_id})")
+        
+        total_clients_processed_overall = 0
+        
+        for year, month in months_to_update_list:
+            org_clients = Client.objects.filter(organization=organization, is_active=True)
+            clients_updated_this_period = 0
+            logger.info(f"Processing period: {month:02d}/{year} for org: {organization.name}")
+            
+            for client_instance in org_clients:
+                try:
+                    result = update_client_profitability(client_instance.id, year, month)
+                    if result:
+                        clients_updated_this_period += 1
+                except Exception as e:
+                    logger.error(f"Error updating profitability for client {client_instance.id} "
+                                 f"in org {organization.id} for period {month}/{year}: {e}", exc_info=True)
+            
+            logger.info(f"Profitability updated for {clients_updated_this_period} clients in org {organization.name} for period {month:02d}/{year}.")
+            total_clients_processed_overall += clients_updated_this_period
+
+        logger.info(f"Finished profitability update task for organization: {organization.name}. Total client-month records updated: {total_clients_processed_overall}")
+        return {
+            "status": "success", 
+            "organization_id": organization_id,
+            "organization_name": organization.name,
+            "total_client_month_records_updated": total_clients_processed_overall,
+            "processed_periods": months_to_update_list
+        }
+
+    except Organization.DoesNotExist:
+        logger.error(f"Organization with ID {organization_id} not found for profitability update.")
+        return {"status": "error", "message": f"Organization {organization_id} not found."}
+    except Exception as e:
+        logger.error(f"General error in update_profitability_for_single_organization_task for org {organization_id}: {e}", exc_info=True)
+        return {"status": "error", "message": str(e), "organization_id": organization_id}
+    
+@shared_task(name="tasks.update_client_profitability_globally")
+def update_client_profitability_globally_task():
+    logger.info("Starting global client profitability update task.")
+    now = timezone.now()
+    current_month_year = now.year
+    current_month_month = now.month
+    
+    # Update for current month
+    updated_current = update_profitability_for_period(current_month_year, current_month_month)
+    logger.info(f"Updated profitability for {updated_current} client-month records for {current_month_month}/{current_month_year}.")
+
+    # Optionally, update for previous month to catch late entries
+    prev_month_date = now - relativedelta(months=1)
+    prev_month_year = prev_month_date.year
+    prev_month_month = prev_month_date.month
+    updated_prev = update_profitability_for_period(prev_month_year, prev_month_month)
+    logger.info(f"Updated profitability for {updated_prev} client-month records for {prev_month_month}/{prev_month_year}.")
+    logger.info("Finished global client profitability update task.")
+    return {"current_month_updated": updated_current, "previous_month_updated": updated_prev}
+
 
 @shared_task(bind=True, max_retries=3)
 def generate_fiscal_obligations_task(self, organization_id=None, months_ahead=3):

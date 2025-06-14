@@ -3,6 +3,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Loader2, User, Save } from 'lucide-react';
 import { useClientStore } from '../../stores/useClientStore';
+import TagInput from '../TagInput';
 
 const glassStyle = {
     background: 'rgba(255, 255, 255, 0.1)',
@@ -220,7 +221,19 @@ const ClientForm = ({ onSubmit, isSaving }) => {
                         />
                     </div>
                 </div>
-
+<div style={{ marginBottom: '1.5rem' }}>
+    <label style={{
+        display: 'block', fontSize: '0.875rem', fontWeight: '500',
+        marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)'
+    }}>
+        Tags Fiscais
+    </label>
+    <TagInput
+        tags={formData.fiscal_tags || []} // Ensure it's an array
+        onTagsChange={(newTags) => setFormData('fiscal_tags', newTags)}
+        placeholder="Adicionar tag fiscal e Enter"
+    />
+</div>
                 <div style={{ marginBottom: '1.5rem' }}>
                     <label style={{
                         display: 'block',

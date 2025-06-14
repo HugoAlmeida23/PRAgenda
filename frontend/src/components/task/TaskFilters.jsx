@@ -1,7 +1,7 @@
 // src/components/task/TaskFilters.jsx
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search as SearchIcon, RotateCcw, SlidersHorizontal, Activity, Briefcase, Target, UserCheck, Tag as TagIcon } from 'lucide-react';
+import { Search as SearchIcon, RotateCcw, SlidersHorizontal, Activity, Briefcase, Target, UserCheck, Tag as TagIcon, AlertTriangle } from 'lucide-react';
 import { useTaskStore } from '../../stores/useTaskStore';
 import { STATUS_OPTIONS, PRIORITY_OPTIONS } from '../../pages/TaskManagement'; // Assuming TaskManagement exports these
 
@@ -34,6 +34,13 @@ const TaskFilters = ({ clients, users, categories }) => {
         setSearchTerm(e.target.value);
     };
 
+    const selectStyle = {
+        width: '100%', padding: '0.5rem', background: 'rgba(255, 255, 255, 0.1)',
+        border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '6px', 
+        color: 'white', fontSize: '0.875rem'
+    };
+    const optionStyle = { background: '#1f2937', color: 'white' }; // For dropdown options theme
+    
     return (
         <motion.div
             variants={itemVariants}
@@ -132,6 +139,14 @@ const TaskFilters = ({ clients, users, categories }) => {
                                 </select>
                             </div>
                         ))}
+                         <div>
+     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)' }}><AlertTriangle size={16} /> Atrasadas</label>
+     <select name="overdue" value={filters.overdue || ""} onChange={handleFilterChange} style={selectStyle}>
+        <option value="" style={optionStyle}>Indiferente</option>
+         <option value="true" style={optionStyle}>Sim</option>
+         {/* <option value="false" style={optionStyle}>Não</option> /* Less common to filter for "not overdue" explicitly */}
+     </select>
+ </div>
                     </motion.div>
                 )}
             </AnimatePresence>

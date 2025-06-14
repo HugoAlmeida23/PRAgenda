@@ -207,8 +207,16 @@ const FiscalDashboardPage = () => {
                                 Obrigações Fiscais
                             </h1>
                             <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>Organize e acompanhe todas as suas tarefas.</p>
+                            <motion.div variants={itemVariants} style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginBottom: '1rem', marginTop: '1rem'}}>
+                                {fiscalStats?.organization_info?.last_generation_formatted
+                                    ? "Última Geração Automática:" + fiscalStats.organization_info.last_generation_formatted
+                                    : "Ainda não teve nenhuma geração"}
+                            </motion.div>
                         </div>
                     </div>
+                    
+    
+
                     <motion.button
                         onClick={() => { refetchStats(); refetchDeadlines(); }} // Update to refetch both
                         disabled={isLoadingStats || isLoadingDeadlines}
@@ -229,7 +237,7 @@ const FiscalDashboardPage = () => {
                     <StatCard title="Em Atraso" value={fiscalStats?.overdue || 0} icon={AlertTriangle} color="rgb(239, 68, 68)" isLoading={isLoadingStats} />
                     <StatCard title="Taxa de Conclusão" value={parseFloat(fiscalStats?.completion_rate || 0).toFixed(1)} unit="%" icon={TrendingUp} color="rgb(147, 51, 234)" isLoading={isLoadingStats} />
                 </div>
-
+               
                 {/* Sections: Manual Generation & Upcoming Deadlines */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', md: { gridTemplateColumns: '1fr 1fr' }, gap: '2rem', marginBottom: '2rem' }}>
                     {/* Manual Generation */}

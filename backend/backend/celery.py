@@ -42,6 +42,11 @@ app.conf.beat_schedule = {
         'task': 'api.tasks.generate_weekly_fiscal_report_task', # Correct path
         'schedule': crontab(hour=17, minute=0, day_of_week=5), 
         'options': {'expires': 3600},
+    },  
+    # Client Profitability
+    'update-client-profitability-nightly': {
+        'task': 'api.tasks.update_client_profitability_globally_task',
+        'schedule': crontab(hour=2, minute=0), 
     },
 
     # === General Notification & Maintenance Tasks ===

@@ -39,6 +39,9 @@ from .services.ai_advisor_service import AIAdvisorService
 from .utils import CustomJSONEncoder, update_client_profitability
 from django.db.models import ExpressionWrapper, fields
 from .services.workflow_service import WorkflowService
+from .tasks import update_profitability_for_single_organization_task # Import the new Celery task
+from dateutil.relativedelta import relativedelta
+
 
 
 logger = logging.getLogger(__name__) # Redundant
@@ -326,30 +329,24 @@ class TaskViewSet(viewsets.ModelViewSet):
         try:
             profile = user.profile
             
-            # OPTIMIZATION: This is the most complex and important optimization.
             base_queryset = Task.objects.select_related(
-                'client', 
+                'client', 'client__organization', # Ensure client__organization is selected if filtering by it
                 'category', 
-                'assigned_to', 
-                'created_by', 
+                'assigned_to', 'assigned_to__profile', # For assigned_to_name
+                'created_by', 'created_by__profile',   # For created_by_name
                 'workflow', 
                 'current_workflow_step',
-                'current_workflow_step__assign_to' # Nested relation for assignee name
+                'current_workflow_step__assign_to' 
             ).prefetch_related(
-                # Prefetch notifications ordered to easily get the latest one in the serializer.
                 Prefetch('workflow_notifications', queryset=WorkflowNotification.objects.order_by('-created_at')),
                 'approvals',
-                # Prefetch all steps of the workflow and their assignees to avoid DB hits in model methods.
                 Prefetch('workflow__steps', queryset=WorkflowStep.objects.select_related('assign_to').order_by('order')),
-                # Prefetch history to make progress calculation efficient.
                 'workflow_history',
             ).annotate(
-                # Calculate counts directly in the database.
                 notifications_count=Count(
                     'workflow_notifications', 
                     filter=Q(workflow_notifications__is_read=False, workflow_notifications__is_archived=False)
                 ),
-                # `Exists` is more performant than `Count > 0` for boolean checks.
                 has_pending_notifications=Exists(
                     WorkflowNotification.objects.filter(
                         task=OuterRef('pk'), 
@@ -360,53 +357,143 @@ class TaskViewSet(viewsets.ModelViewSet):
             )
             
             # --- Apply query parameter filters ---
-            status_param = self.request.query_params.get('status')
+            # Get all query parameters
+            query_params = self.request.query_params
+
+            # Status filter (can be multiple statuses comma-separated)
+            status_param = query_params.get('status')
             if status_param:
                 status_values = [s.strip() for s in status_param.split(',') if s.strip()]
-                base_queryset = base_queryset.filter(status__in=status_values)
-                
-            user_param = self.request.query_params.get('user')
-            if user_param:
-                base_queryset = base_queryset.filter(assigned_to_id=user_param)
-                
-            client_id = self.request.query_params.get('client')
+                if status_values: # Ensure list is not empty after stripping
+                    base_queryset = base_queryset.filter(status__in=status_values)
+            
+            # Client filter
+            client_id = query_params.get('client')
             if client_id:
                 base_queryset = base_queryset.filter(client_id=client_id)
+
+            # Priority filter
+            priority_param = query_params.get('priority')
+            if priority_param:
+                try:
+                    priority_int = int(priority_param)
+                    base_queryset = base_queryset.filter(priority=priority_int)
+                except ValueError:
+                    logger.warning(f"Invalid priority filter value: {priority_param}")
+
+
+            # Assigned To filter (expects User ID)
+            assigned_to_id = query_params.get('assignedTo') # Matches frontend filter key
+            if assigned_to_id:
+                base_queryset = base_queryset.filter(assigned_to_id=assigned_to_id)
             
-            overdue_param = self.request.query_params.get('overdue')
+            # Category filter
+            category_id = query_params.get('category')
+            if category_id:
+                base_queryset = base_queryset.filter(category_id=category_id)
+
+            # Overdue filter
+            overdue_param = query_params.get('overdue')
             if overdue_param and overdue_param.lower() == 'true':
                 base_queryset = base_queryset.filter(
-                    deadline__lt=timezone.now(), 
+                    deadline__lt=timezone.now().date(), # Compare with date part only for overdue
                     status__in=['pending', 'in_progress']
                 )
-                
-            due_param = self.request.query_params.get('due')
+            
+            # Due date filter (today, this-week)
+            due_param = query_params.get('due')
             if due_param:
                 today_date = timezone.now().date()
                 if due_param == 'today':
                     base_queryset = base_queryset.filter(deadline__date=today_date)
                 elif due_param == 'this-week':
+                    # Calculate start and end of the current week (Monday to Sunday)
                     week_start = today_date - timedelta(days=today_date.weekday())
                     week_end = week_start + timedelta(days=6)
                     base_queryset = base_queryset.filter(deadline__date__range=[week_start, week_end])
+                # Add more options like 'next-7-days' if needed
 
-            # --- Apply permission-based filtering ---
-            if not profile.organization:
+            # Fiscal source filter
+            source_param = query_params.get('source')
+            if source_param == 'fiscal':
+                base_queryset = base_queryset.filter(source_fiscal_obligation__isnull=False)
+
+            # Workflow related filters (NEW)
+            has_workflow_param = query_params.get('has_workflow')
+            if has_workflow_param:
+                if has_workflow_param.lower() == 'true':
+                    base_queryset = base_queryset.filter(workflow__isnull=False)
+                elif has_workflow_param.lower() == 'false':
+                    base_queryset = base_queryset.filter(workflow__isnull=True)
+            
+            workflow_id_param = query_params.get('workflow_id')
+            if workflow_id_param:
+                base_queryset = base_queryset.filter(workflow_id=workflow_id_param)
+
+            current_step_id_param = query_params.get('current_workflow_step_id')
+            if current_step_id_param:
+                base_queryset = base_queryset.filter(current_workflow_step_id=current_step_id_param)
+
+            # Search filter (searches title, description, client name, assignee name)
+            search_term = query_params.get('search')
+            if search_term:
+                base_queryset = base_queryset.annotate(
+                    search_vector=Concat(
+                        F('title'), Value(' '), 
+                        F('description'), Value(' '),
+                        F('client__name'), Value(' '),
+                        F('assigned_to__username'), Value(' '), # or F('assigned_to__first_name') etc.
+                        F('category__name'), # Search in category name
+                        output_field=CharField()
+                    )
+                ).filter(search_vector__icontains=search_term)
+                # For more advanced search, consider PostgreSQL full-text search (SearchVector, SearchQuery)
+
+            # Ordering (NEW)
+            ordering_param = query_params.get('ordering')
+            if ordering_param:
+                # Validate ordering_param to prevent arbitrary field ordering if necessary
+                valid_ordering_fields = ['title', '-title', 'deadline', '-deadline', 'priority', '-priority', 
+                                         'client__name', '-client__name', 'assigned_to__username', '-assigned_to__username',
+                                         'status', '-status', 'created_at', '-created_at', 'updated_at', '-updated_at']
+                if ordering_param in valid_ordering_fields:
+                    base_queryset = base_queryset.order_by(ordering_param)
+                else:
+                    logger.warning(f"Invalid ordering parameter: {ordering_param}")
+            else:
+                base_queryset = base_queryset.order_by('priority', 'deadline') # Default ordering
+
+
+            # --- Apply permission-based filtering (after all other filters) ---
+            if not profile or not profile.organization: # Ensure profile and organization exist
                 return Task.objects.none()
                 
+            # Start with tasks from the user's organization
             org_queryset = base_queryset.filter(client__organization=profile.organization)
 
             if profile.is_org_admin or profile.can_view_all_tasks:
-                return org_queryset
+                return org_queryset.distinct() # distinct() if annotations cause duplicates
             else:
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
-                # A user sees tasks assigned to them OR tasks for clients they have visibility on.
+                # User sees tasks assigned to them OR tasks for clients they have visibility on
+                # Ensure visible_clients is efficient if it's a M2M
+                # `profile.visible_clients.values_list('id', flat=True)` is generally efficient
+                visible_client_ids = profile.visible_clients.values_list('id', flat=True) 
                 return org_queryset.filter(
                     Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
                 ).distinct()
                 
         except Profile.DoesNotExist:
+            # Superuser can see all if no profile, otherwise no tasks
+            if user.is_superuser:
+                # Apply same query param filters for superuser without org scoping
+                # This part might need to be refactored if superuser shouldn't see all orgs
+                # For simplicity, superuser sees all if no profile, with above filters applied.
+                return base_queryset.distinct() # distinct() if annotations cause duplicates
             return Task.objects.none()
+        except Exception as e:
+            logger.error(f"Error in TaskViewSet.get_queryset: {e}", exc_info=True)
+            return Task.objects.none() # Return empty on other errors
+
         
     def perform_create(self, serializer):
         try:
@@ -788,56 +875,97 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+        # Base queryset with select_related for efficiency
+        base_queryset = TimeEntry.objects.select_related(
+            'user', 'client', 'task', 'category', 'workflow_step'
+        )
+
+        # --- Apply query parameter filters ---
+        query_params = self.request.query_params
+
+        start_date_str = query_params.get('start_date')
+        end_date_str = query_params.get('end_date')
+        if start_date_str and end_date_str:
+            try:
+                # Ensure consistent date parsing
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                base_queryset = base_queryset.filter(date__range=[start_date, end_date])
+            except ValueError:
+                logger.warning("Invalid date format for time entry filter. Use YYYY-MM-DD.")
+        elif start_date_str: # Only start_date
+             try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                base_queryset = base_queryset.filter(date__gte=start_date)
+             except ValueError:
+                logger.warning("Invalid start_date format.")
+        elif end_date_str: # Only end_date
+             try:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                base_queryset = base_queryset.filter(date__lte=end_date)
+             except ValueError:
+                logger.warning("Invalid end_date format.")
+
+
+        client_id = query_params.get('client')
+        if client_id:
+            base_queryset = base_queryset.filter(client_id=client_id)
+        
+        task_id = query_params.get('task') # If you add task filter
+        if task_id:
+            base_queryset = base_queryset.filter(task_id=task_id)
+        
+        # For admins to filter by user
+        user_id_param = query_params.get('user_id_param') # Or just 'user'
+        if user_id_param and (user.is_superuser or (hasattr(user, 'profile') and user.profile.is_org_admin)):
+            base_queryset = base_queryset.filter(user_id=user_id_param)
+
+        search_term = query_params.get('search')
+        if search_term:
+            base_queryset = base_queryset.filter(
+                Q(description__icontains=search_term) |
+                Q(task__title__icontains=search_term) |
+                Q(category__name__icontains=search_term) |
+                Q(client__name__icontains=search_term)
+            )
+        
+        ordering = query_params.get('ordering', '-date') # Default ordering
+        # Add validation for ordering fields if necessary
+        valid_ordering_fields_time = ['date', '-date', 'minutes_spent', '-minutes_spent', 'client__name', '-client__name', 'task__title', '-task__title']
+        if ordering in valid_ordering_fields_time:
+             base_queryset = base_queryset.order_by(ordering)
+        else:
+             base_queryset = base_queryset.order_by('-date')
+
+
+        # --- Apply permission-based scoping ---
+        if user.is_superuser:
+            return base_queryset.distinct()
+
         try:
             profile = user.profile
-            # OPTIMIZATION: Pre-fetch all related models to avoid N+1 in serializer
-            base_queryset = TimeEntry.objects.select_related(
-                'user', 'client', 'task', 'category', 'workflow_step'
-            )
-
-            # Apply query parameter filters
-            start_date = self.request.query_params.get('start_date')
-            end_date = self.request.query_params.get('end_date')
-            if start_date and end_date:
-                try:
-                    datetime.strptime(start_date, '%Y-%m-%d')
-                    datetime.strptime(end_date, '%Y-%m-%d')
-                    base_queryset = base_queryset.filter(date__range=[start_date, end_date])
-                except ValueError:
-                    raise ValidationError("Formato de data inválido. Use YYYY-MM-DD.")
-
-            client_id = self.request.query_params.get('client')
-            if client_id:
-                base_queryset = base_queryset.filter(client_id=client_id)
-                
-            user_id_param = self.request.query_params.get('user')
-            if user_id_param:
-                base_queryset = base_queryset.filter(user_id=user_id_param)
-            
-            task_id = self.request.query_params.get('task') 
-            if task_id:
-                base_queryset = base_queryset.filter(task_id=task_id)
-
-            # Apply permission-based filtering
             if not profile.organization:
-                return TimeEntry.objects.none()
+                return TimeEntry.objects.none() # No entries if no organization
 
+            # Filter by user's organization (all time entries should belong to a client in the org)
             org_queryset = base_queryset.filter(client__organization=profile.organization)
 
             if profile.is_org_admin or profile.can_view_team_time:
-                return org_queryset
-            else:
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
-                # Regular user sees their own time entries OR time entries for their visible clients.
-                return org_queryset.filter(
-                    Q(user=user) | Q(client_id__in=visible_client_ids)
-                ).distinct()
+                return org_queryset.distinct()
+            elif profile.can_log_time: # Regular user sees their own entries primarily
+                # If they can also see time for visible clients (even if not their own entries):
+                # visible_client_ids = profile.visible_clients.values_list('id', flat=True)
+                # return org_queryset.filter(Q(user=user) | Q(client_id__in=visible_client_ids)).distinct()
+                return org_queryset.filter(user=user).distinct() # Simplest: only own entries
+            else: # No permission to view any time entries
+                return TimeEntry.objects.none()
                 
-        except Profile.DoesNotExist: 
-            if user.is_superuser:
-                return TimeEntry.objects.select_related('user', 'client', 'task', 'category', 'workflow_step')
+        except Profile.DoesNotExist:
+            return TimeEntry.objects.none() # No profile, no entries (unless superuser handled above)
+        except Exception as e:
+            logger.error(f"Error in TimeEntryViewSet.get_queryset: {e}", exc_info=True)
             return TimeEntry.objects.none()
-    
+        
     def perform_create(self, serializer):
         user = self.request.user
 
@@ -2699,14 +2827,12 @@ def check_pending_approvals_and_notify_view(request):
         logger.error(f"Erro ao verificar aprovações pendentes: {str(e)}")
         return Response({'error': f'Erro interno: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# ... (outros imports e ViewSets no seu views.py) ...
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def update_organization_profitability(request):
     """
-    Atualiza dados de rentabilidade para todos os clientes da organização do usuário.
-    Calcula para o mês atual e os últimos N meses.
+    Triggers an asynchronous Celery task to update client profitability data 
+    for the user's organization for the current and specified number of past months.
     """
     try:
         profile = Profile.objects.select_related('organization').get(user=request.user)
@@ -2717,84 +2843,68 @@ def update_organization_profitability(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Verificar permissões - quem pode acionar esta atualização?
-        # Normalmente um admin ou alguém com permissão para ver rentabilidade da organização.
-        if not (profile.is_org_admin or profile.can_view_organization_profitability):
+        if not (profile.is_org_admin or profile.can_view_organization_profitability): # Or a more specific "can_trigger_recalculation"
             return Response(
-                {'error': 'Sem permissão para atualizar dados de rentabilidade da organização'}, 
+                {'error': 'Sem permissão para iniciar o recálculo de rentabilidade da organização'}, 
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        months_back_str = request.data.get('months_back', '3') # Padrão: 3 meses
+        months_back_str = request.data.get('months_back', '1') # Default to current month only if 0, or current + 1 prev if 1.
+                                                              # Let's adjust to '1' meaning current month only for this endpoint.
         try:
+            # months_back = 1 means current month
+            # months_back = 2 means current month and previous month
             months_back = int(months_back_str)
-            if not (1 <= months_back <= 12): # Limite para evitar sobrecarga
-                raise ValueError("months_back deve estar entre 1 e 12.")
+            if not (1 <= months_back <= 12): # Max 12 months back for a manual trigger
+                raise ValueError("O parâmetro 'months_back' deve estar entre 1 e 12.")
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
         organization = profile.organization
         now = timezone.now()
-        updated_periods_summary = []
-        total_clients_updated_overall = 0 # Contará cada par (cliente, período) atualizado
         
-        for i in range(months_back):
-            # Calcular a data do mês alvo
-            # Corrigindo a lógica para subtrair meses corretamente
-            year = now.year
-            month = now.month - i
-            
-            while month <= 0:
-                month += 12
-                year -= 1
-            
-            target_date_for_period = now.replace(year=year, month=month, day=1) # Usar o primeiro dia do mês
-            
+        periods_to_update = []
+        for i in range(months_back): # months_back=1 -> i=0 (current month)
+                                   # months_back=2 -> i=0 (current), i=1 (prev)
+            target_date_for_period = now - relativedelta(months=i)
             year_to_update = target_date_for_period.year
             month_to_update = target_date_for_period.month
+            periods_to_update.append((year_to_update, month_to_update))
             
-            org_clients = Client.objects.filter(organization=organization, is_active=True)
-            clients_updated_this_period = 0
-            
-            for client_instance in org_clients:
-                # A função update_client_profitability já lida com get_or_create
-                result = update_client_profitability(client_instance.id, year_to_update, month_to_update)
-                if result: # Se um registro foi criado ou atualizado
-                    clients_updated_this_period += 1
-            
-            updated_periods_summary.append({
-                'year': year_to_update,
-                'month': month_to_update,
-                'month_name': target_date_for_period.strftime('%B %Y'), # Nome do mês e ano
-                'clients_processed_for_period': clients_updated_this_period 
-            })
-            total_clients_updated_overall += clients_updated_this_period # Somando os registros atualizados
-            
-            logger.info(f"Rentabilidade atualizada para {clients_updated_this_period} clientes em {month_to_update:02d}/{year_to_update} - Org: {organization.name}")
+        # Dispatch the Celery task
+        task_result = update_profitability_for_single_organization_task.delay(
+            organization.id, 
+            periods_to_update
+        )
+        
+        logger.info(f"Dispatched profitability update task {task_result.id} for organization {organization.name} for periods: {periods_to_update}.")
         
         return Response({
             'success': True,
-            'message': f'Rentabilidade atualizada para os últimos {months_back} meses para a organização {organization.name}.',
+            'message': f'Recálculo de rentabilidade para a organização {organization.name} foi iniciado em segundo plano. Os dados serão atualizados em breve.',
+            'task_id': task_result.id, # You can optionally return the Celery task ID
             'organization': organization.name,
-            'total_profitability_records_updated': total_clients_updated_overall,
-            'periods_processed': updated_periods_summary,
+            'periods_being_processed': periods_to_update,
             'processed_at': timezone.now().isoformat()
-        }, status=status.HTTP_200_OK)
+        }, status=status.HTTP_202_ACCEPTED) # HTTP 202 Accepted indicates the request is accepted for processing
         
     except Profile.DoesNotExist:
         return Response(
             {'error': 'Perfil de usuário não encontrado'}, 
             status=status.HTTP_404_NOT_FOUND
         )
+    except Organization.DoesNotExist: # Should not happen if profile.organization is enforced
+        return Response(
+            {'error': 'Organização não encontrada'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
     except Exception as e:
-        logger.error(f"Erro ao atualizar rentabilidade da organização: {str(e)}")
-        import traceback
-        traceback.print_exc() # Para debug detalhado no console do servidor
+        logger.error(f"Erro ao despachar tarefa de atualização de rentabilidade: {str(e)}", exc_info=True)
         return Response(
             {'error': f'Erro interno ao processar a requisição: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
+    
 class NotificationSettingsViewSet(viewsets.ModelViewSet):
     serializer_class = NotificationSettingsSerializer
     permission_classes = [IsAuthenticated]

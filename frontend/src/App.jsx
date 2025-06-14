@@ -31,6 +31,7 @@ import FiscalObligationDefinitionsPage from "./components/fiscal/FiscalObligatio
 import FiscalSystemSettingsPage from "./components/fiscal/FiscalSystemSettingsPage";
 import AIAdvisorPage from "./pages/AIAdvisorPage";
 import NotificationDropdown from "./components/NotificationDropdown";
+import WorkflowDesigner from "./pages/WorkflowDesigner";
 
 // --- React Query Client Configuration ---
 const queryClient = new QueryClient({
@@ -87,6 +88,7 @@ function App() {
                 <Route path="organization" element={<OrganizationRouter />} />
                 <Route path="task-workflow/:taskId" element={<TaskOverflow />} />
                 <Route path="workflow-management" element={<WorkflowManagement />} />
+                <Route path="workflow-designer" element={<WorkflowDesigner/>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 <Route path="fiscal-dashboard" element={<FiscalDashboardPage />} />
                 <Route path="fiscal-definitions" element={<FiscalObligationDefinitionsPage />} />
