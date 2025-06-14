@@ -1,0 +1,78 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: . 
+      dockerfile: Dockerfile.backend
+    command: >
+      sh -c "echo 'Waiting for Redis...' && while ! nc -z redis 6379; do sleep 1; done; echo 'Redis started.' &&
+             echo 'Running migrations...' && python3 manage.py migrate &&
+             echo 'Collecting static files...' && python3 manage.py collectstatic --noinput &&
+             echo 'Starting Gunicorn...' &&
+             gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --workers 3 --log-level info"
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env 
+    depends_on: 
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celeryworker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: python3 -m celery -A backend.celery worker -l info 
+    env_file:
+      - ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celerybeat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: python3 -m celery -A backend.celery beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file:
+      - ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: . 
+      dockerfile: Dockerfile.frontend
+      args:
+        # Use your EC2 public IP or domain
+        VITE_API_URL: http://YOUR_EC2_PUBLIC_IP:8000/api
+    ports:
+      - "80:80" 
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
