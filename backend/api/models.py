@@ -840,6 +840,7 @@ class NLPProcessor(models.Model):
 class WorkflowStep(models.Model):
     """
     Defines a step within a workflow.
+    Uses ManyToManyField for proper database relationships.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     workflow = models.ForeignKey(
@@ -866,17 +867,15 @@ class WorkflowStep(models.Model):
         null=True,
         verbose_name="Papel do Aprovador"
     )
+    
+    # ONLY define next_steps - Django automatically creates previous_steps!
     next_steps = models.ManyToManyField(
         'self',
         symmetrical=False,
-        related_name='previous_steps_rel', # Use a different related_name to avoid clash
+        related_name='previous_steps',  # This creates the automatic reverse relationship
         blank=True,
-        verbose_name="Próximos Passos"
-    )
-    previous_steps = models.JSONField(
-        default=list, 
-        verbose_name="Passos Anteriores", 
-        help_text="List of possible previous step IDs"
+        verbose_name="Próximos Passos",
+        help_text="Passos que podem ser executados após este passo"
     )
     
     class Meta:
@@ -888,60 +887,49 @@ class WorkflowStep(models.Model):
     def __str__(self):
         return f"{self.workflow.name} - {self.name}"
 
-    def clean(self):
-        """Validate next_steps and previous_steps are proper lists"""
-        super().clean()
-        
-        # Validate next_steps
-        if self.next_steps:
-            if isinstance(self.next_steps, str):
-                try:
-                    self.next_steps = json.loads(self.next_steps)
-                except json.JSONDecodeError:
-                    raise ValidationError("next_steps must be valid JSON array")
-            
-            if not isinstance(self.next_steps, list):
-                raise ValidationError("next_steps must be a list")
-        
-        # Validate previous_steps
-        if self.previous_steps:
-            if isinstance(self.previous_steps, str):
-                try:
-                    self.previous_steps = json.loads(self.previous_steps)
-                except json.JSONDecodeError:
-                    raise ValidationError("previous_steps must be valid JSON array")
-            
-            if not isinstance(self.previous_steps, list):
-                raise ValidationError("previous_steps must be a list")
+    # REMOVE the old clean() method and JSONField helper methods
+    # These are no longer needed with ManyToManyField
     
-    def save(self, *args, **kwargs):
-        self.clean()
-        super().save(*args, **kwargs)
+    # NEW: Helper methods for ManyToManyField relationships
+    def get_next_step_ids(self):
+        """Returns a list of next step IDs"""
+        return list(self.next_steps.values_list('id', flat=True))
     
-    def get_next_steps(self):
-        """Returns next_steps as a list of step IDs"""
-        if isinstance(self.next_steps, str):
-            try:
-                return json.loads(self.next_steps) if self.next_steps else []
-            except json.JSONDecodeError:
-                return []
-        elif isinstance(self.next_steps, list):
-            return self.next_steps
-        else:
-            return []
+    def get_previous_step_ids(self):
+        """Returns a list of previous step IDs (automatic reverse relationship)"""
+        return list(self.previous_steps.values_list('id', flat=True))
     
-    def get_previous_steps(self):
-        """Returns previous_steps as a list of step IDs"""
-        if isinstance(self.previous_steps, str):
-            try:
-                return json.loads(self.previous_steps) if self.previous_steps else []
-            except json.JSONDecodeError:
-                return []
-        elif isinstance(self.previous_steps, list):
-            return self.previous_steps
-        else:
-            return []
-
+    def add_next_step(self, step):
+        """Add a next step"""
+        self.next_steps.add(step)
+    
+    def remove_next_step(self, step):
+        """Remove a next step"""
+        self.next_steps.remove(step)
+    
+    def can_advance_to(self, step):
+        """Check if this step can advance to another step"""
+        return self.next_steps.filter(id=step.id).exists()
+    
+    def get_available_next_steps(self):
+        """Get all available next steps as queryset"""
+        return self.next_steps.all()
+    
+    def get_steps_that_lead_here(self):
+        """Get all steps that can lead to this step (using reverse relationship)"""
+        return self.previous_steps.all()
+    
+    def get_next_steps_data(self):
+        """Get next steps data for API responses"""
+        return [
+            {
+                'id': str(step.id),
+                'name': step.name,
+                'order': step.order,
+                'assign_to': step.assign_to.username if step.assign_to else None
+            }
+            for step in self.next_steps.all()
+        ]
 
 
 class TaskApproval(models.Model):
@@ -1176,26 +1164,60 @@ class Task(models.Model):
     def get_available_next_steps(self):
         """Retorna os próximos passos disponíveis de forma eficiente."""
         if not self.current_workflow_step:
+            # If no current step, return the first step(s) of the workflow
+            if self.workflow:
+                first_steps = self.workflow.steps.filter(order=1)
+                return [
+                    {
+                        'id': str(step.id), 
+                        'name': step.name, 
+                        'order': step.order,
+                        'assign_to': step.assign_to.username if step.assign_to else None
+                    } 
+                    for step in first_steps
+                ]
             return []
             
+        # Get next steps using the ManyToManyField relationship
         try:
-            next_step_ids = self.current_workflow_step.get_next_steps()
-            
-            # Para otimizar, o ViewSet deve fazer prefetch de workflow.steps.
-            # Desta forma, não atingimos a BD aqui.
-            if hasattr(self.workflow, '_prefetched_objects_cache') and 'steps' in self.workflow._prefetched_objects_cache:
-                all_steps = self.workflow.steps.all()
-                next_steps = [s for s in all_steps if str(s.id) in next_step_ids or s.id in next_step_ids]
-            else:
-                # Fallback (menos eficiente)
-                next_steps = WorkflowStep.objects.filter(id__in=next_step_ids)
-
-            return [{'id': str(step.id), 'name': step.name, 'assign_to': step.assign_to.username if step.assign_to else None} 
-                    for step in next_steps]
+            # Use the new helper method
+            return self.current_workflow_step.get_next_steps_data()
         except Exception:
-            # Captura erros de JSON ou outros problemas
+            # Fallback to direct query
+            next_steps = self.current_workflow_step.next_steps.all()
+            return [
+                {
+                    'id': str(step.id), 
+                    'name': step.name, 
+                    'order': step.order,
+                    'assign_to': step.assign_to.username if step.assign_to else None
+                } 
+                for step in next_steps
+            ]
+    
+    def can_advance_to_step(self, target_step):
+        """Check if task can advance to a specific step"""
+        if not self.current_workflow_step:
+            # If no current step, can only advance to first steps
+            return target_step.order == 1
+        
+        # Check if target step is in the next_steps of current step
+        return self.current_workflow_step.can_advance_to(target_step)
+
+    def get_workflow_previous_steps(self):
+        """Get steps that lead to the current step"""
+        if not self.current_workflow_step:
             return []
- 
+        
+        return [
+            {
+                'id': str(step.id),
+                'name': step.name,
+                'order': step.order
+            }
+            for step in self.current_workflow_step.get_steps_that_lead_here()
+        ]
+
 class FiscalObligationDefinition(models.Model):
     PERIODICITY_CHOICES = [
         ('MONTHLY', 'Mensal'),

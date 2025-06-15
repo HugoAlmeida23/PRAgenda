@@ -23,7 +23,7 @@ from .models import Client
 
 logger = logging.getLogger(__name__)
 
-@shared_task(name="tasks.update_profitability_for_single_organization")
+@shared_task
 def update_profitability_for_single_organization_task(organization_id, months_to_update_list):
     """
     Updates client profitability for a specific organization for specified months.
@@ -71,7 +71,7 @@ def update_profitability_for_single_organization_task(organization_id, months_to
         logger.error(f"General error in update_profitability_for_single_organization_task for org {organization_id}: {e}", exc_info=True)
         return {"status": "error", "message": str(e), "organization_id": organization_id}
     
-@shared_task(name="tasks.update_client_profitability_globally")
+@shared_task
 def update_client_profitability_globally_task():
     logger.info("Starting global client profitability update task.")
     now = timezone.now()
@@ -377,7 +377,7 @@ def generate_fiscal_obligations_for_organization_task(organization_id, months_ah
     """
     return generate_fiscal_obligations_task(organization_id=organization_id, months_ahead=months_ahead)
 
-@shared_task(name="tasks.check_upcoming_deadlines_and_notify")
+@shared_task
 def check_upcoming_deadlines_and_notify_task():
     logger.info("Starting task: check_upcoming_deadlines_and_notify_task")
     now = timezone.now()
@@ -417,7 +417,7 @@ def check_upcoming_deadlines_and_notify_task():
         'notifications_created': notifications_created_total
     }
 
-@shared_task(name="tasks.check_overdue_steps_and_notify")
+@shared_task
 def check_overdue_steps_and_notify_task(default_overdue_threshold_days=3):
     logger.info(f"Starting task: check_overdue_steps_and_notify_task (threshold: {default_overdue_threshold_days} days)")
     now = timezone.now()
@@ -476,7 +476,7 @@ def check_overdue_steps_and_notify_task(default_overdue_threshold_days=3):
         'overdue_step_notifications_created': notifications_created_total
     }
 
-@shared_task(name="tasks.check_pending_approvals_and_remind")
+@shared_task
 def check_pending_approvals_and_remind_task(default_reminder_threshold_days=2):
     logger.info(f"Starting task: check_pending_approvals_and_remind_task (reminder threshold: {default_reminder_threshold_days} days)")
     now = timezone.now()
@@ -540,7 +540,7 @@ def check_pending_approvals_and_remind_task(default_reminder_threshold_days=2):
 
 # === Notification Maintenance Tasks (from management command logic) ===
 
-@shared_task(name="tasks.notification_cleanup_task")
+@shared_task
 def notification_cleanup_task(days=90):
     logger.info(f"Starting task: notification_cleanup_task (older than {days} days)")
     cutoff_date = timezone.now() - timedelta(days=days)
@@ -582,7 +582,7 @@ def notification_cleanup_task(days=90):
         'deleted_digests_count': deleted_digests_count
     }
 
-@shared_task(name="tasks.notification_generate_digests_task")
+@shared_task
 def notification_generate_digests_task():
     logger.info("Starting task: notification_generate_digests_task")
     generated_count = 0
@@ -595,7 +595,7 @@ def notification_generate_digests_task():
         return {'status': 'error', 'message': str(e)}
     return {'status': 'success', 'daily_digests_generated': generated_count}
 
-@shared_task(name="tasks.notification_send_digests_task")
+@shared_task
 def notification_send_digests_task():
     logger.info("Starting task: notification_send_digests_task")
     sent_count = 0
@@ -607,7 +607,7 @@ def notification_send_digests_task():
         return {'status': 'error', 'message': str(e)}
     return {'status': 'success', 'digests_sent': sent_count}
 
-@shared_task(name="tasks.notification_escalate_task")
+@shared_task
 def notification_escalate_task():
     logger.info("Starting task: notification_escalate_task")
     escalated_count = 0

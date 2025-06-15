@@ -26,7 +26,7 @@ from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializ
                          WorkflowHistorySerializer, NotificationSettingsSerializer,NotificationTemplateSerializer,
                          NotificationDigestSerializer,FiscalGenerationRequestSerializer,FiscalStatsSerializer,
                          FiscalObligationTestSerializer, FiscalObligationDefinitionSerializer, FiscalSystemSettingsSerializer)
-
+from django.db import models
 from .services.notification_service import NotificationService 
 from .services.notifications_metrics import NotificationMetricsService
 from .services.notification_escalation import NotificationEscalationService
