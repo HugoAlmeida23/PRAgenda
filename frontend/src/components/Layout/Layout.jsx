@@ -174,6 +174,12 @@ const Layout = ({ children }) => {
     path: "/notifications-settings"
   };
 
+  const workflow = {
+    name: "Workflows", 
+    icon: <List size={16} />,
+    path: "/workflow-management"
+  };
+
   // Navigation groups
   const navGroups = [
     {
@@ -194,14 +200,6 @@ const Layout = ({ children }) => {
           { path: "/fiscal-settings", icon: Settings2, label: "Configurações" },
         ]
     },
-   {
-    name: 'Workflows',
-    icon: <GitBranch size={16} />,
-    items: [
-      { path: "/workflow-management", icon: List, label: "Gerir Workflows" }, // or Table, Folder
-      { path: "/workflow-designer", icon: PlusCircle, label: "Criar Workflows" }, // or FilePlus
-    ]
-},
     {
         name: 'Análise',
         icon: <BarChart3 size={16} />,
@@ -299,11 +297,6 @@ const Layout = ({ children }) => {
               currentPath={location.pathname} 
               onNavigate={handleNavigation} 
             />
-            <NavItem 
-              item={notificationSettings} 
-              currentPath={location.pathname} 
-              onNavigate={handleNavigation} 
-            />
             {navGroups.map(group => (
               <NavDropdown 
                 key={group.name} 
@@ -312,6 +305,16 @@ const Layout = ({ children }) => {
                 onNavigate={handleNavigation} 
               />
             ))}
+            <NavItem 
+              item={notificationSettings} 
+              currentPath={location.pathname} 
+              onNavigate={handleNavigation} 
+            />
+            <NavItem 
+              item={workflow} 
+              currentPath={location.pathname} 
+              onNavigate={handleNavigation} 
+            />
           </nav>
         </div>
 
