@@ -168,6 +168,12 @@ const Layout = ({ children }) => {
     path: "/ai-advisor"
   };
 
+  const notificationSettings = {
+    name: 'Gerir Notificações',
+    icon: <Bot size={16} />,
+    path: "/notifications-settings"
+  };
+
   // Navigation groups
   const navGroups = [
     {
@@ -290,6 +296,11 @@ const Layout = ({ children }) => {
             />
             <NavItem 
               item={aiItem} 
+              currentPath={location.pathname} 
+              onNavigate={handleNavigation} 
+            />
+            <NavItem 
+              item={notificationSettings} 
               currentPath={location.pathname} 
               onNavigate={handleNavigation} 
             />

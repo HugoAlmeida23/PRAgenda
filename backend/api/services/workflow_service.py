@@ -89,7 +89,7 @@ class WorkflowService:
                 return False, "Este passo requer aprovação antes de avançar."
 
         try:
-            possible_next_step_ids = completed_step.get_next_steps()
+            possible_next_step_ids = list(completed_step.next_steps.values_list('id', flat=True))        
         except Exception as e:
             logger.error(f"Error getting next_steps for step {completed_step.id} ('{completed_step.name}'): {e}")
             possible_next_step_ids = []
@@ -125,19 +125,7 @@ class WorkflowService:
         elif len(possible_next_step_ids) > 1:
             if not next_step_id_manual:
                 logger.info(f"Task {task.id} from step '{completed_step.name}' has multiple next steps and no manual choice provided. Awaiting manual selection.")
-                # Notify that manual selection is needed
-                next_steps_available_details = []
-                for step_id_opt in possible_next_step_ids:
-                    try:
-                        step_opt = WorkflowStep.objects.get(id=step_id_opt)
-                        next_steps_available_details.append({
-                            'id': str(step_opt.id), 'name': step_opt.name, 
-                            'description': step_opt.description or '',
-                            'assign_to': step_opt.assign_to.username if step_opt.assign_to else None,
-                            'requires_approval': step_opt.requires_approval
-                        })
-                    except WorkflowStep.DoesNotExist:
-                        logger.warning(f"Optional next step ID {step_id_opt} not found for task {task.id}.")
+                next_steps_available_details = completed_step.get_next_steps_data()
                 
                 if next_steps_available_details:
                      NotificationService.notify_manual_advance_needed(task, completed_step, next_steps_available_details)

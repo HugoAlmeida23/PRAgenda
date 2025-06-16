@@ -163,39 +163,47 @@ class WorkflowDefinitionSerializer(serializers.ModelSerializer):
                   'created_at', 'updated_at', 'is_active']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+class MinimalWorkflowStepSerializer(serializers.ModelSerializer): # For nested display of previous steps
+    class Meta:
+        model = WorkflowStep
+        fields = ['id', 'name', 'order']
 
 class WorkflowStepSerializer(serializers.ModelSerializer):
     workflow_name = serializers.ReadOnlyField(source='workflow.name', allow_null=True)
     assign_to_name = serializers.ReadOnlyField(source='assign_to.username', allow_null=True)
     
-    # These fields are now annotated in the ViewSet for performance
     time_entries_count = serializers.IntegerField(read_only=True)
     total_time_spent = serializers.IntegerField(read_only=True)
     is_approved = serializers.BooleanField(read_only=True, allow_null=True)
     
-    next_steps = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True, default=list)
-    previous_steps = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True, default=list)
+    # For ManyToManyField 'next_steps':
+    # - On WRITE: Accepts a list of primary keys of WorkflowStep instances.
+    # - On READ: Serializes as a list of primary keys by default.
+    next_steps = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=WorkflowStep.objects.all(), # Queryset used for validation during deserialization
+        required=False # Allow empty list
+    )
+    
+    # For 'previous_steps' (the reverse relation of next_steps):
+    # This should be read-only and can provide more info if needed.
+    previous_steps_info = MinimalWorkflowStepSerializer(source='previous_steps', many=True, read_only=True)
 
     class Meta:
         model = WorkflowStep
         fields = [
             'id', 'workflow', 'workflow_name', 'name', 'description', 'order', 
             'assign_to', 'assign_to_name', 'requires_approval', 'approver_role', 
-            'next_steps', 'previous_steps', 'time_entries_count', 
+            'next_steps', 
+            'previous_steps_info', # Changed from previous_steps
+            'time_entries_count', 
             'total_time_spent', 'is_approved'
         ]
         read_only_fields = [
             'id', 'workflow_name', 'assign_to_name', 'time_entries_count', 
-            'total_time_spent', 'is_approved'
+            'total_time_spent', 'is_approved', 'previous_steps_info'
         ]
     
-    def to_representation(self, instance):
-        """Ensure next_steps and previous_steps are returned as lists"""
-        data = super().to_representation(instance)
-        data['next_steps'] = instance.get_next_steps()
-        data['previous_steps'] = instance.get_previous_steps()
-        return data
-
 
 class TaskSerializer(serializers.ModelSerializer):
     # Direct lookups, made efficient by `select_related` in the ViewSet.

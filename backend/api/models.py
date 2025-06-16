@@ -1794,28 +1794,52 @@ class NotificationTemplate(models.Model):
         except KeyError as e:
             logger.error(f"Variável ausente no template {self.id}: {e}")
             return self.title_template, self.message_template
-    
-    def get_context_variables(self, task=None, user=None, workflow_step=None, **kwargs):
+
+    @staticmethod
+    def get_context_variables(task=None, user=None, workflow_step=None, **kwargs):
         """
-        Gera contexto padrão para renderização
+        Gera contexto padrão para renderização de forma mais robusta.
         """
+        # 1. Initialize with default values to prevent KeyErrors
         context = {
-            'user_name': user.username if user else '',
-            'user_first_name': user.first_name if user else '',
-            'task_title': task.title if task else '',
-            'client_name': task.client.name if task and task.client else '',
-            'step_name': workflow_step.name if workflow_step else '',
-            'workflow_name': workflow_step.workflow.name if workflow_step and workflow_step.workflow else '',
-            'organization_name': task.client.organization.name if task and task.client and task.client.organization else '',
-            'current_date': timezone.now().strftime('%d/%m/%Y'),
-            'current_time': timezone.now().strftime('%H:%M'),
+            'user_name': 'Utilizador',
+            'user_first_name': 'Utilizador',
+            'task_title': 'Tarefa não especificada',
+            'client_name': 'Cliente não especificado',
+            'step_name': 'Passo não especificado',
+            'workflow_name': 'Workflow não especificado',
+            'organization_name': 'Organização não especificada',
         }
-        
-        # Adicionar variáveis extras do kwargs
+
+        # 2. Safely populate from provided objects
+        if user:
+            context['user_name'] = user.username
+            context['user_first_name'] = user.first_name or user.username
+
+        if task:
+            context['task_title'] = task.title
+            if task.client:
+                context['client_name'] = task.client.name
+                if task.client.organization:
+                    context['organization_name'] = task.client.organization.name
+
+        if workflow_step:
+            context['step_name'] = workflow_step.name
+            if workflow_step.workflow:
+                context['workflow_name'] = workflow_step.workflow.name
+        elif task and task.workflow:  # Fallback to get workflow name from task
+            context['workflow_name'] = task.workflow.name
+
+        # 3. Add dynamic values like date/time
+        now = timezone.now()
+        context['current_date'] = now.strftime('%d/%m/%Y')
+        context['current_time'] = now.strftime('%H:%M')
+
+        # 4. Update with any extra variables passed in kwargs.
+        # This allows for custom context for specific notification types.
         context.update(kwargs)
         
         return context
-
 
 class NotificationDigest(models.Model):
     """

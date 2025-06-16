@@ -1,33 +1,32 @@
 import React, { useState, useEffect,useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ListChecks, // Changed from List for better semantics
+  ListChecks,
   Plus,
   Trash2,
-  Edit3, // Changed from Edit
-  Settings2, // Changed from Settings
+  Edit3,
+  Settings2,
   Eye,
-  XCircle, // For closing modal
+  XCircle,
   AlertTriangle,
   RotateCcw,
   Search,
-  Filter as FilterIcon, // Renamed to avoid conflict
+  Filter as FilterIcon,
   Loader2,
   ChevronRight,
   Brain,
-  Network, // For workflow icon
+  Network,
   Info,
-  ArrowRightLeft // For workflow steps connection
+  ArrowRightLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api';
-import WorkflowDesigner from './WorkflowDesigner'; // Assuming this is correctly pathed
+import WorkflowDesigner from './WorkflowDesigner';
 import { usePermissions } from "../contexts/PermissionsContext";
 import { AlertCircle } from "lucide-react";
 import BackgroundElements from "../components/HeroSection/BackgroundElements";
 import { toast, ToastContainer } from 'react-toastify';
 
-// Estilos glass
 const glassStyle = {
   background: 'rgba(255, 255, 255, 0.05)',
   backdropFilter: 'blur(12px)',
@@ -35,7 +34,6 @@ const glassStyle = {
   borderRadius: '16px',
 };
 
-// Variantes de animação
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -66,7 +64,6 @@ const modalContentVariants = {
 };
 
 
-// Componente para visualizar workflows (MODAL)
 const WorkflowViewerModal = ({ workflow, onClose }) => {
   const [workflowSteps, setWorkflowSteps] = useState([]);
   const [loadingSteps, setLoadingSteps] = useState(true);
@@ -148,7 +145,6 @@ const WorkflowViewerModal = ({ workflow, onClose }) => {
 
               <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ArrowRightLeft size={20}/>Passos do Workflow</h3>
               
-              {/* Visualização do fluxo simplificada */}
               <div style={{ ...glassStyle, padding: '1rem', background: 'rgba(0,0,0,0.1)', marginBottom: '1.5rem', overflowX: 'auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', minWidth: 'max-content' }}>
                   {workflowSteps.map((step, index) => (
@@ -192,7 +188,7 @@ const WorkflowManagement = () => {
   const [editingWorkflow, setEditingWorkflow] = useState(null);
   const [viewingWorkflow, setViewingWorkflow] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ isActive: true }); // Default to show active
+  const [filters, setFilters] = useState({ isActive: true });
 
   const {
     data: workflows = [], isLoading: isWorkflowsLoading, isError: isWorkflowsError,
@@ -222,239 +218,166 @@ const WorkflowManagement = () => {
     }
   });
 
-  // In WorkflowManagement.jsx
-
-// In WorkflowManagement.jsx
-const createWorkflowMutation = useMutation({
-  mutationFn: async (newWorkflowPayload) => {
-    console.log("--- CREATE MUTATION: Received newWorkflowPayload ---", JSON.stringify(newWorkflowPayload, null, 2));
-    
-    // 1. Create Workflow Definition
-    const workflowDefinitionResponse = await api.post('/workflow-definitions/', {
-      name: newWorkflowPayload.name,
-      description: newWorkflowPayload.description,
-      is_active: newWorkflowPayload.is_active,
-    });
-    const workflowId = workflowDefinitionResponse.data.id;
-    const createdWorkflowDefinition = workflowDefinitionResponse.data;
-
-    // Store mapping of temporary client IDs to real server IDs
-    const tempIdToRealIdMap = {};
-    const createdStepsWithOriginalConnections = [];
-
-    // 2. Create Workflow Steps (First Pass: Create steps without connections)
-    for (const clientStep of newWorkflowPayload.steps) {
-      const { id: tempId, next_steps: clientOriginalNextSteps, previous_steps: clientOriginalPreviousSteps, ...stepDataForCreate } = clientStep;
-
-      const stepCreationPayload = {
-        ...stepDataForCreate,
-        workflow: workflowId,
-        next_steps: [],       // Empty initially - will be updated in second pass
-        previous_steps: [],   // Empty initially - will be updated in second pass
+  const createWorkflowMutation = useMutation({
+    mutationFn: async (newWorkflowPayload) => {
+      const definitionPayload = {
+        name: newWorkflowPayload.name,
+        description: newWorkflowPayload.description,
+        is_active: newWorkflowPayload.is_active,
       };
-
-      try {
-        const stepResponse = await api.post('/workflow-steps/', stepCreationPayload);
-        const createdStep = stepResponse.data;
-        
-        // Map temporary ID to real ID
-        if (tempId) {
-          tempIdToRealIdMap[tempId] = createdStep.id;
-        }
-        
-        // Store created step with original connection info for second pass
-        createdStepsWithOriginalConnections.push({
-          ...createdStep,
-          tempId: tempId,
-          clientOriginalNextSteps: clientOriginalNextSteps || [],
-          clientOriginalPreviousSteps: clientOriginalPreviousSteps || [],
-        });
-        
-        console.log(`Created step: ${createdStep.name} with ID: ${createdStep.id}, temp ID was: ${tempId}`);
-      } catch (stepError) {
-        console.error("Error creating step:", stepError.response?.data || stepError.message);
-        toast.error(`Falha ao criar o passo "${clientStep.name}".`);
-        
-        // Rollback: Delete the workflow definition if step creation fails
+      const definitionResponse = await api.post('/workflow-definitions/', definitionPayload);
+      const workflowDefinition = definitionResponse.data;
+      const workflowId = workflowDefinition.id;
+  
+      const tempIdToRealIdMap = {};
+      const createdStepsWithClientData = [];
+  
+      for (const clientStep of newWorkflowPayload.steps) {
+        const { id: tempStepId, next_steps: clientOriginalNextSteps, previous_steps, ...stepBasicData } = clientStep;
+        const stepCreationPayload = {
+          ...stepBasicData,
+          workflow: workflowId,
+          next_steps: [],
+        };
+  
         try {
-          await api.delete(`/workflow-definitions/${workflowId}/`);
-        } catch (rollbackError) {
-          console.error("Failed to rollback workflow definition:", rollbackError);
+          const stepResponse = await api.post('/workflow-steps/', stepCreationPayload);
+          const serverStep = stepResponse.data;
+          if (tempStepId) {
+            tempIdToRealIdMap[tempStepId] = serverStep.id;
+          }
+          createdStepsWithClientData.push({ serverStepData: serverStep, clientOriginalNextSteps });
+        } catch (error) {
+          console.error(`Error creating step "${stepBasicData.name}":`, error.response?.data || error.message);
+          toast.error(`Falha ao criar o passo "${stepBasicData.name}". Tentando reverter workflow.`);
+          try {
+            await api.delete(`/workflow-definitions/${workflowId}/`);
+            toast.info("Definição de workflow revertida devido a erro na criação de passo.");
+          } catch (rollbackError) {
+            console.error("Failed to rollback workflow definition:", rollbackError);
+            toast.error("Falha crítica. Workflow parcialmente criado. Por favor, verifique no sistema.");
+          }
+          throw error;
         }
-        throw stepError;
       }
-    }
-
-    console.log("TempId to RealId mapping:", tempIdToRealIdMap);
-
-    // 3. Update Workflow Steps (Second Pass: Set up connections with real IDs)
-    for (const stepWithConnections of createdStepsWithOriginalConnections) {
-      const realStepId = stepWithConnections.id;
-      let needsUpdate = false;
-      const updatePayload = {};
-
-      // Map next_steps from temp IDs to real IDs
-      if (stepWithConnections.clientOriginalNextSteps.length > 0) {
-        const realNextStepIds = stepWithConnections.clientOriginalNextSteps
-          .map(tempNextId => {
-            // Convert temp ID to real ID
-            const realId = tempIdToRealIdMap[tempNextId] || tempNextId;
-            console.log(`Mapping next step: ${tempNextId} -> ${realId}`);
-            return realId;
-          })
-          .filter(realId => {
-            // Ensure the target step actually exists in our created steps
-            const exists = createdStepsWithOriginalConnections.some(s => s.id === realId);
-            if (!exists) {
-              console.warn(`Next step ID ${realId} not found in created steps`);
+  
+      for (const { serverStepData, clientOriginalNextSteps } of createdStepsWithClientData) {
+        let realNextStepIds = [];
+        if (clientOriginalNextSteps && clientOriginalNextSteps.length > 0) {
+          realNextStepIds = clientOriginalNextSteps.map(tempNextId => {
+            const mappedId = tempIdToRealIdMap[tempNextId] || tempNextId;
+            if (!createdStepsWithClientData.some(cs => cs.serverStepData.id === mappedId)) {
+              console.warn(`During next_steps update for step ${serverStepData.id}: Temp ID ${tempNextId} mapped to ${mappedId}, which was not found in created steps. Skipping.`);
+              return null;
             }
-            return exists;
-          });
-
+            return mappedId;
+          }).filter(id => id !== null);
+        }
+  
         if (realNextStepIds.length > 0) {
-          updatePayload.next_steps = realNextStepIds;
-          needsUpdate = true;
-          console.log(`Step ${stepWithConnections.name} will have next_steps:`, realNextStepIds);
+          try {
+            await api.patch(`/workflow-steps/${serverStepData.id}/`, { next_steps: realNextStepIds });
+          } catch (error) {
+            console.error(`Error updating next_steps for step ${serverStepData.id}:`, error.response?.data || error.message);
+            toast.warn(`Falha ao conectar os próximos passos para "${serverStepData.name}". Verifique manualmente.`);
+          }
         }
       }
-
-      // Map previous_steps from temp IDs to real IDs (if you use this field)
-      if (stepWithConnections.clientOriginalPreviousSteps.length > 0) {
-        const realPreviousStepIds = stepWithConnections.clientOriginalPreviousSteps
-          .map(tempPrevId => tempIdToRealIdMap[tempPrevId] || tempPrevId)
-          .filter(realId => createdStepsWithOriginalConnections.some(s => s.id === realId));
-
-        if (realPreviousStepIds.length > 0) {
-          updatePayload.previous_steps = realPreviousStepIds;
-          needsUpdate = true;
-        }
-      }
-
-      // Update the step with connections if needed
-      if (needsUpdate) {
-        try {
-          console.log(`Updating step ${realStepId} with connections:`, updatePayload);
-          const updateResponse = await api.patch(`/workflow-steps/${realStepId}/`, updatePayload);
-          console.log(`Successfully updated step ${stepWithConnections.name} connections`);
-        } catch (updateError) {
-          console.error(`Error updating connections for step ${realStepId}:`, updateError.response?.data || updateError.message);
-          toast.warn(`Falha ao conectar os próximos passos para "${stepWithConnections.name}".`);
-          // Non-fatal for overall workflow creation
-        }
-      } else {
-        console.log(`No connections to update for step: ${stepWithConnections.name}`);
-      }
-    }
-
-    console.log("Workflow creation completed successfully");
-    return createdWorkflowDefinition;
-  },
-  ...mutationOptions("criado")
-});
-
-  // In WorkflowManagement.jsx
+      return workflowDefinition;
+    },
+    ...mutationOptions("criado")
+  });
 
 const updateWorkflowMutation = useMutation({
-  mutationFn: async (updatedWorkflow) => {
-    // 1. Update Workflow Definition
-    await api.put(`/workflow-definitions/${updatedWorkflow.id}/`, {
-      name: updatedWorkflow.name,
-      description: updatedWorkflow.description,
-      is_active: updatedWorkflow.is_active
-    });
-
-    // 2. Get existing steps from server to compare
-    const stepsResponse = await api.get(`/workflow-steps/?workflow=${updatedWorkflow.id}`);
-    const existingStepsServer = stepsResponse.data; // Steps currently in DB for this workflow
-
-    const tempIdToRealIdMap = {}; // For linking next_steps later if needed for newly created steps
-    const stepsToProcessForNextStepsUpdate = []; // Store all steps (new and existing) with their final IDs
-
-    // 3. Process steps from the client: Create new ones, update existing ones
-    for (const clientStep of updatedWorkflow.steps) {
-      const { id: clientStepId, next_steps: clientNextSteps, ...stepDataWithoutIdAndNextSteps } = clientStep;
-
-      const payloadForSave = {
-        ...stepDataWithoutIdAndNextSteps,
-        workflow: updatedWorkflow.id,
-        // next_steps will be handled in a separate pass or later by the backend logic
-        // For now, let's assume the backend handles next_steps on PUT/POST if sent as a list
-        // or we stringify it if the backend expects a string.
-        // Given the serializer changes, sending a list should be fine.
-        next_steps: clientNextSteps || [] // Send as array, serializer handles it
-      };
-
-      const isExistingStep = clientStepId && !String(clientStepId).startsWith('temp-') && existingStepsServer.some(s => s.id === clientStepId);
-
-      if (isExistingStep) {
-        // This is an existing step, update it
-        try {
-          const updatedServerStep = await api.put(`/workflow-steps/${clientStepId}/`, payloadForSave);
-          stepsToProcessForNextStepsUpdate.push({ ...updatedServerStep.data, clientOriginalNextSteps: clientNextSteps });
-        } catch (error) {
-          console.error(`Error updating existing step ${clientStepId}:`, error.response?.data || error.message);
-          toast.error(`Falha ao atualizar o passo "${clientStep.name}".`);
-          // Optionally re-throw or collect errors
-        }
-      } else {
-        // This is a new step (either has temp-id or no id, or id not in existingStepsServer)
-        // IMPORTANT: Do NOT send the clientStepId if it's a temp-id or for new creation
-        const { id, ...payloadForCreate } = payloadForSave; // Explicitly remove 'id' if it was a temp-id
-
-        try {
-          const newServerStep = await api.post('/workflow-steps/', payloadForCreate);
-          if (clientStepId && String(clientStepId).startsWith('temp-')) {
-            tempIdToRealIdMap[clientStepId] = newServerStep.data.id;
+    mutationFn: async (workflowToUpdate) => {
+      const { id: workflowId, steps: clientStepsFromPayload, ...definitionData } = workflowToUpdate;
+  
+      await api.put(`/workflow-definitions/${workflowId}/`, definitionData);
+  
+      const serverStepsResponse = await api.get(`/workflow-steps/?workflow=${workflowId}`);
+      const existingServerSteps = serverStepsResponse.data;
+  
+      const tempIdToRealIdMap = {};
+      const finalStepsCollection = [];
+  
+      const clientStepIdsPresent = new Set();
+  
+      for (const clientStep of clientStepsFromPayload) {
+        const { id: clientStepId, next_steps: clientOriginalNextSteps, previous_steps, ...stepBasicData } = clientStep;
+        if(clientStepId) clientStepIdsPresent.add(clientStepId);
+  
+        const stepPayloadForSave = { ...stepBasicData, workflow: workflowId, next_steps: [] };
+  
+        if (clientStepId && String(clientStepId).startsWith('temp-')) {
+          try {
+            const createdServerStep = await api.post('/workflow-steps/', stepPayloadForSave);
+            tempIdToRealIdMap[clientStepId] = createdServerStep.data.id;
+            finalStepsCollection.push({ serverDataAfterUpdate: createdServerStep.data, clientOriginalNextSteps });
+            clientStepIdsPresent.add(createdServerStep.data.id);
+          } catch (e) { console.error("Error creating new step during update:", e); toast.error(`Erro ao criar passo ${stepBasicData.name}.`); throw e; }
+        } else if (clientStepId) {
+          const serverMatch = existingServerSteps.find(ss => ss.id === clientStepId);
+          if (serverMatch) {
+            try {
+              const updatedServerStep = await api.put(`/workflow-steps/${clientStepId}/`, stepPayloadForSave);
+              finalStepsCollection.push({ serverDataAfterUpdate: updatedServerStep.data, clientOriginalNextSteps });
+            } catch (e) { console.error("Error updating existing step:", e); toast.error(`Erro ao atualizar passo ${stepBasicData.name}.`); throw e; }
+          } else {
+             console.warn(`Step ID ${clientStepId} (non-temp) from client not found on server. Attempting to create.`);
+             try {
+              const createdAsNewServerStep = await api.post('/workflow-steps/', stepPayloadForSave);
+              finalStepsCollection.push({ serverDataAfterUpdate: createdAsNewServerStep.data, clientOriginalNextSteps });
+              clientStepIdsPresent.add(createdAsNewServerStep.data.id);
+            } catch (e) { console.error("Error creating step that client thought was existing:", e); toast.error(`Erro ao (re)criar passo ${stepBasicData.name}.`); throw e; }
           }
-          stepsToProcessForNextStepsUpdate.push({ ...newServerStep.data, clientOriginalNextSteps: clientNextSteps });
-        } catch (error) {
-          console.error("Error creating new step:", error.response?.data || error.message, "Payload:", payloadForCreate);
-          toast.error(`Falha ao criar o novo passo "${clientStep.name}".`);
-          // Optionally re-throw or collect errors
+        } else {
+           console.error("Client step found without an ID during update process:", clientStep);
+           toast.error("Erro interno: Passo sem ID encontrado durante a atualização.");
         }
       }
-    }
-
-    // 4. Delete steps that were removed on the client
-    for (const serverStep of existingStepsServer) {
-      if (!updatedWorkflow.steps.some(cs => cs.id === serverStep.id)) {
-        try {
-          await api.delete(`/workflow-steps/${serverStep.id}/`);
-        } catch (error) {
-          console.error(`Error deleting step ${serverStep.id}:`, error.response?.data || error.message);
-          toast.warn(`Falha ao remover o passo "${serverStep.name}". Pode ser necessário ajuste manual.`);
+  
+      for (const serverStep of existingServerSteps) {
+        const isStillPresent = finalStepsCollection.some(fsc => fsc.serverDataAfterUpdate.id === serverStep.id);
+        if (!isStillPresent) {
+          try {
+            await api.delete(`/workflow-steps/${serverStep.id}/`);
+          } catch (e) { console.error("Error deleting step:", e); toast.warn(`Erro ao deletar passo ${serverStep.name}.`); }
         }
       }
-    }
-
-    // 5. Second pass to update next_steps for all relevant steps (newly created and existing)
-    // This ensures all next_step IDs refer to actual database IDs.
-    for (const stepToUpdate of stepsToProcessForNextStepsUpdate) {
-      const realNextStepIds = (stepToUpdate.clientOriginalNextSteps || [])
-        .map(nextId => {
-          if (String(nextId).startsWith('temp-')) {
-            return tempIdToRealIdMap[nextId]; // Map temp ID to real ID
+      
+      for (const { serverDataAfterUpdate, clientOriginalNextSteps } of finalStepsCollection) {
+        let realNextStepIds = [];
+        if (clientOriginalNextSteps && clientOriginalNextSteps.length > 0) {
+          realNextStepIds = clientOriginalNextSteps.map(tempOrRealNextId => {
+            const mappedId = tempIdToRealIdMap[tempOrRealNextId] || tempOrRealNextId;
+            if (!finalStepsCollection.some(fsc => fsc.serverDataAfterUpdate.id === mappedId)) {
+              console.warn(`During next_steps update for step ${serverDataAfterUpdate.id}: ID ${tempOrRealNextId} mapped to ${mappedId}, which is not in the final step list. Skipping.`);
+              return null;
+            }
+            return mappedId;
+          }).filter(id => id !== null);
+        }
+  
+        const existingNextStepsOnServer = serverDataAfterUpdate.next_steps || [];
+        const sortedRealNextStepIds = [...realNextStepIds].sort();
+        const sortedExistingNextStepsOnServer = [...existingNextStepsOnServer].sort();
+  
+        if (JSON.stringify(sortedRealNextStepIds) !== JSON.stringify(sortedExistingNextStepsOnServer)) {
+          try {
+            await api.patch(`/workflow-steps/${serverDataAfterUpdate.id}/`, { next_steps: realNextStepIds });
+          } catch (error) {
+            console.error(`Error updating next_steps for step ${serverDataAfterUpdate.id}:`, error.response?.data || error.message);
+            toast.warn(`Falha ao conectar os próximos passos para "${serverDataAfterUpdate.name}". Verifique manualmente.`);
           }
-          return nextId; // It's already a real ID (or was from an existing step)
-        })
-        .filter(id => id != null && stepsToProcessForNextStepsUpdate.some(s => s.id === id)); // Ensure the target ID exists in our final list
-
-      if (JSON.stringify(realNextStepIds) !== JSON.stringify(stepToUpdate.next_steps || [])) { // Only update if changed
-        try {
-          await api.patch(`/workflow-steps/${stepToUpdate.id}/`, {
-            next_steps: realNextStepIds // Send as an array
-          });
-        } catch (error) {
-          console.error(`Error updating next_steps for step ${stepToUpdate.id}:`, error.response?.data || error.message);
-          toast.warn(`Falha ao atualizar conexões para o passo "${stepToUpdate.name}".`);
         }
       }
-    }
-
-    return updatedWorkflow; // Or fetch the updated workflow definition again for consistency
-  },
-  ...mutationOptions("atualizado")
-});
+      
+      const updatedDefinition = await api.get(`/workflow-definitions/${workflowId}/`);
+      const updatedSteps = await api.get(`/workflow-steps/?workflow=${workflowId}`);
+      return { ...updatedDefinition.data, steps: updatedSteps.data };
+    },
+    ...mutationOptions("atualizado")
+  });
 
   const deleteWorkflowMutation = useMutation({
     mutationFn: (workflowId) => api.delete(`/workflow-definitions/${workflowId}/`),
@@ -465,7 +388,7 @@ const updateWorkflowMutation = useMutation({
     const matchesSearch = !searchTerm ||
       workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (workflow.description && workflow.description.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = filters.isActive ? workflow.is_active === true : true; // If not filtering by active, show all
+    const matchesStatus = filters.isActive ? workflow.is_active === true : true;
     return matchesSearch && matchesStatus;
   }), [workflows, searchTerm, filters.isActive]);
 
@@ -483,16 +406,13 @@ const updateWorkflowMutation = useMutation({
     }
   }, [deleteWorkflowMutation]);
 
-  const handleEditWorkflow = useCallback(async (workflow) => {
+  const handleEditWorkflow = useCallback(async (workflowDefinitionToEdit) => {
     try {
-      const response = await api.get(`/workflow-steps/?workflow=${workflow.id}`);
-      const steps = response.data.map(step => ({
-        ...step,
-        next_steps: Array.isArray(step.next_steps) ? step.next_steps :
-          (typeof step.next_steps === 'string' && step.next_steps.startsWith('[')) ? JSON.parse(step.next_steps) : []
-      }));
-      setEditingWorkflow({ ...workflow, steps });
-      setShowCreateForm(false); // Ensure only one form is open
+      const stepsResponse = await api.get(`/workflow-steps/?workflow=${workflowDefinitionToEdit.id}`);
+      const stepsFromServer = stepsResponse.data;
+      
+      setEditingWorkflow({ ...workflowDefinitionToEdit, steps: stepsFromServer });
+      setShowCreateForm(false);
       setViewingWorkflow(null);
     } catch (error) {
       console.error('Error fetching workflow steps for editing:', error);
@@ -578,7 +498,6 @@ const updateWorkflowMutation = useMutation({
             </motion.div>
           ) : (
             <motion.div key="list" variants={itemVariants}>
-              {/* Filtros e pesquisa */}
               <motion.div variants={itemVariants} style={{ ...glassStyle, padding: '1.5rem', marginBottom: '2rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                   <div style={{ position: 'relative', flexGrow: 1, minWidth: '250px' }}>
@@ -595,7 +514,6 @@ const updateWorkflowMutation = useMutation({
                 </div>
               </motion.div>
 
-              {/* Lista de workflows */}
               <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden' }}>
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><ListChecks style={{ color: 'rgb(52,211,153)' }} size={20} /></div>

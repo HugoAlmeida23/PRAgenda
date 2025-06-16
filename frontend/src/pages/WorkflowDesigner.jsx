@@ -28,7 +28,6 @@ import { toast } from 'react-toastify';
 import api from '../api';
 import { useQuery } from '@tanstack/react-query';
 
-// Glass styles
 const glassStyle = {
   background: 'rgba(255, 255, 255, 0.05)',
   backdropFilter: 'blur(10px)',
@@ -42,7 +41,6 @@ const itemVariants = {
   exit: { opacity: 0, y: -10, transition: { duration: 0.2 } }
 };
 
-// Connection types
 const CONNECTION_TYPES = {
   SEQUENTIAL: 'sequential',
   CONDITIONAL: 'conditional',
@@ -96,12 +94,8 @@ const WorkflowDesigner = ({
     if (existingWorkflow) {
       const processedSteps = (existingWorkflow.steps || []).map(step => ({
         ...step,
-        next_steps: Array.isArray(step.next_steps) ? step.next_steps :
-          (typeof step.next_steps === 'string' && step.next_steps.startsWith('[')) ? 
-          JSON.parse(step.next_steps) : [],
-        previous_steps: Array.isArray(step.previous_steps) ? step.previous_steps :
-          (typeof step.previous_steps === 'string' && step.previous_steps.startsWith('[')) ? 
-          JSON.parse(step.previous_steps) : []
+        next_steps: Array.isArray(step.next_steps) ? step.next_steps : [],
+        previous_steps: (step.previous_steps_info || []).map(ps => ps.id),
       }));
 
       setWorkflowData({
@@ -160,7 +154,6 @@ const WorkflowDesigner = ({
         .filter((_, i) => i !== indexToRemove)
         .map((step, i) => ({ ...step, order: i + 1 }));
 
-      // Remove references to deleted step from all other steps
       const deletedStepId = stepToRemove.id;
       const finalSteps = updatedSteps.map(step => ({
         ...step,
@@ -188,11 +181,9 @@ const WorkflowDesigner = ({
     else if (editingStepIndex === newIndex) setEditingStepIndex(index);
   };
 
-  // Auto-connection logic based on connection type
   const generateConnections = useCallback(() => {
     const steps = [...workflowData.steps];
     
-    // Clear existing connections
     steps.forEach(step => {
       step.next_steps = [];
       step.previous_steps = [];
@@ -200,7 +191,6 @@ const WorkflowDesigner = ({
 
     switch (connectionType) {
       case CONNECTION_TYPES.SEQUENTIAL:
-        // Each step connects to the next one
         for (let i = 0; i < steps.length - 1; i++) {
           steps[i].next_steps = [steps[i + 1].id];
           steps[i + 1].previous_steps = [steps[i].id];
@@ -208,22 +198,18 @@ const WorkflowDesigner = ({
         break;
 
       case CONNECTION_TYPES.CONDITIONAL:
-        // First step connects to all others, others only to last
         if (steps.length > 1) {
           const firstStep = steps[0];
           const lastStep = steps[steps.length - 1];
           
-          // First step can go to any other step
           firstStep.next_steps = steps.slice(1).map(s => s.id);
           
-          // All middle steps connect to first and last
           for (let i = 1; i < steps.length - 1; i++) {
             steps[i].previous_steps = [firstStep.id];
             steps[i].next_steps = [lastStep.id];
             lastStep.previous_steps = steps.slice(1, -1).map(s => s.id);
           }
           
-          // Last step receives from all middle steps
           if (steps.length > 2) {
             lastStep.previous_steps = steps.slice(1, -1).map(s => s.id);
           } else {
@@ -233,7 +219,6 @@ const WorkflowDesigner = ({
         break;
 
       case CONNECTION_TYPES.PARALLEL:
-        // All steps can connect to all other steps
         steps.forEach((step, index) => {
           const otherSteps = steps.filter((_, i) => i !== index);
           step.next_steps = otherSteps.map(s => s.id);
@@ -242,8 +227,7 @@ const WorkflowDesigner = ({
         break;
 
       case CONNECTION_TYPES.CUSTOM:
-        // Don't auto-generate, keep existing connections
-        return workflowData.steps;
+        return workflowData.steps.map(s => ({ ...s })); // Return a copy to avoid direct state mutation if custom logic modifies it
     }
 
     return steps;
@@ -253,28 +237,23 @@ const WorkflowDesigner = ({
     const connectedSteps = generateConnections();
     setWorkflowData(prev => ({ ...prev, steps: connectedSteps }));
     setShowConnectionPreview(true);
-    
-    // Validate connections
     validateConnections(connectedSteps);
   };
 
   const validateConnections = (steps) => {
     const errors = [];
-    
-    // Check for orphaned steps (no connections)
     const orphanedSteps = steps.filter(step => 
-      step.next_steps.length === 0 && step.previous_steps.length === 0
+      (step.next_steps || []).length === 0 && (step.previous_steps || []).length === 0
     );
     
     if (orphanedSteps.length > 0 && steps.length > 1) {
       errors.push(`Passos isolados encontrados: ${orphanedSteps.map(s => s.name).join(', ')}`);
     }
 
-    // Check for circular references
     const hasCircularRef = (stepId, visited = new Set(), path = []) => {
       if (visited.has(stepId)) {
         if (path.includes(stepId)) {
-          return true; // Circular reference found
+          return true;
         }
         return false;
       }
@@ -285,12 +264,11 @@ const WorkflowDesigner = ({
       const step = steps.find(s => s.id === stepId);
       if (step) {
         for (let nextId of step.next_steps || []) {
-          if (hasCircularRef(nextId, visited, [...path])) {
+          if (hasCircularRef(nextId, new Set(visited), [...path])) { // Pass copies of visited and path
             return true;
           }
         }
       }
-      
       return false;
     };
 
@@ -301,17 +279,16 @@ const WorkflowDesigner = ({
       }
     }
 
-    // Check for invalid references
     const allStepIds = steps.map(s => s.id);
     steps.forEach(step => {
-      const invalidNext = step.next_steps.filter(id => !allStepIds.includes(id));
-      const invalidPrev = step.previous_steps.filter(id => !allStepIds.includes(id));
+      const invalidNext = (step.next_steps || []).filter(id => !allStepIds.includes(id));
+      const invalidPrev = (step.previous_steps || []).filter(id => !allStepIds.includes(id));
       
       if (invalidNext.length > 0) {
-        errors.push(`Passo "${step.name}" tem referências inválidas em next_steps`);
+        errors.push(`Passo "${step.name}" tem referências inválidas em next_steps: ${invalidNext.join(', ')}`);
       }
       if (invalidPrev.length > 0) {
-        errors.push(`Passo "${step.name}" tem referências inválidas em previous_steps`);
+        errors.push(`Passo "${step.name}" tem referências inválidas em previous_steps: ${invalidPrev.join(', ')}`);
       }
     });
 
@@ -329,41 +306,29 @@ const WorkflowDesigner = ({
       return;
     }
 
-    // Generate final connections based on selected type
-    const finalSteps = generateConnections();
+    const finalStepsWithConnections = generateConnections();
     
-    // Validate connections before saving
-    if (!validateConnections(finalSteps)) {
+    if (!validateConnections(finalStepsWithConnections)) {
       toast.error('Existem erros nas conexões do workflow. Verifique os erros exibidos.');
       return;
     }
+    
+    const stepsForPayload = finalStepsWithConnections.map(step => {
+      const { previous_steps, ...stepPayload } = step; 
+      return stepPayload;
+    });
 
     const workflowToSave = {
       ...workflowData,
-      steps: finalSteps
+      steps: stepsForPayload,
     };
-
-    console.log("=== FINAL WORKFLOW DATA BEING SAVED ===");
-    console.log("Workflow name:", workflowToSave.name);
-    console.log("Connection type:", connectionType);
-    console.log("Steps count:", workflowToSave.steps.length);
     
-    workflowToSave.steps.forEach((step, index) => {
-      console.log(`Step ${index + 1}:`, {
-        id: step.id,
-        name: step.name,
-        order: step.order,
-        next_steps: step.next_steps,
-        previous_steps: step.previous_steps,
-        next_steps_count: step.next_steps ? step.next_steps.length : 0,
-        previous_steps_count: step.previous_steps ? step.previous_steps.length : 0
-      });
-    });
-    
-    console.log("Full workflow data:", JSON.stringify(workflowToSave, null, 2));
-    console.log("=== END FINAL WORKFLOW DATA ===");
-    
-    onSave(workflowToSave);
+    if (typeof onSave === 'function') {
+        onSave(workflowToSave);
+    } else {
+        console.error("WorkflowDesigner: onSave prop is not a function! Received:", onSave, "Type:", typeof onSave);
+        toast.error("Erro crítico: Ação de salvar não está disponível. Contacte o suporte.");
+    }
   };
 
   const toggleEditStep = (index) => setEditingStepIndex(editingStepIndex === index ? null : index);
@@ -404,7 +369,6 @@ const WorkflowDesigner = ({
     gap: '0.5rem'
   });
 
-  // Get connection description for UI
   const getConnectionDescription = (type) => {
     switch (type) {
       case CONNECTION_TYPES.SEQUENTIAL:
@@ -436,7 +400,6 @@ const WorkflowDesigner = ({
         </div>
       </div>
 
-      {/* Basic workflow details */}
       <motion.div variants={itemVariants} style={{ ...glassStyle, background: 'rgba(255,255,255,0.03)', padding: '1.5rem', marginBottom: '2rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1.5rem', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div>
@@ -479,7 +442,6 @@ const WorkflowDesigner = ({
         </div>
       </motion.div>
 
-      {/* Connection type selector */}
       <motion.div variants={itemVariants} style={{ ...glassStyle, background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.2)', padding: '1.5rem', marginBottom: '2rem' }}>
         <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'rgb(139,194,255)' }}>
           <GitBranch size={20} />
@@ -569,7 +531,6 @@ const WorkflowDesigner = ({
           )}
         </div>
 
-        {/* Connection errors */}
         {connectionErrors.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, height: 0 }}
@@ -595,7 +556,6 @@ const WorkflowDesigner = ({
         )}
       </motion.div>
 
-      {/* Steps list */}
       <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h3 style={{ fontSize: '1.125rem', fontWeight: '600', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -627,7 +587,6 @@ const WorkflowDesigner = ({
                     </span>
                     <h4 style={{ margin: 0, fontWeight: '600', color: 'white' }}>{step.name}</h4>
                     
-                    {/* Connection indicators */}
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       {step.previous_steps && step.previous_steps.length > 0 && (
                         <span style={{ 
@@ -795,7 +754,6 @@ const WorkflowDesigner = ({
                           )}
                         </div>
                         
-                        {/* Connection details display */}
                         {showConnectionPreview && (
                           <div style={{ 
                             ...glassStyle, 
@@ -815,7 +773,6 @@ const WorkflowDesigner = ({
                             </label>
                             
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                              {/* Previous steps */}
                               <div>
                                 <div style={{ 
                                   fontSize: '0.75rem', 
@@ -823,7 +780,7 @@ const WorkflowDesigner = ({
                                   color: 'rgb(147,51,234)', 
                                   marginBottom: '0.5rem' 
                                 }}>
-                                  Passos Anteriores ({step.previous_steps?.length || 0})
+                                  Passos Anteriores ({(step.previous_steps || []).length})
                                 </div>
                                 <div style={{ 
                                   minHeight: '60px', 
@@ -833,8 +790,8 @@ const WorkflowDesigner = ({
                                   borderRadius: '6px',
                                   fontSize: '0.75rem'
                                 }}>
-                                  {step.previous_steps && step.previous_steps.length > 0 ? (
-                                    step.previous_steps.map(prevId => {
+                                  {(step.previous_steps || []).length > 0 ? (
+                                    (step.previous_steps || []).map(prevId => {
                                       const prevStep = workflowData.steps.find(s => s.id === prevId);
                                       return prevStep ? (
                                         <div key={prevId} style={{ 
@@ -858,7 +815,6 @@ const WorkflowDesigner = ({
                                 </div>
                               </div>
                               
-                              {/* Next steps */}
                               <div>
                                 <div style={{ 
                                   fontSize: '0.75rem', 
@@ -866,7 +822,7 @@ const WorkflowDesigner = ({
                                   color: 'rgb(52,211,153)', 
                                   marginBottom: '0.5rem' 
                                 }}>
-                                  Próximos Passos ({step.next_steps?.length || 0})
+                                  Próximos Passos ({(step.next_steps || []).length})
                                 </div>
                                 <div style={{ 
                                   minHeight: '60px', 
@@ -876,8 +832,8 @@ const WorkflowDesigner = ({
                                   borderRadius: '6px',
                                   fontSize: '0.75rem'
                                 }}>
-                                  {step.next_steps && step.next_steps.length > 0 ? (
-                                    step.next_steps.map(nextId => {
+                                  {(step.next_steps || []).length > 0 ? (
+                                    (step.next_steps || []).map(nextId => {
                                       const nextStep = workflowData.steps.find(s => s.id === nextId);
                                       return nextStep ? (
                                         <div key={nextId} style={{ 
@@ -913,7 +869,6 @@ const WorkflowDesigner = ({
         )}
       </motion.div>
 
-      {/* Add new step form */}
       <motion.div 
         variants={itemVariants} 
         style={{ 
@@ -1020,7 +975,6 @@ const WorkflowDesigner = ({
         </div>
       </motion.div>
 
-      {/* Workflow visualization */}
       {workflowData.steps.length > 0 && (
         <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
           <h3 style={{ 
@@ -1070,7 +1024,6 @@ const WorkflowDesigner = ({
                 gap: '1rem',
                 minWidth: 'max-content' 
               }}>
-                {/* Flow visualization */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                   {workflowData.steps.map((step, index) => (
                     <React.Fragment key={`flow-view-${step.id || index}`}>
@@ -1119,7 +1072,6 @@ const WorkflowDesigner = ({
                             </div>
                           )}
                           
-                          {/* Connection counts */}
                           <div style={{ 
                             display: 'flex', 
                             justifyContent: 'space-between', 
@@ -1127,10 +1079,10 @@ const WorkflowDesigner = ({
                             fontSize: '0.6rem'
                           }}>
                             <span style={{ color: 'rgb(147,51,234)' }}>
-                              ← {step.previous_steps?.length || 0}
+                              ← {(step.previous_steps || []).length}
                             </span>
                             <span style={{ color: 'rgb(52,211,153)' }}>
-                              → {step.next_steps?.length || 0}
+                              → {(step.next_steps || []).length}
                             </span>
                           </div>
                         </div>
@@ -1148,7 +1100,6 @@ const WorkflowDesigner = ({
                   ))}
                 </div>
                 
-                {/* Connection matrix visualization */}
                 {workflowData.steps.length > 1 && (
                   <div style={{ 
                     marginTop: '1.5rem',
@@ -1171,7 +1122,6 @@ const WorkflowDesigner = ({
                       gap: '0.5rem',
                       alignItems: 'center'
                     }}>
-                      {/* Header row */}
                       <div></div>
                       {workflowData.steps.map((step, i) => (
                         <div key={`header-${i}`} style={{ 
@@ -1184,7 +1134,6 @@ const WorkflowDesigner = ({
                         </div>
                       ))}
                       
-                      {/* Connection grid */}
                       {workflowData.steps.map((fromStep, fromIndex) => (
                         <React.Fragment key={`row-${fromIndex}`}>
                           <div style={{ 
@@ -1196,7 +1145,7 @@ const WorkflowDesigner = ({
                           </div>
                           
                           {workflowData.steps.map((toStep, toIndex) => {
-                            const isConnected = fromStep.next_steps?.includes(toStep.id);
+                            const isConnected = (fromStep.next_steps || []).includes(toStep.id);
                             const isSelf = fromIndex === toIndex;
                             
                             return (
@@ -1229,7 +1178,6 @@ const WorkflowDesigner = ({
         </motion.div>
       )}
 
-      {/* Action buttons */}
       <motion.div 
         variants={itemVariants} 
         style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}
@@ -1262,7 +1210,6 @@ const WorkflowDesigner = ({
         </motion.button>
       </motion.div>
 
-      {/* Help section */}
       <motion.div 
         variants={itemVariants} 
         style={{ 

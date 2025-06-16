@@ -53,27 +53,21 @@ const ErrorView = ({ message, onRetry }) => (
   </div>
 );
 
-// Fetching function for TIME ENTRIES ONLY, now with backend filtering
+// Fetching functions
 const fetchTimeEntriesOnly = async (userId, timeEntryFiltersFromStore) => {
   const params = new URLSearchParams();
   
-  // Apply filters from the store to query parameters
   if (timeEntryFiltersFromStore.startDate) params.append('start_date', timeEntryFiltersFromStore.startDate);
   if (timeEntryFiltersFromStore.endDate) params.append('end_date', timeEntryFiltersFromStore.endDate);
   if (timeEntryFiltersFromStore.client) params.append('client', timeEntryFiltersFromStore.client);
   if (timeEntryFiltersFromStore.searchQuery) params.append('search', timeEntryFiltersFromStore.searchQuery);
-  // Add other filters like task_id, user_id (for admins) if implemented in TimeEntryViewSet
-  // if (timeEntryFiltersFromStore.task) params.append('task', timeEntryFiltersFromStore.task);
-  // if (permissions.isOrgAdmin && timeEntryFiltersFromStore.user_id_param) params.append('user', timeEntryFiltersFromStore.user_id_param);
-
 
   if (timeEntryFiltersFromStore.sortField && timeEntryFiltersFromStore.sortDirection) {
     params.append('ordering', `${timeEntryFiltersFromStore.sortDirection === 'desc' ? '-' : ''}${timeEntryFiltersFromStore.sortField}`);
   } else {
-    params.append('ordering', '-date'); // Default sort by date descending
+    params.append('ordering', '-date');
   }
 
-  // Backend should scope to the current user by default if not admin or if no user_id_param is specified
   const endpoint = `/time-entries/?${params.toString()}`;
   const response = await api.get(endpoint);
   return response.data.results || response.data || [];
@@ -81,15 +75,13 @@ const fetchTimeEntriesOnly = async (userId, timeEntryFiltersFromStore) => {
 
 const fetchClientsForTimeEntry = async () => api.get("/clients/?is_active=true").then(res => res.data.results || res.data || []);
 const fetchTasksForTimeEntry = async (userId, selectedClientId) => {
-    let taskEndpoint = `/tasks/?status=pending,in_progress&limit=200`; // Fetch more tasks potentially
+    let taskEndpoint = `/tasks/?status=pending,in_progress&limit=200`;
     if (selectedClientId) {
         taskEndpoint += `&client=${selectedClientId}`;
     }
-    // Consider if tasks should be further scoped by user assignment here or rely on backend
     return api.get(taskEndpoint).then(res => res.data.results || res.data || []);
 };
 const fetchCategoriesForTimeEntry = async () => api.get("/task-categories/").then(res => res.data.results || res.data || []);
-
 
 const TimeEntry = () => {
     const queryClient = useQueryClient();
@@ -97,9 +89,9 @@ const TimeEntry = () => {
 
     const {
         showTimeEntryForm, toggleTimeEntryForm, isNaturalLanguageMode,
-        manualFormData, naturalLanguageInput, 
+        manualFormData, naturalLanguageInput, resetManualForm,
         nlpExtractedEntries, openNLPConfirmationDialog, closeNLPConfirmationDialog,
-        filters, // This 'filters' is from useTimeEntryStore for TimeEntry
+        filters,
         lastSavedEntryFeedback, setLastSavedEntryFeedback, clearLastSavedEntryFeedback,
     } = useTimeEntryStore();
 
@@ -123,7 +115,7 @@ const TimeEntry = () => {
         enabled: !!permissions.initialized && showTimeEntryForm,
     });
 
-    // Query for the list of Time Entries - this is the dynamic one
+    // Query for the list of Time Entries
     const { 
         data: timeEntries = [], 
         isLoading: isLoadingEntriesFirstTime,
@@ -132,23 +124,169 @@ const TimeEntry = () => {
         error: entriesError, 
         refetch: refetchTimeEntries 
     } = useQuery({
-        queryKey: ['timeEntries', permissions.userId, filters], // Filters from useTimeEntryStore included
+        queryKey: ['timeEntries', permissions.userId, filters],
         queryFn: () => fetchTimeEntriesOnly(permissions.userId, filters),
         staleTime: 1 * 60 * 1000,
         enabled: !!permissions.initialized && (permissions.isOrgAdmin || permissions.canLogTime || permissions.canViewTeamTime),
         keepPreviousData: true,
     });
 
-    // Mutations
-    const deleteTimeEntryMutation = useMutation({ /* ... as before ... */ });
-    const createTimeEntryMutation = useMutation({ /* ... as before ... */ });
-    const createNlpTimeEntryMutation = useMutation({ /* ... as before ... */ });
-    // Auto-tracking mutations would go here if UI was present
+    // Mutations - NOW PROPERLY IMPLEMENTED
+    const deleteTimeEntryMutation = useMutation({
+        mutationFn: async (entryId) => {
+            await api.delete(`/time-entries/${entryId}/`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
+            toast.success('Registo de tempo excluído com sucesso!');
+        },
+        onError: (error) => {
+            console.error('Erro ao excluir registo:', error);
+            toast.error('Erro ao excluir registo de tempo.');
+        }
+    });
 
-    const handleFormSubmit = useCallback(() => { /* ... as before ... */ }, [/* dependencies */]);
-    const handleConfirmNLPCreate = useCallback(() => { /* ... as before ... */ }, [/* dependencies */]);
-    const handleDuplicateEntry = useCallback((entryToDuplicate) => { /* ... as before ... */ }, [/* dependencies */]);
-    const handleDeleteEntry = useCallback((entryId) => { /* ... as before ... */ }, [/* dependencies */]);
+    const createTimeEntryMutation = useMutation({
+        mutationFn: async (timeEntryData) => {
+            const response = await api.post('/time-entries/', timeEntryData);
+            return response.data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
+            toast.success('Registo de tempo criado com sucesso!');
+            setLastSavedEntryFeedback(data, 'manual');
+            resetManualForm();
+            toggleTimeEntryForm(); // Close form
+        },
+        onError: (error) => {
+            console.error('Erro ao criar registo:', error);
+            toast.error(error.response?.data?.message || 'Erro ao criar registo de tempo.');
+        }
+    });
+
+    const createNlpTimeEntryMutation = useMutation({
+        mutationFn: async (nlpData) => {
+            const response = await api.post('/nlp-processor/create_time_entries/', nlpData);
+            return response.data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
+            toast.success(`${Array.isArray(data) ? data.length : 1} registo(s) criado(s) com IA!`);
+            setLastSavedEntryFeedback(data, 'nlp');
+            resetManualForm();
+            closeNLPConfirmationDialog();
+            toggleTimeEntryForm(); // Close form
+        },
+        onError: (error) => {
+            console.error('Erro ao criar registo via IA:', error);
+            toast.error(error.response?.data?.error || 'Erro ao processar com IA.');
+            closeNLPConfirmationDialog();
+        }
+    });
+
+    // Form submission handler - NOW PROPERLY IMPLEMENTED
+    const handleFormSubmit = useCallback(async () => {
+        try {
+            if (isNaturalLanguageMode) {
+                // NLP Mode - first process text to extract data
+                if (!naturalLanguageInput.trim()) {
+                    toast.error('Por favor, descreva sua atividade.');
+                    return;
+                }
+
+                const nlpPayload = {
+                    text: naturalLanguageInput,
+                    client_id: manualFormData.client || null,
+                    date: manualFormData.date,
+                    task_status_after: manualFormData.task_status_after
+                };
+
+                // For now, we'll directly create entries. 
+                // If you want confirmation dialog, you'd need to call a different endpoint first
+                createNlpTimeEntryMutation.mutate(nlpPayload);
+            } else {
+                // Manual Mode - validate and create
+                const requiredFields = ['client', 'description', 'minutes_spent', 'date'];
+                const missingFields = requiredFields.filter(field => !manualFormData[field]);
+                
+                if (missingFields.length > 0) {
+                    toast.error(`Campos obrigatórios em falta: ${missingFields.join(', ')}`);
+                    return;
+                }
+
+                if (manualFormData.minutes_spent <= 0) {
+                    toast.error('Minutos gastos deve ser maior que 0.');
+                    return;
+                }
+
+                // Prepare payload
+                const payload = {
+                    client: manualFormData.client,
+                    task: manualFormData.task || null,
+                    category: manualFormData.category || null,
+                    workflow_step: manualFormData.workflow_step || null,
+                    description: manualFormData.description,
+                    minutes_spent: parseInt(manualFormData.minutes_spent),
+                    date: manualFormData.date,
+                    start_time: manualFormData.start_time || null,
+                    end_time: manualFormData.end_time || null,
+                    task_status_after: manualFormData.task_status_after,
+                    advance_workflow: manualFormData.advance_workflow || false,
+                    workflow_step_completed: manualFormData.workflow_step_completed || false,
+                };
+
+                createTimeEntryMutation.mutate(payload);
+            }
+        } catch (error) {
+            console.error('Erro no handleFormSubmit:', error);
+            toast.error('Erro inesperado ao submeter formulário.');
+        }
+    }, [
+        isNaturalLanguageMode, 
+        naturalLanguageInput, 
+        manualFormData, 
+        createNlpTimeEntryMutation, 
+        createTimeEntryMutation
+    ]);
+
+    const handleConfirmNLPCreate = useCallback(() => {
+        if (!nlpExtractedEntries) return;
+        
+        const nlpPayload = {
+            text: naturalLanguageInput,
+            client_id: manualFormData.client || null,
+            date: manualFormData.date,
+            task_status_after: manualFormData.task_status_after
+        };
+
+        createNlpTimeEntryMutation.mutate(nlpPayload);
+    }, [nlpExtractedEntries, naturalLanguageInput, manualFormData, createNlpTimeEntryMutation]);
+
+    const handleDuplicateEntry = useCallback((entryToDuplicate) => {
+        resetManualForm({
+            client: entryToDuplicate.client,
+            task: entryToDuplicate.task || "",
+            category: entryToDuplicate.category || "",
+            description: entryToDuplicate.description,
+            minutes_spent: entryToDuplicate.minutes_spent,
+            date: new Date().toISOString().split("T")[0], // Today's date
+            start_time: entryToDuplicate.start_time || "",
+            end_time: entryToDuplicate.end_time || "",
+        });
+        
+        if (!showTimeEntryForm) {
+            toggleTimeEntryForm();
+        }
+        
+        toast.info('Formulário preenchido com dados do registo duplicado.');
+    }, [resetManualForm, showTimeEntryForm, toggleTimeEntryForm]);
+
+    const handleDeleteEntry = useCallback((entryId) => {
+        if (window.confirm('Tem a certeza que deseja excluir este registo de tempo?')) {
+            deleteTimeEntryMutation.mutate(entryId);
+        }
+    }, [deleteTimeEntryMutation]);
+
     const formatMinutesForDisplay = (minutes) => minutes != null ? `${Math.floor(minutes/60)}h ${minutes%60}m` : "0h 0m";
     
     // Loading and Error States for the Page
@@ -156,7 +294,6 @@ const TimeEntry = () => {
         permissions.loading || 
         isLoadingClients || 
         isLoadingCategories;
-        // isLoadingTasksDropdown is tied to form visibility, so not for initial page block
 
     const essentialStaticDataError = 
         (isErrorClients && !clients.length) ||
@@ -183,14 +320,14 @@ const TimeEntry = () => {
         return ( <ErrorView message="Acesso restrito à página de registo de tempos." /> );
     }
 
-    const FeedbackPopup = () => { /* ... as before ... */ };
-    const generateExcelReport = async () => { /* ... as before ... */ };
+    const generateExcelReport = async () => {
+        toast.info('Funcionalidade de exportação será implementada em breve.');
+    };
 
     return (
         <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
             <BackgroundElements />
             <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 99999 }}/>
-            <AnimatePresence><FeedbackPopup /></AnimatePresence>
 
             <motion.div initial="hidden" animate="visible" variants={containerVariants} style={{ position: 'relative', zIndex: 10, padding: '2rem', paddingTop: '1rem' }}>
                 <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -259,7 +396,7 @@ const TimeEntry = () => {
                                     </div>
                                 )}
                                 <TimeEntryList
-                                    timeEntriesData={timeEntries} // Already filtered and sorted by backend
+                                    timeEntriesData={timeEntries}
                                     onDeleteEntry={handleDeleteEntry}
                                     onDuplicateEntry={handleDuplicateEntry}
                                     permissions={permissions}

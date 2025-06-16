@@ -124,12 +124,6 @@ class NotificationTemplateService:
         template.message_template = template_data['message_template']
         template.default_priority = template_data['default_priority']
         
-        # Ensure `get_context_variables` is correctly bound if it's a staticmethod on NotificationTemplate
-        if hasattr(NotificationTemplate, 'get_context_variables') and isinstance(getattr(NotificationTemplate, 'get_context_variables'), staticmethod):
-            template.get_context_variables_method = NotificationTemplate.get_context_variables.__func__
-        else: # Fallback if not static or doesn't exist, should not happen if model is correct
-            template.get_context_variables_method = lambda self_param, task=None, user=None, workflow_step=None, **kwargs: {}
-
         def render_template(context_vars):
             try:
                 final_title = template.title_template.format(**context_vars)
@@ -144,7 +138,6 @@ class NotificationTemplateService:
                 return final_title, final_message
 
         template.render = render_template
-        template.get_context_variables = lambda task=None, user=None, workflow_step=None, **kwargs_ctx: template.get_context_variables_method(template, task=task, user=user, workflow_step=workflow_step, **kwargs_ctx)
         
         return template
     
@@ -181,16 +174,8 @@ class NotificationTemplateService:
         # Obter template
         template = NotificationTemplateService.get_template(organization, notification_type)
         
-        # Gerar contexto
-        # The 'template' object here is the SimpleNamespace from _get_system_default_template
-        # or an actual NotificationTemplate model instance.
-        # We need to call the get_context_variables method correctly.
-        if isinstance(template, NotificationTemplate): # Actual model instance
-            context = template.get_context_variables(task=task, user=user_target, workflow_step=workflow_step)
-        else: # SimpleNamespace from _get_system_default_template
-             context = template.get_context_variables(task=task, user=user_target, workflow_step=workflow_step)
+        context = NotificationTemplate.get_context_variables(task=task, user=user_target, workflow_step=workflow_step)
 
-        
         if created_by:
             context['changed_by_name'] = created_by.get_full_name() or created_by.username
         else:
