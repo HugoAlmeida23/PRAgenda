@@ -15,13 +15,13 @@ from django.core.exceptions import PermissionDenied
 
 from .models import (Organization, Client, TaskCategory, Task, TimeEntry, Expense, 
                     ClientProfitability, Profile, AutoTimeTracking, WorkflowStep,
-                    NLPProcessor, WorkflowDefinition, TaskApproval, WorkflowNotification,NotificationTemplate, 
+                    WorkflowDefinition, TaskApproval, WorkflowNotification,NotificationTemplate, 
                     WorkflowHistory,NotificationSettings, NotificationDigest, FiscalObligationDefinition, FiscalSystemSettings)
 
 from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializer,
                          TimeEntrySerializer, ExpenseSerializer, ClientProfitabilitySerializer,
                          ProfileSerializer, AutoTimeTrackingSerializer, OrganizationSerializer,
-                         UserSerializer, NLPProcessorSerializer, WorkflowDefinitionSerializer, 
+                         UserSerializer, WorkflowDefinitionSerializer, 
                          WorkflowStepSerializer, TaskApprovalSerializer, WorkflowNotificationSerializer,
                          WorkflowHistorySerializer, NotificationSettingsSerializer,NotificationTemplateSerializer,
                          NotificationDigestSerializer,FiscalGenerationRequestSerializer,FiscalStatsSerializer,
@@ -44,7 +44,7 @@ from dateutil.relativedelta import relativedelta
 
 
 
-logger = logging.getLogger(__name__) # Redundant
+logger = logging.getLogger(__name__)
 
 class FiscalObligationDefinitionViewSet(viewsets.ModelViewSet):
     serializer_class = FiscalObligationDefinitionSerializer
@@ -509,20 +509,27 @@ class TaskViewSet(viewsets.ModelViewSet):
                     client_instance = Client.objects.select_related('organization').get(id=client_id)
                     if client_instance.organization != profile.organization:
                          raise PermissionDenied("Não pode criar tarefa para cliente de outra organização.")
-                    if not profile.can_access_client(client_instance): # Checks visibility if not admin
+                    if not profile.can_access_client(client_instance):
                         raise PermissionDenied("Você não tem acesso a este cliente para criar tarefas")
                 except Client.DoesNotExist:
                     raise ValidationError({"client": "Cliente não encontrado."})
             else:
                 raise ValidationError({"client": "Cliente é obrigatório."})
 
-            task = serializer.save(created_by=self.request.user, client=client_instance) # Pass client instance
-
+            # Extrair dados do workflow antes de salvar
             workflow_id = self.request.data.get('workflow')
+            step_assignments = self.request.data.get('workflow_step_assignments', {})
+            
+            # Passar as atribuições para o método save
+            task = serializer.save(
+                created_by=self.request.user, 
+                client=client_instance,
+                workflow_step_assignments=step_assignments if workflow_id else {}
+            )
+
             if workflow_id:
                 try:
                     workflow = WorkflowDefinition.objects.get(id=workflow_id, is_active=True)
-                    # Add check: if workflow.organization and workflow.organization != profile.organization: PermissionDenied
                     first_step = workflow.steps.order_by('order').first()
                     if first_step:
                         task.workflow = workflow
@@ -540,13 +547,18 @@ class TaskViewSet(viewsets.ModelViewSet):
                     logger.warning(f"Workflow {workflow_id} não encontrado ou inativo para tarefa {task.id}.")
 
         except Profile.DoesNotExist:
-            # Superuser creation logic (if different)
             if self.request.user.is_superuser:
                 client_id = self.request.data.get('client')
                 if not client_id: raise ValidationError({"client": "Cliente é obrigatório."})
                 try:
                     client_instance = Client.objects.get(id=client_id)
-                    serializer.save(created_by=self.request.user, client=client_instance)
+                    # Adicionado para salvar atribuições para superuser também
+                    step_assignments = self.request.data.get('workflow_step_assignments', {})
+                    serializer.save(
+                        created_by=self.request.user, 
+                        client=client_instance,
+                        workflow_step_assignments=step_assignments
+                    )
                 except Client.DoesNotExist:
                     raise ValidationError({"client": "Cliente não encontrado."})
             else:
@@ -704,72 +716,63 @@ class TaskViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Perfil de usuário não encontrado")
 
     @action(detail=True, methods=['post'])
-    def advance_workflow(self, request, pk=None): # Manual advance action
+    def advance_workflow(self, request, pk=None):
         task = self.get_object()
         
         if not task.workflow or not task.current_workflow_step:
-            return Response({"error": "Esta tarefa não possui workflow ativo ou passo atual definido"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Esta tarefa não possui workflow ativo ou passo atual definido."}, status=status.HTTP_400_BAD_REQUEST)
         
-        next_step_id_manual = request.data.get('next_step_id') # This is the ID chosen by the user
+        next_step_id_manual = request.data.get('next_step_id')
         comment = request.data.get('comment', '')
         
-        # Permission check to manually advance (similar to your existing logic)
         try:
             profile = Profile.objects.get(user=request.user)
             current_step_being_advanced_from = task.current_workflow_step
-
-            can_advance_permission = (
-                profile.is_org_admin or 
-                profile.can_edit_all_tasks or 
-                (profile.can_edit_assigned_tasks and task.assigned_to == request.user) or
-                (current_step_being_advanced_from.assign_to == request.user) 
+            
+            # --- NOVA LÓGICA DE PERMISSÃO REFORÇADA ---
+            
+            # Obter o ID do utilizador atribuído ao passo atual a partir do JSON da tarefa
+            task_assignments = task.workflow_step_assignments or {}
+            assigned_user_id_for_current_step = task_assignments.get(str(current_step_being_advanced_from.id))
+            
+            # Verificar as permissões
+            can_advance_this_step = (
+                profile.is_org_admin or # 1. É admin da organização?
+                task.assigned_to == request.user or # 2. É o responsável principal da tarefa?
+                (assigned_user_id_for_current_step and str(assigned_user_id_for_current_step) == str(request.user.id)) # 3. Está atribuído a este passo específico?
             )
-            if not can_advance_permission:
-                raise PermissionDenied("Você não tem permissão para avançar este workflow")
 
-            # If the UI implies the current step is "done" by choosing a next step manually
-            # we should first mark the current step as completed.
-            if not WorkflowHistory.objects.filter(task=task, from_step=current_step_being_advanced_from, action__in=['step_completed', 'step_advanced', 'workflow_completed']).exists():
-                 WorkflowService.complete_step_and_advance(
-                    task=task,
-                    step_to_complete=current_step_being_advanced_from,
-                    user=request.user,
-                    completion_comment=comment or f"Passo '{current_step_being_advanced_from.name}' concluído para avançar manualmente.",
-                    next_step_id_manual=next_step_id_manual if next_step_id_manual != 'complete_workflow' else None
-                )
-                 # Special case: if user chose to complete workflow directly
-                 if next_step_id_manual == 'complete_workflow':
-                    task.refresh_from_db() # Ensure task status is updated
-                    if task.status == 'completed':
-                        return Response({"success": True, "message": "Workflow finalizado com sucesso."}, status=status.HTTP_200_OK)
-                    else:
-                        # This case should ideally not happen if complete_step_and_advance worked for completion
-                        return Response({"error": "Falha ao finalizar workflow."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if not can_advance_this_step:
+                raise PermissionDenied("Você não tem permissão para avançar este passo do workflow.")
 
-            else: # Current step was already marked completed, just try to advance with the choice
-                success, message = WorkflowService.advance_task_workflow(
-                    task=task,
-                    completed_step=current_step_being_advanced_from, # The step we are advancing FROM
-                    user=request.user,
-                    comment_for_advance=comment,
-                    next_step_id_manual=next_step_id_manual if next_step_id_manual != 'complete_workflow' else None
-                )
-                # Special case for completing workflow
-                if next_step_id_manual == 'complete_workflow' and success:
-                    task.refresh_from_db() # ensure status reflects completion
-                    return Response({"success": True, "message": "Workflow finalizado com sucesso."}, status=status.HTTP_200_OK)
-
+            # --- FIM DA NOVA LÓGICA DE PERMISSÃO ---
+            
+            # A lógica de serviço para avançar o workflow permanece a mesma
+            # A verificação de permissão agora acontece ANTES de chamar o serviço.
+            
+            success, message = WorkflowService.complete_step_and_advance(
+                task=task,
+                step_to_complete=current_step_being_advanced_from,
+                user=request.user,
+                completion_comment=comment or f"Passo '{current_step_being_advanced_from.name}' concluído para avançar.",
+                next_step_id_manual=next_step_id_manual if next_step_id_manual != 'complete_workflow' else None
+            )
 
             if success:
+                # Caso especial para finalização do workflow
+                if next_step_id_manual == 'complete_workflow':
+                    task.refresh_from_db()
+                    if task.status == 'completed':
+                        return Response({"success": True, "message": "Workflow finalizado com sucesso."}, status=status.HTTP_200_OK)
+
                 return Response({"success": True, "message": message}, status=status.HTTP_200_OK)
             else:
-                # If advance_task_workflow returned False (e.g. still needs manual choice, or error)
                 return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
 
         except Profile.DoesNotExist:
-            raise PermissionDenied("Perfil de usuário não encontrado")
-        except WorkflowStep.DoesNotExist: # Should be caught by WorkflowService now
-            return Response({"error": "Passo do workflow não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+            raise PermissionDenied("Perfil de usuário não encontrado.")
+        except WorkflowStep.DoesNotExist:
+            return Response({"error": "Passo do workflow não encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             logger.error(f"Error in TaskViewSet.advance_workflow: {e}", exc_info=True)
             return Response({"error": f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -782,87 +785,90 @@ class TaskViewSet(viewsets.ModelViewSet):
             return Response({"workflow": None, "message": "Tarefa não tem workflow atribuído."})
         
         workflow_definition = task.workflow
-        all_steps_qs = workflow_definition.steps.order_by('order')
+        all_steps_qs = workflow_definition.steps.order_by('order').select_related('assign_to')
         
         history_qs = WorkflowHistory.objects.filter(task=task).select_related(
-            'from_step', 'to_step', 'changed_by__profile' # Added profile for username if needed via serializer
+            'from_step', 'to_step', 'changed_by'
         ).order_by('-created_at')
         
         approvals_qs = TaskApproval.objects.filter(task=task).select_related(
-            'workflow_step', 'approved_by__profile' # Added profile for username if needed via serializer
+            'workflow_step', 'approved_by'
         )
         
         time_by_step = {}
         for step_obj in all_steps_qs:
-            step_time_entries = TimeEntry.objects.filter(task=task, workflow_step=step_obj)
-            total_minutes = step_time_entries.aggregate(total=models.Sum('minutes_spent'))['total'] or 0
+            total_minutes = TimeEntry.objects.filter(
+                task=task, workflow_step=step_obj
+            ).aggregate(total=models.Sum('minutes_spent'))['total'] or 0
             time_by_step[str(step_obj.id)] = total_minutes
 
-        completed_step_ids = set()
+        # --- INÍCIO DA LÓGICA CORRIGIDA ---
+
+        # FIX 2: Lógica de status de passos e progresso mais robusta
         workflow_is_completed = history_qs.filter(action='workflow_completed').exists()
         
-        current_step_in_definition = None
-        if task.current_workflow_step:
-            try: 
-                current_step_in_definition = all_steps_qs.get(id=task.current_workflow_step_id)
-            except WorkflowStep.DoesNotExist:
-                 logger.warning(f"Current step {task.current_workflow_step_id} for task {task.id} not found in definition {workflow_definition.id}. Workflow status might be inaccurate.")
-                 # task.current_workflow_step = None # Don't save here, just impacts display
-        
-        if workflow_is_completed and not current_step_in_definition :
+        completed_step_ids = set()
+        if workflow_is_completed:
+            # Se o workflow está marcado como completo, todos os passos estão completos.
             completed_step_ids.update(str(s.id) for s in all_steps_qs)
         else:
-            for entry in history_qs.filter(action__in=['step_completed', 'step_advanced']):
-                if entry.from_step_id:
-                    completed_step_ids.add(str(entry.from_step_id))
-            if current_step_in_definition:
-                for step_obj in all_steps_qs:
-                    if step_obj.order < current_step_in_definition.order:
-                        completed_step_ids.add(str(step_obj.id))
-        
+            # Caso contrário, um passo está completo se tiver um histórico de conclusão/avanço.
+            completed_history = history_qs.filter(action__in=['step_completed', 'step_advanced'])
+            completed_step_ids.update(str(entry.from_step_id) for entry in completed_history if entry.from_step_id)
+
         completed_count = len(completed_step_ids)
         total_steps_count = all_steps_qs.count()
+        percentage = (completed_count / total_steps_count) * 100 if total_steps_count > 0 else 0
+        
+        # FIX 1: Pré-carregar utilizadores e corrigir a busca por ID
+        task_step_assignments = task.workflow_step_assignments or {}
+        # Converte os valores (IDs de utilizador) para inteiros para a busca
+        user_ids_in_assignments = [int(uid) for uid in task_step_assignments.values() if uid and str(uid).isdigit()]
+        assigned_users = User.objects.in_bulk(user_ids_in_assignments)
 
-        if workflow_is_completed:
-            current_step_display_number = total_steps_count 
-            percentage = 100.0
-        elif current_step_in_definition:
-            current_step_display_number = current_step_in_definition.order
-            percentage = (completed_count / total_steps_count) * 100 if total_steps_count > 0 else 0.0
-        else: 
-            current_step_display_number = 1 if total_steps_count > 0 else 0 
-            percentage = 0.0
-
-
+        # Montar a resposta
         response_data = {
-            'task': TaskSerializer(task).data, # Serialize the task object
+            'task': TaskSerializer(task).data,
             'workflow': {
                 'id': workflow_definition.id,
                 'name': workflow_definition.name,
                 'is_completed': workflow_is_completed,
-                'steps': [], # Will be populated below
+                'steps': [],
                 'time_by_step': time_by_step,
+                # FIX 3: Estruturar corretamente os dados de progresso
                 'progress': {
-                    'current_step': current_step_display_number,
+                    'current_step': task.current_workflow_step.order if task.current_workflow_step else 0,
                     'completed_steps': completed_count,
                     'total_steps': total_steps_count,
                     'percentage': round(percentage, 1)
                 }
             },
-            'current_step_dynamic': WorkflowStepSerializer(current_step_in_definition).data if current_step_in_definition else None,
+            'current_step': WorkflowStepSerializer(task.current_workflow_step).data if task.current_workflow_step else None,
             'history': WorkflowHistorySerializer(history_qs[:50], many=True).data,
             'approvals': TaskApprovalSerializer(approvals_qs, many=True).data,
         }
 
         for step_obj in all_steps_qs:
             step_id_str = str(step_obj.id)
-            step_data = WorkflowStepSerializer(step_obj).data # Use serializer for consistency
-            step_data['is_current'] = current_step_in_definition is not None and current_step_in_definition.id == step_obj.id
+            step_data = WorkflowStepSerializer(step_obj).data
+            
+            # Lógica de atribuição de nome corrigida
+            assigned_user_id_str = task_step_assignments.get(step_id_str)
+            if assigned_user_id_str and str(assigned_user_id_str).isdigit():
+                user_obj = assigned_users.get(int(assigned_user_id_str)) # Busca com ID inteiro
+                step_data['assign_to_name'] = user_obj.username if user_obj else "Utilizador Desconhecido"
+            else:
+                step_data['assign_to_name'] = step_obj.assign_to.username if step_obj.assign_to else "Não atribuído"
+
+            step_data['is_current'] = task.current_workflow_step_id == step_obj.id
             step_data['is_completed'] = step_id_str in completed_step_ids
-            step_data['time_spent'] = time_by_step.get(step_id_str, 0)
+            
             response_data['workflow']['steps'].append(step_data)
+
+        # --- FIM DA LÓGICA CORRIGIDA ---
             
         return Response(response_data)
+
 
 class CreateUserView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -968,99 +974,107 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         
     def perform_create(self, serializer):
         user = self.request.user
+        profile = Profile.objects.get(user=user)
 
-        try:
-            profile = Profile.objects.get(user=user)
-            if not profile.can_log_time:
-                raise PermissionDenied("Você não tem permissão para registrar tempo")
-            
-            client_id = serializer.validated_data.get('client').id if serializer.validated_data.get('client') else None
-            if client_id:
-                client = Client.objects.get(id=client_id) # Already validated by serializer if client is a field
-                if client.organization != profile.organization and not profile.is_org_admin : # Org check
-                     raise PermissionDenied("Não pode registrar tempo para cliente de outra organização.")
-                if not profile.can_access_client(client):
-                    raise PermissionDenied("Você não tem acesso a este cliente para registrar tempo")
-            
-        except Profile.DoesNotExist:
-            if not user.is_superuser:
-                 raise PermissionDenied("Perfil de usuário não encontrado e sem permissão para registrar tempo")
-        # Client.DoesNotExist should be handled by serializer if client is required.
+        if not profile.can_log_time:
+            raise PermissionDenied("Você não tem permissão para registrar tempo.")
+
+        validated_data = serializer.validated_data
+        client = validated_data.get('client')
+        task = validated_data.get('task')
+        workflow_step = validated_data.get('workflow_step')
+
+        if not (profile.is_org_admin or profile.can_view_all_clients or profile.visible_clients.filter(id=client.id).exists()):
+            if not task:
+                 raise PermissionDenied("Você não tem acesso a este cliente para registrar tempo sem uma tarefa associada.")
+
+        if task:
+            if task.client != client:
+                raise ValidationError({"task": "A tarefa selecionada não pertence ao cliente selecionado."})
+
+            is_task_assignee = task.assigned_to == user
+            is_workflow_step_assignee = str(user.id) in (str(v) for v in (task.workflow_step_assignments or {}).values())
+
+            if not (is_task_assignee or is_workflow_step_assignee or profile.is_org_admin):
+                raise PermissionDenied("Você não tem acesso a esta tarefa para registrar tempo.")
+
+            if workflow_step:
+                if task.workflow is None or workflow_step.workflow != task.workflow:
+                    raise ValidationError({"workflow_step": "Este passo não pertence ao workflow da tarefa."})
+
+                assigned_user_id_for_step = (task.workflow_step_assignments or {}).get(str(workflow_step.id))
+                
+                if not profile.is_org_admin and str(assigned_user_id_for_step) != str(user.id):
+                    raise PermissionDenied(f"Você não pode registrar tempo no passo '{workflow_step.name}', pois está atribuído a outro utilizador.")
 
         time_entry = serializer.save(user=user)
-        
         self._process_workflow_and_status_for_time_entry(time_entry)
 
-    def _process_workflow_and_status_for_time_entry(self, time_entry: TimeEntry): # New combined helper
+    def _process_workflow_and_status_for_time_entry(self, time_entry: TimeEntry):
+        """
+        Processa as mudanças de status da tarefa e do workflow após a criação de um TimeEntry.
+        Esta é a versão CORRIGIDA.
+        """
         if not time_entry.task:
             return
 
         task = time_entry.task
         user = time_entry.user
         
+        # O passo do workflow onde o tempo foi registado.
         step_being_worked_on = time_entry.workflow_step
-        if not step_being_worked_on and task.current_workflow_step:
-            step_being_worked_on = task.current_workflow_step
-            time_entry.workflow_step = step_being_worked_on # Associate time entry with current step if not specified
-            # No need to save time_entry here if it's new, will be saved by serializer.
-            # If time_entry is existing and workflow_step is being updated, save is needed.
-            # However, this method is called after perform_create where it's already saved.
 
-        if step_being_worked_on: # Log work against the step
-            WorkflowService._log_workflow_history(
-                task=task, from_step=step_being_worked_on, to_step=None, 
-                changed_by=user, action='step_work_logged',
-                comment=f"Tempo: {time_entry.minutes_spent}m no passo '{step_being_worked_on.name}'. Desc: {time_entry.description}",
-                time_spent_minutes=time_entry.minutes_spent
-            )
-        
-        # Update task status based on time_entry.task_status_after
-        if time_entry.task_status_after != 'no_change':
-            old_status = task.status
-            new_status_from_time_entry = time_entry.task_status_after
-            
-            if new_status_from_time_entry not in [s[0] for s in Task.STATUS_CHOICES]:
-                logger.error(f"Status inválido '{new_status_from_time_entry}' para tarefa {task.id} em time_entry.")
-            else:
-                task.status = new_status_from_time_entry
-                if new_status_from_time_entry == 'completed':
-                    task.completed_at = timezone.now()
-                    # If completing task, also complete workflow if one is active
-                    if task.workflow and task.current_workflow_step:
-                        WorkflowService.advance_task_workflow(task, task.current_workflow_step, user, "Workflow finalizado: tarefa concluída via registro de tempo.")
-                        # advance_task_workflow will set current_workflow_step to None
-                elif old_status == 'completed' and new_status_from_time_entry != 'completed':
-                    task.completed_at = None
-                    # If reopening, and workflow was completed, potentially reset workflow
-                    if task.workflow and not task.current_workflow_step:
-                        first_step = task.workflow.steps.order_by('order').first()
-                        if first_step:
-                            task.current_workflow_step = first_step
-                            WorkflowService._log_workflow_history(
-                                task=task, from_step=None, to_step=first_step,
-                                changed_by=user, action='workflow_assigned', 
-                                comment=f"Workflow reativado para '{first_step.name}' ao reabrir tarefa (status: '{new_status_from_time_entry}')."
-                            )
-                            NotificationService.notify_step_ready(task, first_step, user)
-                task.save() # Save task status changes
-                logger.info(f"Status da tarefa {task.title} alterado de {old_status} para {new_status_from_time_entry} via time entry.")
-
-        # Advance workflow if requested and step was completed
+        # Se a flag para completar o passo foi marcada
         if step_being_worked_on and time_entry.workflow_step_completed:
-            if task.current_workflow_step == step_being_worked_on: # Only advance if current
+            # Apenas tenta completar se este for o passo atual da tarefa.
+            if task.current_workflow_step == step_being_worked_on:
+                logger.info(f"TimeEntry {time_entry.id}: Tentando completar o passo '{step_being_worked_on.name}' para a tarefa {task.id}.")
+                
+                # O serviço `complete_step_and_advance` já lida com o histórico, notificações e avanço.
                 WorkflowService.complete_step_and_advance(
                     task=task,
                     step_to_complete=step_being_worked_on,
                     user=user,
-                    completion_comment=f"Passo '{step_being_worked_on.name}' concluído via registro de tempo: {time_entry.description}",
-                    time_spent_on_step=time_entry.minutes_spent if time_entry.task_status_after == 'no_change' else None # Avoid double counting time if task status changed
-                    # next_step_id_manual is not typically provided from simple time entry
+                    completion_comment=f"Passo concluído via registo de tempo: {time_entry.description}",
+                    time_spent_on_step=time_entry.minutes_spent,
+                    # O serviço internamente decide se avança com base neste booleano.
+                    should_auto_advance=time_entry.advance_workflow 
                 )
             else:
-                logger.warning(f"Time entry {time_entry.id} marked step '{step_being_worked_on.name}' as completed, "
-                               f"but task {task.id} is currently on step '{task.current_workflow_step.name if task.current_workflow_step else 'None'}'. "
-                               "Workflow advancement from this specific step might be skipped if not current.")
-                        
+                logger.warning(
+                    f"TimeEntry {time_entry.id} marcou o passo '{step_being_worked_on.name}' como concluído, "
+                    f"mas o passo atual da tarefa {task.id} é '{task.current_workflow_step.name if task.current_workflow_step else 'Nenhum'}'. "
+                    "O avanço do workflow não será acionado a partir de um passo que não é o atual."
+                )
+        # Se o passo NÃO foi marcado como concluído, apenas regista o tempo no histórico.
+        elif step_being_worked_on:
+            WorkflowService._log_workflow_history(
+                task=task, from_step=step_being_worked_on, to_step=None, 
+                changed_by=user, action='step_work_logged',
+                comment=f"Tempo: {time_entry.minutes_spent}m. Desc: {time_entry.description}",
+                time_spent_minutes=time_entry.minutes_spent
+            )
+
+        # Atualiza o status da tarefa independentemente do workflow, se solicitado.
+        # É importante fazer isto *após* a lógica do workflow, pois a conclusão do workflow
+        # pode já ter alterado o status da tarefa para 'completed'.
+        if time_entry.task_status_after != 'no_change':
+            # Recarrega a tarefa para obter o status mais recente (pode ter sido alterado pelo workflow)
+            task.refresh_from_db()
+            
+            # Só altera o status se o novo status for diferente do atual.
+            # Evita, por exemplo, mudar de 'completed' (pelo workflow) para 'in_progress'.
+            if task.status != time_entry.task_status_after:
+                old_status = task.status
+                task.status = time_entry.task_status_after
+                if task.status == 'completed':
+                    task.completed_at = timezone.now()
+                elif old_status == 'completed':
+                    task.completed_at = None
+                
+                task.save(update_fields=['status', 'completed_at'])
+                logger.info(f"Status da tarefa {task.title} alterado de '{old_status}' para '{task.status}' via time entry.")
+
     def update(self, request, *args, **kwargs):
         try:
             profile = Profile.objects.get(user=request.user)
@@ -1172,7 +1186,7 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             status_code = status.HTTP_207_MULTI_STATUS if created_entries_data else status.HTTP_400_BAD_REQUEST
         
         return Response(response_payload, status=status_code)
-               
+    
 class ExpenseViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
@@ -1294,208 +1308,6 @@ class ClientProfitabilityViewSet(viewsets.ReadOnlyModelViewSet):
             if user.is_superuser:
                 return ClientProfitability.objects.select_related('client', 'client__account_manager')
             return ClientProfitability.objects.none()
-
-
-class NLPProcessorViewSet(viewsets.ModelViewSet):
-    queryset = NLPProcessor.objects.all() # NLP patterns are often global
-    serializer_class = NLPProcessorSerializer
-    permission_classes = [IsAuthenticated] 
-    
-    # For creating/editing patterns, usually restricted to admins
-    def perform_create(self, serializer):
-        if not self.request.user.is_staff: # Example: only staff/admins can create patterns
-            raise PermissionDenied("Apenas administradores podem criar padrões NLP.")
-        serializer.save()
-    # Add similar checks for update and destroy
-
-    @action(detail=False, methods=['post'])
-    def process_text(self, request):
-        text = request.data.get('text', '')
-        if not text:
-            return Response({'error': 'Text is required'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        results = NLPProcessor.process_text(text, request.user)
-        
-        response_data = {
-            'clients': [{'id': client.id, 'name': client.name} for client in results.get('clients', [])],
-            'categories': [{'id': category.id, 'name': category.name} for category in results.get('categories', [])],
-            'tasks': [{'id': task.id, 'title': task.title, 'client_id': str(task.client.id) if task.client else None, 'client_name': task.client.name if task.client else None} for task in results.get('tasks', [])],
-            'times': results['times'],
-            'activities': results['activities'],
-            'confidence': results['confidence']
-        }
-        return Response(response_data)
-    
-    @action(detail=False, methods=['post'])
-    def create_time_entries(self, request):
-        text = request.data.get('text', '')
-        client_id_param = request.data.get('client_id')
-        task_id_param = request.data.get('task_id')
-        date_str_param = request.data.get('date')
-        
-        if not text:
-            return Response({'error': 'Text is required'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        date_obj_for_entry = timezone.now().date()
-        if date_str_param:
-            try:
-                date_obj_for_entry = datetime.strptime(date_str_param, '%Y-%m-%d').date()
-            except ValueError:
-                return Response({'error': 'Invalid date format. Use YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        try:
-            profile = Profile.objects.get(user=request.user)
-            if not profile.can_log_time:
-                raise PermissionDenied("Você não tem permissão para registrar tempo via NLP.")
-        except Profile.DoesNotExist:
-             if not request.user.is_superuser:
-                raise PermissionDenied("Perfil não encontrado e sem permissão para registrar tempo.")
-
-        try:
-            entries = NLPProcessor.create_time_entries_from_text(
-                text, request.user, client_id_param, date_obj_for_entry, task_id_param
-            )
-            # After creation, process workflow and task status for each entry
-            task_viewset_instance = TaskViewSet()
-            task_viewset_instance.request = self.request
-            time_entry_viewset_instance = TimeEntryViewSet()
-            time_entry_viewset_instance.request = self.request
-
-            for entry in entries:
-                time_entry_viewset_instance._process_workflow_step(entry, task_viewset_instance)
-                time_entry_viewset_instance._update_task_status_if_needed(entry)
-
-            serializer = TimeEntrySerializer(entries, many=True)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except PermissionDenied as e: 
-            return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except Exception as e: 
-            logger.error(f"Error in NLP create_time_entries: {str(e)}")
-            return Response({'error': f"Erro ao processar: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-
-class GeminiNLPViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.gemini_service = GeminiService() 
-
-    @action(detail=False, methods=['post'])
-    def process_text(self, request):
-        text = request.data.get('text', '')
-        default_client_id = request.data.get('client_id')
-        
-        if not text:
-            return Response({'error': 'Text is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            # Fetching data needs to be permission-aware and efficient.
-            # This is a simplified example. A DataService or more complex queries are needed.
-            profile = request.user.profile if hasattr(request.user, 'profile') else None
-            organization = profile.organization if profile else None
-
-            clients_qs = Client.objects.none()
-            tasks_qs = Task.objects.none()
-
-            if organization:
-                clients_qs = Client.objects.filter(is_active=True, organization=organization)
-                tasks_qs = Task.objects.filter(status__in=['pending', 'in_progress'], client__organization=organization)
-                
-                if profile and not (profile.is_org_admin or profile.can_view_all_clients):
-                    clients_qs = clients_qs.filter(id__in=profile.visible_clients.values_list('id', flat=True))
-                if profile and not (profile.is_org_admin or profile.can_view_all_tasks):
-                    tasks_qs = tasks_qs.filter(Q(client_id__in=profile.visible_clients.values_list('id', flat=True)) | Q(assigned_to=request.user))
-            elif request.user.is_superuser: # Superuser might see all or a limited set for NLP
-                clients_qs = Client.objects.filter(is_active=True)[:200] # Limit for safety
-                tasks_qs = Task.objects.filter(status__in=['pending', 'in_progress'])[:500]
-
-            clients_data = ClientSerializer(clients_qs[:50], many=True).data 
-            tasks_data = TaskSerializer(tasks_qs.distinct()[:100], many=True).data 
-
-            default_client_data = None
-            if default_client_id:
-                try:
-                    default_client = Client.objects.get(id=default_client_id)
-                    if profile and not profile.can_access_client(default_client):
-                         return Response({'error': 'Acesso negado ao cliente padrão.'}, status=status.HTTP_403_FORBIDDEN)
-                    default_client_data = ClientSerializer(default_client).data
-                except Client.DoesNotExist:
-                    pass 
-            
-            extracted_info_wrapper = self.gemini_service.process_text(
-                text=text,
-                clients=clients_data,
-                tasks=tasks_data,
-                default_client=default_client_data
-            )
-            
-            if not extracted_info_wrapper.get('success', False):
-                return Response({'error': extracted_info_wrapper.get('error', 'Failed to process text with Gemini')}, 
-                                status=extracted_info_wrapper.get('status_code', status.HTTP_400_BAD_REQUEST))
-            
-            return Response(extracted_info_wrapper.get('data', {})) 
-            
-        except Exception as e:
-            logger.error(f"Error in Gemini process_text: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return Response({'error': f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    @action(detail=False, methods=['post'])
-    def create_time_entries(self, request):
-        # Implementation requires parsing Gemini's specific output format.
-        # This is a placeholder and would need careful implementation based on Gemini's response structure.
-        text = request.data.get('text', '')
-        # default_client_id = request.data.get('client_id')
-        # default_task_id = request.data.get('task_id')
-        # date_str = request.data.get('date')
-        # task_status_after = request.data.get('task_status_after', 'no_change')
-
-        if not text:
-            return Response({'error': 'Text is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            profile = Profile.objects.get(user=request.user)
-            if not profile.can_log_time:
-                raise PermissionDenied("Você não tem permissão para registrar tempo.")
-        except Profile.DoesNotExist:
-             if not request.user.is_superuser:
-                raise PermissionDenied("Perfil não encontrado e sem permissão para registrar tempo.")
-        
-        # 1. Call self.process_text to get structured data from Gemini
-        # For this, we need to reconstruct a request-like object or directly call the method's logic
-        # This is a bit tricky as process_text expects a DRF Request.
-        # A better way would be to have the core Gemini processing logic in gemini_service.py
-        # callable with just text and context, then this view calls that.
-        
-        # Simplified: Assume gemini_service.extract_time_entry_details exists
-        try:
-            # This is a conceptual call. GeminiService would need to parse `text` and return
-            # structured data similar to what NLPProcessor's parsing produces,
-            # possibly including client_id, task_id, minutes_spent, description, date.
-            # For example:
-            # parsed_details_list = self.gemini_service.extract_time_entry_details(text, request.user, default_client_id, default_task_id, date_str)
-            # if not parsed_details_list:
-            #    return Response({"error": "Não foi possível extrair detalhes para registo de tempo do texto."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # created_entries = []
-            # for details in parsed_details_list:
-            #     # Validate and create TimeEntry objects here
-            #     # entry_serializer = TimeEntrySerializer(data=details)
-            #     # if entry_serializer.is_valid():
-            #     #    entry = entry_serializer.save(user=request.user, original_text=text, task_status_after=task_status_after)
-            #     #    self._process_workflow_and_status(entry) # Helper method
-            #     #    created_entries.append(entry_serializer.data)
-            #     # else:
-            #     #    errors.append(entry_serializer.errors)
-            # pass
-            logger.warning("GeminiNLPViewSet.create_time_entries needs full implementation based on Gemini output.")
-            return Response({'message': 'Gemini time entry creation via this endpoint is conceptual and requires specific parsing logic.'}, status=status.HTTP_501_NOT_IMPLEMENTED)
-
-        except Exception as e:
-            logger.error(f"Error in Gemini create_time_entries: {str(e)}")
-            return Response({'error': f'Erro interno ao criar registos de tempo com Gemini: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
@@ -2169,42 +1981,57 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             if requester_profile.organization != organization or not requester_profile.is_org_admin:
                 raise PermissionDenied("Sem permissão para atualizar membros.")
         except Profile.DoesNotExist:
-             if not user_making_request.is_superuser:
+            if not user_making_request.is_superuser:
                 raise PermissionDenied("Perfil do solicitante não encontrado.")
         
-        user_id_to_update = request.data.get('user_id')
+        # FIX: Check both request.data and query params for user_id
+        user_id_to_update = request.data.get('user_id') or request.query_params.get('user_id')
         if not user_id_to_update:
             return Response({"error": "ID do usuário é obrigatório"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             profile_to_update = Profile.objects.get(user_id=user_id_to_update, organization=organization)
             
-            # Apply changes from request.data to profile_to_update, similar to add_member_by_code
-            # Example:
-            # profile_to_update.role = request.data.get('role', profile_to_update.role)
-            # profile_to_update.is_org_admin = request.data.get('is_org_admin', profile_to_update.is_org_admin)
-            # ... set all other can_... fields ...
-            # role_preset = request.data.get('role_preset')
-            # if role_preset:
-            #     OrganizationViewSet.apply_role_preset(profile_to_update, role_preset) # Or Profile model method
+            # Create a copy of request.data to modify
+            update_data = request.data.copy()
+            
+            # Remove user_id from the data since it's not a field we want to update
+            if 'user_id' in update_data:
+                del update_data['user_id']
+            
+            # Apply changes from request.data to profile_to_update
+            # Exclude many-to-many fields that need special handling
+            m2m_fields = ['visible_clients']
+            
+            for field_name, field_value in update_data.items():
+                if hasattr(profile_to_update, field_name) and field_name not in m2m_fields:
+                    setattr(profile_to_update, field_name, field_value)
+            
+            profile_to_update.save()
+            
+            # Handle visible_clients update if present
+            if 'visible_clients' in request.data:
+                visible_client_ids = request.data.get('visible_clients', [])
+                if not profile_to_update.can_view_all_clients:
+                    if visible_client_ids:  # Only query if there are IDs to check
+                        valid_clients = Client.objects.filter(
+                            id__in=visible_client_ids, 
+                            organization=organization
+                        )
+                        profile_to_update.visible_clients.set(valid_clients)
+                    else:
+                        profile_to_update.visible_clients.clear()  # Empty list = clear all
+                else:
+                    profile_to_update.visible_clients.clear()  # Can view all = no specific clients needed
 
-            # For brevity, not listing all fields again. Ensure all relevant fields are updatable.
-            serializer = ProfileSerializer(profile_to_update, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                # Handle visible_clients update if 'visible_clients' is in request.data
-                if 'visible_clients' in request.data and not profile_to_update.can_view_all_clients:
-                    valid_clients = Client.objects.filter(id__in=request.data['visible_clients'], organization=organization)
-                    profile_to_update.visible_clients.set(valid_clients)
-                elif 'visible_clients' in request.data and profile_to_update.can_view_all_clients:
-                    profile_to_update.visible_clients.clear() # Ensure it's empty if can_view_all
-
-                return Response(ProfileSerializer(profile_to_update).data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(ProfileSerializer(profile_to_update).data, status=status.HTTP_200_OK)
             
         except Profile.DoesNotExist:
             return Response({"error": "Perfil não encontrado nesta organização."}, status=status.HTTP_404_NOT_FOUND)
-
+        except Exception as e:
+            logger.error(f"Error updating member: {str(e)}")
+            return Response({"error": f"Erro ao atualizar membro: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
     @action(detail=True, methods=['post'])
     def manage_visible_clients(self, request, pk=None):
         organization = self.get_object()
@@ -4223,3 +4050,63 @@ def query_ai_advisor(request):
         import traceback
         traceback.print_exc()
         return Response({"error": "Erro interno ao consultar o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def time_entry_context(request):
+    """
+    Fornece o contexto necessário para o formulário de Registo de Tempo,
+    filtrado pelas permissões do utilizador.
+    """
+    user = request.user
+    try:
+        profile = Profile.objects.get(user=user)
+        if not profile.organization:
+            return Response({"error": "Utilizador não está numa organização."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Obter todas as tarefas ativas da organização
+        org_tasks = Task.objects.filter(
+            client__organization=profile.organization,
+            status__in=['pending', 'in_progress']
+        ).select_related('client', 'category')
+
+        # 2. Filtrar as tarefas relevantes para o utilizador
+        user_id = user.id
+        relevant_task_ids = set()
+
+        # Tarefas diretamente atribuídas
+        assigned_tasks = org_tasks.filter(assigned_to_id=user_id)
+        relevant_task_ids.update(list(assigned_tasks.values_list('id', flat=True)))
+
+        # Tarefas com passos de workflow atribuídos ao utilizador
+        workflow_tasks = org_tasks.filter(workflow__isnull=False).exclude(workflow_step_assignments={})
+        for task in workflow_tasks:
+            if str(user_id) in (str(v) for v in task.workflow_step_assignments.values()):
+                relevant_task_ids.add(task.id)
+
+        # 3. Obter os objetos Task completos
+        relevant_tasks_qs = Task.objects.filter(id__in=list(relevant_task_ids)).select_related('client', 'category')
+        
+        # 4. Obter os clientes únicos a partir das tarefas relevantes
+        relevant_client_ids = relevant_tasks_qs.values_list('client_id', flat=True).distinct()
+        relevant_clients_qs = Client.objects.filter(id__in=relevant_client_ids, is_active=True).order_by('name')
+        
+        # 5. Obter todas as categorias (geralmente não são restritas por permissão)
+        categories_qs = TaskCategory.objects.all().order_by('name')
+        
+        # 6. Serializar os dados para a resposta
+        client_serializer = ClientSerializer(relevant_clients_qs, many=True)
+        task_serializer = TaskSerializer(relevant_tasks_qs, many=True, context={'request': request})
+        category_serializer = TaskCategorySerializer(categories_qs, many=True)
+        
+        return Response({
+            "clients": client_serializer.data,
+            "tasks": task_serializer.data,
+            "categories": category_serializer.data
+        })
+        
+    except Profile.DoesNotExist:
+        return Response({"error": "Perfil não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erro ao construir contexto de registo de tempo: {e}", exc_info=True)
+        return Response({"error": "Erro interno ao buscar contexto."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

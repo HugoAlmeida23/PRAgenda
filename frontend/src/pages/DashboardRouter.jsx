@@ -141,14 +141,49 @@ const DashboardRouter = () => {
     const { data, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['dashboardMainData'],
         queryFn: async () => {
-            const endpoints = [api.get('/dashboard-summary/'), api.get('/tasks/?limit=5&ordering=-created_at'), api.get('/time-entries/?limit=5&ordering=-date')];
+            // Base endpoints that all users can access
+            const baseEndpoints = [
+                api.get('/dashboard-summary/'),
+                api.get('/tasks/?limit=5&ordering=-created_at'),
+                api.get('/time-entries/?limit=5&ordering=-date')
+            ];
+
+            // Additional endpoints for admins/analytics users
+            const adminEndpoints = [];
             if (permissions.isOrgAdmin || permissions.canViewAnalytics) {
-                endpoints.push(api.get('/fiscal/stats/'));
-                endpoints.push(api.get('/fiscal/upcoming-deadlines/?days=7&limit=5'));
+                adminEndpoints.push(
+                    api.get('/fiscal/stats/'),
+                    api.get('/fiscal/upcoming-deadlines/?days=7&limit=5')
+                );
             }
-            const results = await Promise.allSettled(endpoints);
-            const process = (res) => res.status === 'fulfilled' ? (res.value.data.results || res.value.data) : null;
-            return { summary: process(results[0]), recentTasks: process(results[1]), recentTimeEntries: process(results[2]), fiscalStats: process(results[3]), upcomingFiscalDeadlines: process(results[4]) };
+
+            // Combine all endpoints
+            const allEndpoints = [...baseEndpoints, ...adminEndpoints];
+
+            // Execute all requests
+            const results = await Promise.allSettled(allEndpoints);
+
+            // Helper function to safely process results
+            const process = (res) => res?.status === 'fulfilled' ? (res.value?.data?.results || res.value?.data) : null;
+
+            // Process base results (always present)
+            const dashboardData = {
+                summary: process(results[0]),
+                recentTasks: process(results[1]),
+                recentTimeEntries: process(results[2])
+            };
+
+            // Process admin results (only if endpoints were called)
+            if (adminEndpoints.length > 0) {
+                dashboardData.fiscalStats = process(results[3]);
+                dashboardData.upcomingFiscalDeadlines = process(results[4]);
+            } else {
+                // Set to null explicitly when not available
+                dashboardData.fiscalStats = null;
+                dashboardData.upcomingFiscalDeadlines = null;
+            }
+
+            return dashboardData;
         },
         enabled: permissions.initialized,
         staleTime: 5 * 60 * 1000,
@@ -177,6 +212,7 @@ const DashboardRouter = () => {
         );
     }
     if (isError) {
+        console.log(error)
         return (
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', padding: '2rem' }}>
                 <AlertTriangle size={60} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
@@ -209,7 +245,16 @@ const DashboardRouter = () => {
                     {(permissions.isOrgAdmin || permissions.canViewProfitability) && <StatCard title="Rentabilidade Média" value={parseFloat(data.summary.average_profit_margin || 0).toFixed(1)} unit="%" icon={DollarSign} color="rgb(147, 51, 234)" linkTo="/clientprofitability" isLoading={false} />}
                 </motion.div>
                 <MyDaySection upcomingTasks={data.recentTasks || []} recentTimeEntries={data.recentTimeEntries || []} />
-                <FiscalSnapshotSection fiscalStats={data.fiscalStats} upcomingFiscalDeadlines={data.upcomingFiscalDeadlines || []} permissions={permissions} isLoadingStats={isLoading} isLoadingDeadlines={isLoading} />
+                {/* Only show FiscalSnapshotSection if user has permissions and data is available */}
+                {(permissions.isOrgAdmin || permissions.canViewAnalytics) && (
+                    <FiscalSnapshotSection 
+                        fiscalStats={data.fiscalStats} 
+                        upcomingFiscalDeadlines={data.upcomingFiscalDeadlines || []} 
+                        permissions={permissions} 
+                        isLoadingStats={isLoading} 
+                        isLoadingDeadlines={isLoading} 
+                    />
+                )}
             </motion.div>
         </div>
     );

@@ -118,11 +118,29 @@ const TaskManagement = () => {
   });
 
   const { data: users = [], isLoading: isLoadingUsers, isError: isErrorUsers, error: errorUsers } = useQuery({
-    queryKey: ['profilesForTaskDropdowns'],
-    queryFn: () => api.get("/profiles/").then(res => res.data.results || res.data),
-    staleTime: 10 * 60 * 1000,
-    enabled: !!permissions.initialized,
-  });
+  queryKey: ['organizationMembersForTaskDropdowns'],
+  queryFn: async () => {
+    try {
+      // Primeiro, obter o perfil do usuário atual para saber a organização
+      const profileResponse = await api.get("/profiles/");
+      const userProfile = profileResponse.data.results?.[0] || profileResponse.data[0];
+      
+      if (!userProfile?.organization) {
+        console.warn('User has no organization');
+        return [];
+      }
+      
+      // Depois, obter todos os membros da organização
+      const membersResponse = await api.get(`/organizations/${userProfile.organization}/members/`);
+      return membersResponse.data.results || membersResponse.data || [];
+    } catch (error) {
+      console.error('Error fetching organization members:', error);
+      throw error;
+    }
+  },
+  staleTime: 10 * 60 * 1000,
+  enabled: !!permissions.initialized,
+});
 
   const { data: categories = [], isLoading: isLoadingCategories, isError: isErrorCategories, error: errorCategories } = useQuery({
     queryKey: ['categoriesForTaskDropdowns'],
@@ -206,14 +224,11 @@ const TaskManagement = () => {
                 title: nlpTask.title || nlpData.natural_language_text.substring(0,100),
                 description: nlpResponse.data.activities?.[0]?.description || nlpData.natural_language_text,
                 client: nlpTask.client_id || nlpData.default_client_id || null,
-                // Example: Convert first duration found to minutes; can be more sophisticated
                 minutes_spent: nlpResponse.data.times?.[0]?.minutes || null, 
-                deadline: nlpTask.deadline || null, // Assuming NLP might extract deadline
-                priority: nlpTask.priority || 3,     // Assuming NLP might extract priority
-                status: 'pending', // Default status
+                deadline: nlpTask.deadline || null,
+                priority: nlpTask.priority || 3,
+                status: 'pending',
             };
-            // If using createTimeEntryMutation for time, separate that call
-            // For now, assuming minutes_spent is on task or handled elsewhere
             const taskCreationResponse = await createTaskMutation.mutateAsync(taskPayload);
             createdTasksInfo.push(taskCreationResponse); 
             return createdTasksInfo;
@@ -234,7 +249,32 @@ const TaskManagement = () => {
     }
   });
 
-  const filteredAndSortedTasks = useMemo(() => tasks, [tasks]);
+  const tasksForDisplay = useMemo(() => {
+    // If user is an admin, show all tasks that came from the server
+    if (permissions.isOrgAdmin) {
+      return tasks;
+    }
+    
+    // For non-admins, apply stricter UI-level filtering
+    return tasks.filter(task => {
+        // Condition 1: Task is directly assigned to the current user
+        if (task.assigned_to === permissions.userId) {
+            return true;
+        }
+
+        // Condition 2: A workflow step in this task is assigned to the current user
+        if (task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object') {
+            // Object.values gets all user IDs assigned to steps
+            const assignedUserIdsInWorkflow = Object.values(task.workflow_step_assignments);
+            if (assignedUserIdsInWorkflow.includes(permissions.userId)) {
+                return true;
+            }
+        }
+
+        // If neither condition is met, hide the task
+        return false;
+    });
+  }, [tasks, permissions.isOrgAdmin, permissions.userId]);
   
   const handleSort = useCallback((key) => { setSortConfigStore(key); }, [setSortConfigStore]);
 
@@ -444,10 +484,6 @@ const TaskManagement = () => {
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
             {(permissions.isOrgAdmin || permissions.canCreateTasks) && (
               <>
-                <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={toggleNaturalLanguageForm}
-                    style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(147,51,234,${showNaturalLanguageForm ? 0.6:0.3})`, background: `rgba(147,51,234,${showNaturalLanguageForm ? 0.3:0.2})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                    <Zap size={18} /> {showNaturalLanguageForm ? 'Cancelar IA' : 'Criar com IA'}
-                </motion.button>
                 <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={showForm ? closeForm : openFormForNew}
                     style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(59,130,246,${showForm ? 0.6:0.3})`, background: `rgba(59,130,246,${showForm ? 0.3:0.2})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
                     <Plus size={18} /> {showForm ? 'Cancelar Tarefa' : 'Nova Tarefa'}
@@ -465,7 +501,7 @@ const TaskManagement = () => {
             fetchWorkflowStepsCallback={fetchWorkflowStepsCallback}
         />
         
-        <TaskStats tasks={filteredAndSortedTasks} isOverdue={isOverdue} />
+        <TaskStats tasks={tasksForDisplay} isOverdue={isOverdue} />
         <TaskFilters clients={clients} users={users} categories={categories} />
 
         <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden', position: 'relative' }}>
@@ -474,7 +510,7 @@ const TaskManagement = () => {
                     <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><Activity style={{ color: 'rgb(52,211,153)' }} size={20} /></div>
                     <div>
                         <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Lista de Tarefas</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{filteredAndSortedTasks.length} tarefas encontradas</p>
+                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{tasksForDisplay.length} tarefas encontradas</p>
                     </div>
                 </div>
             </div>
@@ -505,16 +541,9 @@ const TaskManagement = () => {
                                 Atualizando lista...
                             </div>
                         )}
-                        {filteredAndSortedTasks.length === 0 && !isFetchingTasks && (
-                            <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
-                                <SearchIcon size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Nenhuma tarefa encontrada</h4>
-                                <p style={{ margin: 0 }}>Tente ajustar os filtros.</p>
-                            </div>
-                        )}
-                        {(filteredAndSortedTasks.length > 0 || (isFetchingTasks && tasks.length > 0)) && ( 
+                        {(tasksForDisplay.length > 0 || (isFetchingTasks && tasks.length > 0)) && ( 
                             <TaskTable
-                                tasks={filteredAndSortedTasks}
+                                tasks={tasksForDisplay}
                                 onSort={handleSort}
                                 onUpdateStatus={handleUpdateStatus}
                                 onDelete={confirmDeleteTask}
@@ -525,6 +554,13 @@ const TaskManagement = () => {
                                 usersData={users} 
                                 clientsData={clients}
                             />
+                        )}
+                        {tasksForDisplay.length === 0 && !isFetchingTasks && (
+                            <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
+                                <SearchIcon size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
+                                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Nenhuma tarefa encontrada</h4>
+                                <p style={{ margin: 0 }}>Tente ajustar os filtros ou verifique as suas tarefas atribuídas.</p>
+                            </div>
                         )}
                     </>
                  );

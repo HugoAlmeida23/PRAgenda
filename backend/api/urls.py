@@ -1,4 +1,4 @@
-# urls.py - Versão atualizada com novos endpoints
+# In api/urls.py
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -12,13 +12,11 @@ router.register(r'tasks', views.TaskViewSet, basename='task')
 router.register(r'time-entries', views.TimeEntryViewSet, basename='time-entry')
 router.register(r'expenses', views.ExpenseViewSet, basename='expense')
 router.register(r'client-profitability', views.ClientProfitabilityViewSet, basename='client-profitability')
-router.register(r'nlp-processor', views.NLPProcessorViewSet, basename='nlp-processor')
 router.register(r'auto-time-tracking', views.AutoTimeTrackingViewSet, basename='auto-time-tracking')
 router.register(r'workflow-definitions', views.WorkflowDefinitionViewSet, basename='workflow-definition')
 router.register(r'workflow-steps', views.WorkflowStepViewSet, basename='workflow-step')
 router.register(r'task-approvals', views.TaskApprovalViewSet, basename='task-approval')
 router.register(r'organizations', views.OrganizationViewSet, basename='organization')
-router.register(r'gemini-nlp', views.GeminiNLPViewSet, basename='gemini-nlp')
 router.register(r'workflow-notifications', views.WorkflowNotificationViewSet, basename='workflow-notification')
 router.register(r'workflow-history', views.WorkflowHistoryViewSet, basename='workflow-history')
 router.register(r'workflow-step-details', views.WorkflowStepDetailViewSet, basename='workflow-step-detail')
@@ -41,7 +39,8 @@ urlpatterns = [
     # Dashboard e relatórios
     path('dashboard-summary/', views.dashboard_summary, name='dashboard-summary'),
     path('update-profitability/', views.update_organization_profitability, name='update-profitability'),
-    
+    path('time-entry-context/', views.time_entry_context, name='time-entry-context'),
+
     # NOVOS: Endpoints completos do sistema de notificações
     path('notifications/stats/', views.notification_stats, name='notification-stats'),
     path('notifications/organization-stats/', views.organization_notification_stats, name='organization-notification-stats'),
@@ -66,6 +65,4 @@ urlpatterns = [
 
     path('ai-advisor/start-session/', views.start_ai_advisor_session, name='ai-start-session'), # ADDED
     path('ai-advisor/query/', views.query_ai_advisor, name='ai-query-session'), # ADDED
-
-
 ]

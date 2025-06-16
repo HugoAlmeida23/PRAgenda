@@ -41,7 +41,7 @@ const InvitationCodeDisplay = ({ invitation_code }) => {
   return (
     <div className="relative inline-block">
       <div>
-        <h3 className="text-center text-blue-700 font-medium text-sm mb-1">Seu Código</h3>
+        <h3 className="text-center text-white-700 font-medium text-sm mb-1">O TEU CÓDIGO</h3>
         <div 
           className="group cursor-pointer"
           onClick={() => setShowTooltip(!showTooltip)}

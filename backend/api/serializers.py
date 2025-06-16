@@ -2,7 +2,7 @@
 
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Organization, Client,NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, NLPProcessor, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
+from .models import Organization, Client,NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
 import json
 from django.db import models
 from django.db.models import Sum, Exists, OuterRef # Import Exists
@@ -221,6 +221,8 @@ class TaskSerializer(serializers.ModelSerializer):
     has_pending_notifications = serializers.BooleanField(read_only=True)
     notifications_count = serializers.IntegerField(read_only=True)
     latest_notification = serializers.SerializerMethodField()
+    workflow_step_assignments = serializers.JSONField(required=False)
+
 
     class Meta:
         model = Task
@@ -232,6 +234,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'updated_at', 'completed_at', 'workflow', 'workflow_name', 
             'current_workflow_step', 'current_workflow_step_name', 
             'workflow_comment', 'workflow_progress', 'available_next_steps',
+            'workflow_step_assignments', # Adicionado aqui
             'workflow_step_assignee', 'has_pending_notifications', 
             'notifications_count', 'latest_notification'
         ]
@@ -355,14 +358,6 @@ class AutoTimeTrackingSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'user_name', 'start_time', 'end_time', 
                   'activity_data', 'processed', 'converted_to_entries']
         read_only_fields = ['id', 'user']
-        
-class NLPProcessorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = NLPProcessor
-        fields = ['id', 'pattern', 'entity_type', 'confidence', 
-                  'created_at', 'updated_at', 'usage_count']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'usage_count']
-
 
 class TaskApprovalSerializer(serializers.ModelSerializer):
     task_title = serializers.ReadOnlyField(source='task.title')

@@ -73,15 +73,12 @@ const fetchTimeEntriesOnly = async (userId, timeEntryFiltersFromStore) => {
   return response.data.results || response.data || [];
 };
 
-const fetchClientsForTimeEntry = async () => api.get("/clients/?is_active=true").then(res => res.data.results || res.data || []);
-const fetchTasksForTimeEntry = async (userId, selectedClientId) => {
-    let taskEndpoint = `/tasks/?status=pending,in_progress&limit=200`;
-    if (selectedClientId) {
-        taskEndpoint += `&client=${selectedClientId}`;
-    }
-    return api.get(taskEndpoint).then(res => res.data.results || res.data || []);
+// NEW fetching function for the form context
+const fetchTimeEntryFormContext = async () => {
+    const response = await api.get('/time-entry-context/');
+    return response.data;
 };
-const fetchCategoriesForTimeEntry = async () => api.get("/task-categories/").then(res => res.data.results || res.data || []);
+
 
 const TimeEntry = () => {
     const queryClient = useQueryClient();
@@ -94,28 +91,27 @@ const TimeEntry = () => {
         filters,
         lastSavedEntryFeedback, setLastSavedEntryFeedback, clearLastSavedEntryFeedback,
     } = useTimeEntryStore();
-
-    // Query for stable dropdown data
-    const { data: clients = [], isLoading: isLoadingClients, isError: isErrorClients, error: errorClients } = useQuery({ 
-        queryKey: ['clientsForTimeEntryDropdown'], 
-        queryFn: fetchClientsForTimeEntry, 
+    
+    // NEW: Single query for all form context data
+    const { 
+        data: formContextMenu, 
+        isLoading: isLoadingFormContext, 
+        isError: isErrorFormContext, 
+        error: formContextError 
+    } = useQuery({
+        queryKey: ['timeEntryFormContext'],
+        queryFn: fetchTimeEntryFormContext,
         staleTime: 5 * 60 * 1000,
-        enabled: !!permissions.initialized,
+        enabled: !!permissions.initialized && showTimeEntryForm, // Only fetch when form is open
     });
-    const { data: categories = [], isLoading: isLoadingCategories, isError: isErrorCategories, error: errorCategories } = useQuery({ 
-        queryKey: ['categoriesForTimeEntryDropdown'], 
-        queryFn: fetchCategoriesForTimeEntry, 
-        staleTime: Infinity,
-        enabled: !!permissions.initialized,
-    });
-    const { data: tasksForDropdown = [], isLoading: isLoadingTasksDropdown, isError: isErrorTasksDropdown, error: errorTasksDropdown } = useQuery({
-        queryKey: ['tasksForTimeEntryDropdown', permissions.userId, manualFormData.client],
-        queryFn: () => fetchTasksForTimeEntry(permissions.userId, manualFormData.client),
-        staleTime: 1 * 60 * 1000,
-        enabled: !!permissions.initialized && showTimeEntryForm,
-    });
+    
+    // Memoize the data from the context query to prevent re-renders
+    const clientsForDropdown = useMemo(() => formContextMenu?.clients || [], [formContextMenu]);
+    const tasksForDropdown = useMemo(() => formContextMenu?.tasks || [], [formContextMenu]);
+    const categoriesForDropdown = useMemo(() => formContextMenu?.categories || [], [formContextMenu]);
 
-    // Query for the list of Time Entries
+
+    // Query for the list of Time Entries (remains the same)
     const { 
         data: timeEntries = [], 
         isLoading: isLoadingEntriesFirstTime,
@@ -130,8 +126,7 @@ const TimeEntry = () => {
         enabled: !!permissions.initialized && (permissions.isOrgAdmin || permissions.canLogTime || permissions.canViewTeamTime),
         keepPreviousData: true,
     });
-
-    // Mutations - NOW PROPERLY IMPLEMENTED
+    
     const deleteTimeEntryMutation = useMutation({
         mutationFn: async (entryId) => {
             await api.delete(`/time-entries/${entryId}/`);
@@ -160,7 +155,8 @@ const TimeEntry = () => {
         },
         onError: (error) => {
             console.error('Erro ao criar registo:', error);
-            toast.error(error.response?.data?.message || 'Erro ao criar registo de tempo.');
+            const errorMsg = error.response?.data ? JSON.stringify(error.response.data) : 'Erro ao criar registo de tempo.';
+            toast.error(errorMsg);
         }
     });
 
@@ -184,28 +180,22 @@ const TimeEntry = () => {
         }
     });
 
-    // Form submission handler - NOW PROPERLY IMPLEMENTED
+    // Form submission handler with FIX
     const handleFormSubmit = useCallback(async () => {
         try {
             if (isNaturalLanguageMode) {
-                // NLP Mode - first process text to extract data
                 if (!naturalLanguageInput.trim()) {
                     toast.error('Por favor, descreva sua atividade.');
                     return;
                 }
-
                 const nlpPayload = {
                     text: naturalLanguageInput,
                     client_id: manualFormData.client || null,
                     date: manualFormData.date,
                     task_status_after: manualFormData.task_status_after
                 };
-
-                // For now, we'll directly create entries. 
-                // If you want confirmation dialog, you'd need to call a different endpoint first
                 createNlpTimeEntryMutation.mutate(nlpPayload);
             } else {
-                // Manual Mode - validate and create
                 const requiredFields = ['client', 'description', 'minutes_spent', 'date'];
                 const missingFields = requiredFields.filter(field => !manualFormData[field]);
                 
@@ -214,51 +204,40 @@ const TimeEntry = () => {
                     return;
                 }
 
-                if (manualFormData.minutes_spent <= 0) {
-                    toast.error('Minutos gastos deve ser maior que 0.');
+                // Convert minutes_spent to integer and validate
+                const minutes = parseInt(manualFormData.minutes_spent, 10);
+                if (isNaN(minutes) || minutes <= 0) {
+                    toast.error('Minutos gastos deve ser um número maior que 0.');
                     return;
                 }
 
-                // Prepare payload
+                // Prepare payload with corrected types
                 const payload = {
-                    client: manualFormData.client,
+                    ...manualFormData,
+                    minutes_spent: minutes, // Send as integer
+                    // Ensure optional fields are sent as null if empty, not empty strings
                     task: manualFormData.task || null,
                     category: manualFormData.category || null,
                     workflow_step: manualFormData.workflow_step || null,
-                    description: manualFormData.description,
-                    minutes_spent: parseInt(manualFormData.minutes_spent),
-                    date: manualFormData.date,
                     start_time: manualFormData.start_time || null,
                     end_time: manualFormData.end_time || null,
-                    task_status_after: manualFormData.task_status_after,
-                    advance_workflow: manualFormData.advance_workflow || false,
-                    workflow_step_completed: manualFormData.workflow_step_completed || false,
                 };
-
                 createTimeEntryMutation.mutate(payload);
             }
         } catch (error) {
             console.error('Erro no handleFormSubmit:', error);
             toast.error('Erro inesperado ao submeter formulário.');
         }
-    }, [
-        isNaturalLanguageMode, 
-        naturalLanguageInput, 
-        manualFormData, 
-        createNlpTimeEntryMutation, 
-        createTimeEntryMutation
-    ]);
-
+    }, [isNaturalLanguageMode, naturalLanguageInput, manualFormData, createNlpTimeEntryMutation, createTimeEntryMutation]);
+    
     const handleConfirmNLPCreate = useCallback(() => {
         if (!nlpExtractedEntries) return;
-        
         const nlpPayload = {
             text: naturalLanguageInput,
             client_id: manualFormData.client || null,
             date: manualFormData.date,
             task_status_after: manualFormData.task_status_after
         };
-
         createNlpTimeEntryMutation.mutate(nlpPayload);
     }, [nlpExtractedEntries, naturalLanguageInput, manualFormData, createNlpTimeEntryMutation]);
 
@@ -269,15 +248,13 @@ const TimeEntry = () => {
             category: entryToDuplicate.category || "",
             description: entryToDuplicate.description,
             minutes_spent: entryToDuplicate.minutes_spent,
-            date: new Date().toISOString().split("T")[0], // Today's date
+            date: new Date().toISOString().split("T")[0],
             start_time: entryToDuplicate.start_time || "",
             end_time: entryToDuplicate.end_time || "",
         });
-        
         if (!showTimeEntryForm) {
             toggleTimeEntryForm();
         }
-        
         toast.info('Formulário preenchido com dados do registo duplicado.');
     }, [resetManualForm, showTimeEntryForm, toggleTimeEntryForm]);
 
@@ -289,34 +266,20 @@ const TimeEntry = () => {
 
     const formatMinutesForDisplay = (minutes) => minutes != null ? `${Math.floor(minutes/60)}h ${minutes%60}m` : "0h 0m";
     
-    // Loading and Error States for the Page
-    const isEssentialStaticDataLoading = 
-        permissions.loading || 
-        isLoadingClients || 
-        isLoadingCategories;
-
-    const essentialStaticDataError = 
-        (isErrorClients && !clients.length) ||
-        (isErrorCategories && !categories.length);
-    
-    const combinedEssentialErrorMessage = errorClients?.message || errorCategories?.message || "Falha ao carregar dados essenciais para formulários.";
-
-    if (isEssentialStaticDataLoading) {
+    // Loading and Error States
+    if (permissions.loading) {
         return ( 
             <div style={{display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', background:'rgba(0,0,0,0.1)'}}>
-                <Loader2 size={48} className="animate-spin text-blue-500" style={{color:'rgb(59, 130, 246)'}} />
+                <Loader2 size={48} className="animate-spin" style={{color:'rgb(59, 130, 246)'}} />
             </div> 
         );
     }
-
-    if (essentialStaticDataError) {
-        return <ErrorView message={combinedEssentialErrorMessage} onRetry={() => {
-            queryClient.invalidateQueries({ queryKey: ['clientsForTimeEntryDropdown'] });
-            queryClient.invalidateQueries({ queryKey: ['categoriesForTimeEntryDropdown'] });
-        }}/>;
+    
+    if (isErrorFormContext) {
+        return <ErrorView message={formContextError?.message || "Falha ao carregar dados para o formulário."} onRetry={() => queryClient.invalidateQueries(['timeEntryFormContext'])}/>;
     }
     
-    if (!permissions.isOrgAdmin && !permissions.canLogTime && !permissions.canViewTeamTime && !isEssentialStaticDataLoading && !essentialStaticDataError) {
+    if (!permissions.isOrgAdmin && !permissions.canLogTime && !permissions.canViewTeamTime) {
         return ( <ErrorView message="Acesso restrito à página de registo de tempos." /> );
     }
 
@@ -357,9 +320,9 @@ const TimeEntry = () => {
                 <AnimatePresence>
                     {showTimeEntryForm && (permissions.isOrgAdmin || permissions.canLogTime) && (
                          <TimeEntryCombinedForm
-                            clients={clients} 
+                            clients={clientsForDropdown} 
                             tasks={tasksForDropdown} 
-                            categories={categories}
+                            categories={categoriesForDropdown}
                             onFormSubmit={handleFormSubmit}
                             isSubmitting={createTimeEntryMutation.isPending || createNlpTimeEntryMutation.isPending}
                             permissions={permissions}
@@ -367,7 +330,7 @@ const TimeEntry = () => {
                     )}
                 </AnimatePresence>
 
-                <TimeEntryListFilters clientsData={clients} />
+                <TimeEntryListFilters clientsData={clientsForDropdown} />
                 
                 <div style={{position: 'relative'}}>
                     {(() => {

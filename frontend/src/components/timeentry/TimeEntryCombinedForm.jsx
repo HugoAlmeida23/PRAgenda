@@ -1,13 +1,14 @@
 // src/components/timeentry/TimeEntryCombinedForm.jsx
-import React, { useEffect, useCallback,useState } from 'react';
+import React, { useEffect, useCallback, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Clock, Briefcase, Activity, CheckCircle, Workflow, SkipForward,
-  Brain, Sparkles, Send, Loader2, Plus, X, Info, Zap, Calendar, UserCheck, Target, MessageSquare,Timer,Play, ChevronDown
+  Brain, Sparkles, Send, Loader2, Plus, X, Info, Zap, Calendar, UserCheck, Target, MessageSquare,Timer,Play, ChevronDown, User2
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTimeEntryStore } from '../../stores/useTimeEntryStore';
-import api from '../../api'; // Adjust path as needed
+import api from '../../api';
+import { usePermissions } from '../../contexts/PermissionsContext';
 
 const glassStyle = {
     background: 'rgba(255, 255, 255, 0.1)',
@@ -16,7 +17,6 @@ const glassStyle = {
     borderRadius: '16px'
 };
 
-// Standard input styles to match ClientForm
 const inputStyle = {
     width: '100%',
     padding: '0.75rem',
@@ -27,7 +27,6 @@ const inputStyle = {
     fontSize: '0.875rem'
 };
 
-// Standard label styles to match ClientForm
 const labelStyle = {
     display: 'block',
     fontSize: '0.875rem',
@@ -36,12 +35,6 @@ const labelStyle = {
     color: 'rgba(255, 255, 255, 0.8)'
 };
 
-const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 200, damping: 20 } }
-};
-
-// Re-using WorkflowStepCard from TimeEntryForms or similar component if needed
 const WorkflowStepCard = ({ step, isSelected, onClick, timeSpent = 0, formatMinutes }) => {
   const isActive = step.is_current;
   const isCompleted = step.is_completed;
@@ -87,39 +80,37 @@ const WorkflowStepCard = ({ step, isSelected, onClick, timeSpent = 0, formatMinu
 
 
 const TimeEntryCombinedForm = ({
-    clients, tasks, categories, // Data from parent (React Query)
-    onFormSubmit, // Single submit handler passed from parent
-    isSubmitting, // Loading state from parent
-    permissions
+    clients, tasks, categories,
+    onFormSubmit, isSubmitting,
 }) => {
     const {
-        showTimeEntryForm, closeForm: closeStoreForm, // Renamed to avoid conflict if a local closeForm is needed
+        showTimeEntryForm, toggleTimeEntryForm: closeStoreForm,
         isNaturalLanguageMode, setNaturalLanguageMode,
-        manualFormData, setManualFormField, resetManualForm,
+        manualFormData, setManualFormField,
         naturalLanguageInput, setNaturalLanguageInput,
     } = useTimeEntryStore();
 
-    // Local state for workflow data specific to this form instance
+    const permissions = usePermissions();
     const [workflowDataForForm, setWorkflowDataForForm] = useState(null);
     const [showWorkflowSteps, setShowWorkflowSteps] = useState(false);
-    const [selectedWorkflowStepId, setSelectedWorkflowStepId] = useState(""); // Stores the ID of the selected step
+    const [selectedWorkflowStepId, setSelectedWorkflowStepId] = useState("");
 
     const fetchWorkflowDataForTask = useCallback(async (taskId) => {
         if (!taskId) {
             setWorkflowDataForForm(null);
             setShowWorkflowSteps(false);
             setSelectedWorkflowStepId("");
-            setManualFormField('workflow_step', ""); // Clear from form data
+            setManualFormField('workflow_step', "");
             return;
         }
         try {
             const response = await api.get(`/tasks/${taskId}/workflow_status/`);
             if (response.data.workflow) {
-                setWorkflowDataForForm(response.data.workflow);
+                setWorkflowDataForForm(response.data);
                 setShowWorkflowSteps(true);
-                if (response.data.workflow.current_step) {
-                    setSelectedWorkflowStepId(response.data.workflow.current_step.id);
-                    setManualFormField('workflow_step', response.data.workflow.current_step.id);
+                if (response.data.current_step) {
+                    setSelectedWorkflowStepId(response.data.current_step.id);
+                    setManualFormField('workflow_step', response.data.current_step.id);
                 } else {
                     setSelectedWorkflowStepId("");
                     setManualFormField('workflow_step', "");
@@ -145,13 +136,20 @@ const TimeEntryCombinedForm = ({
         }
     }, [manualFormData.task, fetchWorkflowDataForTask]);
     
-    // Reset form when initialClientId or initialTaskId changes externally (e.g., from duplicate)
-    useEffect(() => {
-        // This assumes parent component might trigger a reset with new initial values
-        // For now, manualFormData is reset by open/close actions in store.
-        // If a "duplicate" feature sets manualFormData directly, this effect would be less critical.
-    }, [manualFormData.client, manualFormData.task]);
-
+    const userWorkflowSteps = useMemo(() => {
+        if (!workflowDataForForm || !workflowDataForForm.workflow || !workflowDataForForm.workflow.steps) {
+            return [];
+        }
+        if (permissions.isOrgAdmin) {
+            return workflowDataForForm.workflow.steps;
+        }
+        
+        const assignments = workflowDataForForm.task.workflow_step_assignments || {};
+        return workflowDataForForm.workflow.steps.filter(step => {
+            const assignedUserId = assignments[step.id];
+            return String(assignedUserId) === String(permissions.userId);
+        });
+    }, [workflowDataForForm, permissions.isOrgAdmin, permissions.userId]);
 
     const handleInputChange = useCallback((e) => {
         const { name, value, type, checked } = e.target;
@@ -163,7 +161,7 @@ const TimeEntryCombinedForm = ({
         const task = tasks.find(t => t.id === taskId);
         setManualFormField('task', taskId);
         if (task) {
-            setManualFormField('client', task.client); // Auto-set client
+            setManualFormField('client', task.client);
             if (task.category) setManualFormField('category', task.category);
         }
     }, [tasks, setManualFormField]);
@@ -171,14 +169,13 @@ const TimeEntryCombinedForm = ({
     const handleWorkflowStepSelect = useCallback((stepId) => {
         setSelectedWorkflowStepId(stepId);
         setManualFormField('workflow_step', stepId);
-        // Reset completion/advance flags if step changes
         setManualFormField('workflow_step_completed', false);
         setManualFormField('advance_workflow', false);
     }, [setManualFormField]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onFormSubmit(); // Parent will get data from store (manualFormData or naturalLanguageInput)
+        onFormSubmit();
     };
     
     const formatMinutes = (minutes) => {
@@ -201,11 +198,11 @@ const TimeEntryCombinedForm = ({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }} style={{ padding: '0.5rem', backgroundColor: 'rgba(59,130,246,0.2)', borderRadius: '12px' }}>
-                        <Clock style={{ color: 'rgb(59, 130, 246)' }} size={20} />
+                        <Clock style={{ color: 'rgb(59,130,246)' }} size={20} />
                     </motion.div>
                     <div>
                         <h3 style={{ margin: '0 0 0.25rem 0', fontSize: '1rem', fontWeight: '600' }}>Registrar Tempo</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>
                             {isNaturalLanguageMode ? 'Descreva sua atividade com IA' : 'Preencha os campos manualmente'}
                         </p>
                     </div>
@@ -224,50 +221,25 @@ const TimeEntryCombinedForm = ({
             <form onSubmit={handleSubmit}>
                 {isNaturalLanguageMode ? (
                     <div>
-                        {/* NLP Mode Fields */}
                         <div style={{ marginBottom: '1rem' }}>
                             <label style={labelStyle}>Cliente (Opcional - IA tentará detectar)</label>
-                            <select 
-                                name="client" 
-                                value={manualFormData.client} 
-                                onChange={handleInputChange} 
-                                style={{...inputStyle}}
-                            >
+                            <select name="client" value={manualFormData.client} onChange={handleInputChange} style={{...inputStyle}}>
                                 <option value="" style={{ background: '#1f2937' }}>Selecionar Cliente Padrão</option>
                                 {clients.map(c => <option key={c.id} value={c.id} style={{ background: '#1f2937' }}>{c.name}</option>)}
                             </select>
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
                             <label style={labelStyle}>Descreva sua atividade *</label>
-                            <textarea 
-                                value={naturalLanguageInput} 
-                                onChange={(e) => setNaturalLanguageInput(e.target.value)} 
-                                placeholder="Ex: 2h declaração IVA cliente ABC, 30m reunião XYZ" 
-                                rows={3} 
-                                required 
-                                style={{...inputStyle, resize: 'vertical'}} 
-                            />
+                            <textarea value={naturalLanguageInput} onChange={(e) => setNaturalLanguageInput(e.target.value)} placeholder="Ex: 2h declaração IVA cliente ABC, 30m reunião XYZ" rows={3} required style={{...inputStyle, resize: 'vertical'}} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                             <div>
                                 <label style={labelStyle}>Data *</label>
-                                <input 
-                                    type="date" 
-                                    name="date" 
-                                    value={manualFormData.date} 
-                                    onChange={handleInputChange} 
-                                    required 
-                                    style={inputStyle}
-                                />
+                                <input type="date" name="date" value={manualFormData.date} onChange={handleInputChange} required style={inputStyle} />
                             </div>
                             <div>
                                 <label style={labelStyle}>Status da Tarefa (Após)</label>
-                                <select 
-                                    name="task_status_after" 
-                                    value={manualFormData.task_status_after} 
-                                    onChange={handleInputChange} 
-                                    style={inputStyle}
-                                >
+                                <select name="task_status_after" value={manualFormData.task_status_after} onChange={handleInputChange} style={inputStyle}>
                                     <option value="no_change" style={{ background: '#1f2937' }}>Sem alteração</option>
                                     <option value="in_progress" style={{ background: '#1f2937' }}>Marcar Em Progresso</option>
                                     <option value="completed" style={{ background: '#1f2937' }}>Marcar Concluída</option>
@@ -277,163 +249,72 @@ const TimeEntryCombinedForm = ({
                     </div>
                 ) : (
                     <div>
-                        {/* Manual Mode Fields */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                             <div>
-                                <label style={labelStyle}>
-                                    <Briefcase size={14} style={{display:'inline', marginRight:'0.25rem'}}/>
-                                    Cliente *
-                                </label>
-                                <select 
-                                    name="client" 
-                                    value={manualFormData.client} 
-                                    onChange={handleInputChange} 
-                                    required 
-                                    style={inputStyle}
-                                >
+                                <label style={labelStyle}><Briefcase size={14} style={{display:'inline', marginRight:'0.25rem'}}/> Cliente *</label>
+                                <select name="client" value={manualFormData.client} onChange={handleInputChange} required style={inputStyle}>
                                     <option value="" style={{ background: '#1f2937' }}>Selecionar Cliente</option>
                                     {clients.map(c => <option key={c.id} value={c.id} style={{ background: '#1f2937' }}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label style={labelStyle}>
-                                    <Target size={14} style={{display:'inline', marginRight:'0.25rem'}}/>
-                                    Tarefa (Opcional)
-                                </label>
-                                <select 
-                                    name="task" 
-                                    value={manualFormData.task} 
-                                    onChange={handleTaskChange} 
-                                    style={inputStyle}
-                                >
+                                <label style={labelStyle}><Target size={14} style={{display:'inline', marginRight:'0.25rem'}}/> Tarefa (Opcional)</label>
+                                <select name="task" value={manualFormData.task} onChange={handleTaskChange} style={inputStyle}>
                                     <option value="" style={{ background: '#1f2937' }}>Selecionar Tarefa</option>
                                     {tasks.filter(t => (!manualFormData.client || t.client === manualFormData.client) && t.status !== "completed").map(t => <option key={t.id} value={t.id} style={{ background: '#1f2937' }}>{t.title}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label style={labelStyle}>
-                                    <Activity size={14} style={{display:'inline', marginRight:'0.25rem'}}/>
-                                    Categoria (Opcional)
-                                </label>
-                                <select 
-                                    name="category" 
-                                    value={manualFormData.category} 
-                                    onChange={handleInputChange} 
-                                    style={inputStyle}
-                                >
+                                <label style={labelStyle}><Activity size={14} style={{display:'inline', marginRight:'0.25rem'}}/> Categoria (Opcional)</label>
+                                <select name="category" value={manualFormData.category} onChange={handleInputChange} style={inputStyle}>
                                     <option value="" style={{ background: '#1f2937' }}>Selecionar Categoria</option>
                                     {categories.map(cat => <option key={cat.id} value={cat.id} style={{ background: '#1f2937' }}>{cat.name}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label style={labelStyle}>
-                                    <Timer size={14} style={{display:'inline', marginRight:'0.25rem'}}/>
-                                    Minutos Gastos *
-                                </label>
-                                <input 
-                                    type="number" 
-                                    name="minutes_spent" 
-                                    value={manualFormData.minutes_spent} 
-                                    onChange={handleInputChange} 
-                                    required 
-                                    min="1"
-                                    placeholder="0"
-                                    style={inputStyle} 
-                                />
+                                <label style={labelStyle}><Timer size={14} style={{display:'inline', marginRight:'0.25rem'}}/> Minutos Gastos *</label>
+                                <input type="number" name="minutes_spent" value={manualFormData.minutes_spent} onChange={handleInputChange} required min="1" placeholder="0" style={inputStyle} />
                             </div>
                             <div>
-                                <label style={labelStyle}>
-                                    <Calendar size={14} style={{display:'inline', marginRight:'0.25rem'}}/>
-                                    Data *
-                                </label>
-                                <input 
-                                    type="date" 
-                                    name="date" 
-                                    value={manualFormData.date} 
-                                    onChange={handleInputChange} 
-                                    required 
-                                    style={inputStyle}
-                                />
+                                <label style={labelStyle}><Calendar size={14} style={{display:'inline', marginRight:'0.25rem'}}/> Data *</label>
+                                <input type="date" name="date" value={manualFormData.date} onChange={handleInputChange} required style={inputStyle} />
                             </div>
                             <div>
-                                <label style={labelStyle}>
-                                    <CheckCircle size={14} style={{display:'inline', marginRight:'0.25rem'}}/>
-                                    Status da Tarefa (Após)
-                                </label>
-                                <select 
-                                    name="task_status_after" 
-                                    value={manualFormData.task_status_after} 
-                                    onChange={handleInputChange} 
-                                    disabled={!manualFormData.task} 
-                                    style={{...inputStyle, opacity: !manualFormData.task ? 0.5 : 1}}
-                                >
+                                <label style={labelStyle}><CheckCircle size={14} style={{display:'inline', marginRight:'0.25rem'}}/> Status da Tarefa (Após)</label>
+                                <select name="task_status_after" value={manualFormData.task_status_after} onChange={handleInputChange} disabled={!manualFormData.task} style={{...inputStyle, opacity: !manualFormData.task ? 0.5 : 1}}>
                                     <option value="no_change" style={{ background: '#1f2937' }}>Sem alteração</option>
                                     <option value="in_progress" style={{ background: '#1f2937' }}>Marcar Em Progresso</option>
                                     <option value="completed" style={{ background: '#1f2937' }}>Marcar Concluída</option>
                                 </select>
                             </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                             <div>
-                                <label style={labelStyle}>Hora Início</label>
-                                <input 
-                                    type="time" 
-                                    name="start_time" 
-                                    value={manualFormData.start_time} 
-                                    onChange={handleInputChange} 
-                                    style={inputStyle} 
-                                />
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Hora Fim</label>
-                                <input 
-                                    type="time" 
-                                    name="end_time" 
-                                    value={manualFormData.end_time} 
-                                    onChange={handleInputChange} 
-                                    style={inputStyle} 
-                                />
-                            </div>
-                        </div>
                         <div style={{ marginBottom: '1.5rem' }}>
-                            <label style={labelStyle}>
-                                <MessageSquare size={14} style={{display:'inline', marginRight:'0.25rem'}}/>
-                                Descrição *
-                            </label>
-                            <textarea 
-                                name="description" 
-                                value={manualFormData.description} 
-                                onChange={handleInputChange} 
-                                rows={3} 
-                                required 
-                                placeholder="Descreva a atividade realizada..."
-                                style={{...inputStyle, resize: 'vertical'}} 
-                            />
+                            <label style={labelStyle}><MessageSquare size={14} style={{display:'inline', marginRight:'0.25rem'}}/> Descrição *</label>
+                            <textarea name="description" value={manualFormData.description} onChange={handleInputChange} rows={3} required placeholder="Descreva a atividade realizada..." style={{...inputStyle, resize: 'vertical'}} />
                         </div>
-
-                        {/* Workflow Steps Section - if task selected and has workflow */}
                         {manualFormData.task && workflowDataForForm && showWorkflowSteps && (
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ ...glassStyle, background: 'rgba(147,51,234,0.05)', border: '1px solid rgba(147,51,234,0.2)', padding: '1.5rem', marginBottom: '1.5rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                                     <div style={{display:'flex', alignItems:'center', gap:'0.75rem'}}>
                                         <Workflow style={{color:'rgb(196,181,253)'}} size={20}/>
-                                        <h4 style={{margin:0, fontSize:'0.875rem', fontWeight:'600'}}>Workflow: {workflowDataForForm.name}</h4>
+                                        <h4 style={{margin:0, fontSize:'0.875rem', fontWeight:'600'}}>Workflow: {workflowDataForForm.workflow.name}</h4>
                                     </div>
-                                    <motion.button type="button" onClick={() => setShowWorkflowSteps(!showWorkflowSteps)} style={{background:'none', border:'none', color:'rgba(255,255,255,0.7)', cursor:'pointer'}}>
-                                        <ChevronDown size={20} />
-                                    </motion.button>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
-                                    {(workflowDataForForm.steps || []).map(step => (
-                                        <WorkflowStepCard key={step.id} step={step} isSelected={selectedWorkflowStepId === step.id} onClick={() => handleWorkflowStepSelect(step.id)} timeSpent={workflowDataForForm.time_by_step?.[step.id]} formatMinutes={formatMinutes}/>
-                                    ))}
+                                    {userWorkflowSteps.length > 0 ? (
+                                        userWorkflowSteps.map(step => (
+                                            <WorkflowStepCard key={step.id} step={step} isSelected={selectedWorkflowStepId === step.id} onClick={() => handleWorkflowStepSelect(step.id)} timeSpent={workflowDataForForm.workflow.time_by_step?.[step.id]} formatMinutes={formatMinutes}/>
+                                        ))
+                                    ) : (
+                                        <p style={{color: 'rgba(255,255,255,0.7)', fontSize: '0.875rem', gridColumn: '1 / -1'}}>Nenhum passo deste workflow está atribuído a si.</p>
+                                    )}
                                 </div>
                                 {selectedWorkflowStepId && (
                                     <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} style={{marginTop:'1rem', padding:'1rem', background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:'8px'}}>
                                         <div style={{display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1rem'}}>
                                             <CheckCircle size={16} style={{color:'rgb(59,130,246)'}}/>
                                             <span style={{fontSize:'0.875rem', color:'rgb(59,130,246)', fontWeight:'500'}}>
-                                                Passo selecionado: {workflowDataForForm.steps.find(s=>s.id===selectedWorkflowStepId)?.name}
+                                                Passo selecionado: {workflowDataForForm.workflow.steps.find(s=>s.id===selectedWorkflowStepId)?.name}
                                             </span>
                                         </div>
                                         <div style={{display:'flex', flexDirection:'column', gap:'0.75rem'}}>
@@ -454,48 +335,10 @@ const TimeEntryCombinedForm = ({
                         )}
                     </div>
                 )}
-
-                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                    <motion.button 
-                        type="button" 
-                        whileHover={{ scale: 1.05 }} 
-                        whileTap={{ scale: 0.95 }} 
-                        onClick={closeStoreForm} 
-                        style={{ 
-                            padding: '0.75rem 1.5rem', 
-                            background: 'rgba(239, 68, 68, 0.2)', 
-                            border: '1px solid rgba(239, 68, 68, 0.3)', 
-                            borderRadius: '8px', 
-                            color: 'white', 
-                            cursor: 'pointer', 
-                            fontSize: '0.875rem', 
-                            fontWeight: '500' 
-                        }}
-                    >
-                        Cancelar
-                    </motion.button>
-                    <motion.button 
-                        type="submit" 
-                        whileHover={{ scale: 1.05 }} 
-                        whileTap={{ scale: 0.95 }} 
-                        disabled={isSubmitting} 
-                        style={{ 
-                            padding: '0.75rem 1.5rem', 
-                            background: 'rgba(59, 130, 246, 0.2)', 
-                            border: '1px solid rgba(59, 130, 246, 0.3)', 
-                            borderRadius: '8px', 
-                            color: 'white', 
-                            cursor: 'pointer', 
-                            fontSize: '0.875rem', 
-                            fontWeight: '500', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '0.5rem', 
-                            opacity: isSubmitting ? 0.7 : 1 
-                        }}
-                    >
-                        {isSubmitting && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
-                        {isNaturalLanguageMode ? <Brain size={16} /> : <Send size={16} />}
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                    <motion.button type="button" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={closeStoreForm} style={{ padding: '0.75rem 1.5rem', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }}>Cancelar</motion.button>
+                    <motion.button type="submit" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} disabled={isSubmitting} style={{ padding: '0.75rem 1.5rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '8px', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSubmitting ? 0.7 : 1 }}>
+                        {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : (isNaturalLanguageMode ? <Brain size={16} /> : <Send size={16} />)}
                         {isNaturalLanguageMode ? 'Processar com IA' : 'Guardar Registro'}
                     </motion.button>
                 </div>
