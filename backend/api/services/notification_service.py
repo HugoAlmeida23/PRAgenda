@@ -256,8 +256,8 @@ class NotificationService:
                 notifications.append(notification)
         return notifications
 
-    @staticmethod
-    def notify_workflow_completed(task: Task, completed_by: User):
+    @staticmethod # MODIFIED: Was notify_workflow_completed
+    def notify_task_completed(task: Task, completed_by: User):
         users_to_notify_set = set()
         if task.created_by and task.created_by.is_active: users_to_notify_set.add(task.created_by)
         if task.assigned_to and task.assigned_to.is_active: users_to_notify_set.add(task.assigned_to)
@@ -270,8 +270,8 @@ class NotificationService:
             notification = NotificationService._get_notification_template_service().create_notification_with_template(
                 user_target=user_to_notify,
                 task=task,
-                workflow_step=None, # No specific step for workflow completion
-                notification_type='workflow_completed',
+                workflow_step=None,
+                notification_type='task_completed',
                 created_by=completed_by
             )
             if notification:

@@ -127,7 +127,7 @@ const NotificationSettingsPage = () => {
                 { key: 'notify_workflow_assigned', label: 'Workflow Atribuído', description: 'Quando um workflow é atribuído a uma tarefa.' },
                 { key: 'notify_step_ready', label: 'Passo Pronto', description: 'Quando um passo está pronto para ser trabalhado.' },
                 { key: 'notify_step_completed', label: 'Passo Concluído', description: 'Quando um colega completa um passo.' },
-                { key: 'notify_workflow_completed', label: 'Workflow Concluído', description: 'Quando todos os passos de um workflow são finalizados.' },
+                { key: 'notify_task_completed', label: 'Tarefa Concluída', description: 'Quando uma tarefa é marcada como concluída.' },
             ]
         },
         {

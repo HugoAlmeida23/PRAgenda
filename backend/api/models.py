@@ -654,7 +654,8 @@ class TaskApproval(models.Model):
   
 class Task(models.Model):
     """
-    Tarefas a serem realizadas para os clientes.
+    Enhanced Task model with multi-user assignment support.
+    Users can be assigned as primary responsible, collaborators, or through workflow steps.
     """
     STATUS_CHOICES = [
         ('pending', 'Pendente'),
@@ -689,13 +690,27 @@ class Task(models.Model):
         related_name='tasks',
         verbose_name="Categoria"
     )
+    
+    # ENHANCED: Multiple user assignment options
+    # Primary responsible - the main person accountable for the task
     assigned_to = models.ForeignKey(
         User, 
         on_delete=models.SET_NULL, 
         null=True, 
-        related_name='assigned_tasks',
-        verbose_name="Atribuído a"
+        blank=True,
+        related_name='primary_assigned_tasks',
+        verbose_name="Responsável Principal"
     )
+    
+    # NEW: Additional collaborators who can work on the task
+    collaborators = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name='collaborative_tasks',
+        verbose_name="Colaboradores",
+        help_text="Usuários que podem trabalhar nesta tarefa além do responsável principal"
+    )
+    
     created_by = models.ForeignKey(
         User, 
         on_delete=models.SET_NULL, 
@@ -727,6 +742,8 @@ class Task(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
     completed_at = models.DateTimeField(blank=True, null=True, verbose_name="Concluída em")
+    
+    # Workflow fields
     workflow = models.ForeignKey(
         WorkflowDefinition,
         on_delete=models.SET_NULL,
@@ -755,6 +772,7 @@ class Task(models.Model):
         verbose_name="Comentário do Fluxo"
     )
 
+    # Fiscal obligation source
     source_fiscal_obligation = models.ForeignKey(
         'FiscalObligationDefinition',
         on_delete=models.SET_NULL,
@@ -763,7 +781,7 @@ class Task(models.Model):
         verbose_name="Origem da Obrigação Fiscal"
     )
     obligation_period_key = models.CharField(
-        max_length=50, null=True, blank=True, # Ex: "2024-Q1", "2024-M01"
+        max_length=50, null=True, blank=True,
         verbose_name="Chave do Período da Obrigação",
         help_text="Identificador único para o período desta obrigação (ex: ANO-TRIMESTRE)"
     )
@@ -772,7 +790,7 @@ class Task(models.Model):
         verbose_name = "Tarefa"
         verbose_name_plural = "Tarefas"
         ordering = ["priority", "deadline"]
-        unique_together = [['client', 'source_fiscal_obligation', 'obligation_period_key']] # Evitar duplicados
+        unique_together = [['client', 'source_fiscal_obligation', 'obligation_period_key']]
 
     def __str__(self):
         return f"{self.title} - {self.client.name}"
@@ -787,24 +805,90 @@ class Task(models.Model):
             
         super(Task, self).save(*args, **kwargs)
 
-    # ==============================================================================
-    #  NEW MODEL METHODS: Logic moved from serializer for performance and SRP
-    # ==============================================================================
+    # ENHANCED: New methods for multi-user access control
+    def get_all_assigned_users(self):
+        """
+        Returns all users who have access to this task:
+        - Primary assignee
+        - Collaborators
+        - Users assigned to workflow steps
+        """
+        users = set()
+        
+        # Primary assignee
+        if self.assigned_to:
+            users.add(self.assigned_to)
+        
+        # Collaborators
+        users.update(self.collaborators.all())
+        
+        # Workflow step assignees
+        if self.workflow_step_assignments:
+            step_user_ids = [
+                user_id for user_id in self.workflow_step_assignments.values() 
+                if user_id and str(user_id).isdigit()
+            ]
+            if step_user_ids:
+                workflow_users = User.objects.filter(id__in=step_user_ids)
+                users.update(workflow_users)
+        
+        return list(users)
+    
+    def can_user_access_task(self, user):
+        """
+        Check if a user has access to this task through any assignment method
+        """
+        # Primary assignee
+        if self.assigned_to == user:
+            return True
+        
+        # Collaborator
+        if self.collaborators.filter(id=user.id).exists():
+            return True
+        
+        # Workflow step assignment
+        if self.workflow_step_assignments:
+            assigned_user_ids = [
+                str(user_id) for user_id in self.workflow_step_assignments.values()
+                if user_id
+            ]
+            if str(user.id) in assigned_user_ids:
+                return True
+        
+        return False
+    
+    def get_user_role_in_task(self, user):
+        """
+        Get the user's role in this task
+        Returns: 'primary', 'collaborator', 'workflow_step', None
+        """
+        if self.assigned_to == user:
+            return 'primary'
+        
+        if self.collaborators.filter(id=user.id).exists():
+            return 'collaborator'
+        
+        if self.workflow_step_assignments:
+            assigned_user_ids = [
+                str(user_id) for user_id in self.workflow_step_assignments.values()
+                if user_id
+            ]
+            if str(user.id) in assigned_user_ids:
+                return 'workflow_step'
+        
+        return None
+    
     def get_workflow_progress_data(self):
         """
         Calcula o progresso do workflow de forma eficiente.
-        Esta lógica foi movida do TaskSerializer para o modelo.
         """
         if not self.workflow:
             return None
 
-        # Usar prefetch_related para otimizar. O ViewSet deve prefetch 'workflow__steps'
         try:
-            # Check if steps are already prefetched
             if hasattr(self.workflow, '_prefetched_objects_cache') and 'steps' in self.workflow._prefetched_objects_cache:
                 all_steps = self.workflow.steps.all()
             else:
-                # Fallback to query if not prefetched (less optimal but safe)
                 all_steps = self.workflow.steps.order_by('order')
         except WorkflowDefinition.steps.RelatedObjectDoesNotExist:
              all_steps = []
@@ -813,10 +897,7 @@ class Task(models.Model):
         if total_steps == 0:
             return {'current_step': 0, 'completed_steps': 0, 'total_steps': 0, 'percentage': 0, 'is_completed': False}
         
-        # O histórico deve ser pré-carregado no queryset da view para máxima eficiência
-        # Aqui, estamos assumindo que `workflow_history` foi pré-carregado no objeto `task`
         task_history = self.workflow_history.all() if hasattr(self, 'workflow_history') else []
-
         workflow_completed = any(h.action == 'workflow_completed' for h in task_history)
 
         if workflow_completed:
@@ -827,7 +908,6 @@ class Task(models.Model):
             current_order = self.current_workflow_step.order
             completed_step_ids = {h.from_step_id for h in task_history if h.action in ['step_completed', 'step_advanced'] and h.from_step_id}
             
-            # Adicionar todos os passos anteriores ao atual como concluídos
             for step in all_steps:
                 if step.order < current_order:
                     completed_step_ids.add(step.id)
@@ -835,7 +915,7 @@ class Task(models.Model):
             completed_count = len(completed_step_ids)
             current_step_number = current_order
             percentage = (completed_count / total_steps) * 100 if total_steps > 0 else 0
-        else: # Workflow não iniciado ou concluído sem passo atual
+        else:
             completed_count = 0
             current_step_number = 1
             percentage = 0.0
@@ -851,7 +931,6 @@ class Task(models.Model):
     def get_available_next_steps(self):
         """Retorna os próximos passos disponíveis de forma eficiente."""
         if not self.current_workflow_step:
-            # If no current step, return the first step(s) of the workflow
             if self.workflow:
                 first_steps = self.workflow.steps.filter(order=1)
                 return [
@@ -865,12 +944,9 @@ class Task(models.Model):
                 ]
             return []
             
-        # Get next steps using the ManyToManyField relationship
         try:
-            # Use the new helper method
             return self.current_workflow_step.get_next_steps_data()
         except Exception:
-            # Fallback to direct query
             next_steps = self.current_workflow_step.next_steps.all()
             return [
                 {
@@ -880,29 +956,6 @@ class Task(models.Model):
                     'assign_to': step.assign_to.username if step.assign_to else None
                 } 
                 for step in next_steps
-            ]
-    
-    def can_advance_to_step(self, target_step):
-        """Check if task can advance to a specific step"""
-        if not self.current_workflow_step:
-            # If no current step, can only advance to first steps
-            return target_step.order == 1
-        
-        # Check if target step is in the next_steps of current step
-        return self.current_workflow_step.can_advance_to(target_step)
-
-    def get_workflow_previous_steps(self):
-        """Get steps that lead to the current step"""
-        if not self.current_workflow_step:
-            return []
-        
-        return [
-            {
-                'id': str(step.id),
-                'name': step.name,
-                'order': step.order
-            }
-            for step in self.current_workflow_step.get_steps_that_lead_here()
         ]
 
 class FiscalObligationDefinition(models.Model):
@@ -1117,7 +1170,7 @@ class WorkflowNotification(models.Model):
         ('step_completed', 'Passo Concluído'),
         ('approval_needed', 'Aprovação Necessária'),
         ('approval_completed', 'Aprovação Concluída'),
-        ('workflow_completed', 'Workflow Concluído'),
+        ('task_completed', 'Tarefa Concluída'), 
         ('deadline_approaching', 'Prazo Próximo'),
         ('step_overdue', 'Passo Atrasado'),
         ('manual_reminder', 'Lembrete Manual'),
@@ -1321,9 +1374,9 @@ class NotificationSettings(models.Model):
     notify_step_completed = models.BooleanField(default=True)
     notify_approval_needed = models.BooleanField(default=True)
     notify_approval_completed = models.BooleanField(default=True)
-    notify_manual_advance_needed = models.BooleanField(default=True)
-    notify_workflow_completed = models.BooleanField(default=True)
     notify_deadline_approaching = models.BooleanField(default=True)
+    notify_manual_advance_needed = models.BooleanField(default=True) 
+    notify_task_completed = models.BooleanField(default=True) 
     notify_step_overdue = models.BooleanField(default=True)
     notify_workflow_assigned = models.BooleanField(default=True)
     notify_step_rejected = models.BooleanField(default=True)
@@ -1377,12 +1430,13 @@ class NotificationSettings(models.Model):
             'step_completed': self.notify_step_completed,
             'approval_needed': self.notify_approval_needed,
             'approval_completed': self.notify_approval_completed,
-            'workflow_completed': self.notify_workflow_completed,
+            'task_completed': self.notify_task_completed,
             'deadline_approaching': self.notify_deadline_approaching,
             'step_overdue': self.notify_step_overdue,
             'workflow_assigned': self.notify_workflow_assigned,
             'step_rejected': self.notify_step_rejected,
             'manual_reminder': self.notify_manual_reminders,
+            'manual_advance_needed': self.notify_manual_advance_needed,
         }
         return type_mapping.get(notification_type, True)
     

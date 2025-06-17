@@ -204,7 +204,6 @@ class WorkflowStepSerializer(serializers.ModelSerializer):
             'total_time_spent', 'is_approved', 'previous_steps_info'
         ]
     
-
 class TaskSerializer(serializers.ModelSerializer):
     # Direct lookups, made efficient by `select_related` in the ViewSet.
     client_name = serializers.CharField(source='client.name', read_only=True)
@@ -215,7 +214,17 @@ class TaskSerializer(serializers.ModelSerializer):
     current_workflow_step_name = serializers.CharField(source='current_workflow_step.name', read_only=True, allow_null=True)
     workflow_step_assignee = serializers.CharField(source='current_workflow_step.assign_to.username', read_only=True, allow_null=True)
 
-    # These fields now come from efficient annotations or model methods
+    # ENHANCED: Multi-user assignment fields
+    collaborators = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=User.objects.all(), 
+        required=False
+    )
+    collaborators_info = serializers.SerializerMethodField()
+    all_assigned_users = serializers.SerializerMethodField()
+    assignment_summary = serializers.SerializerMethodField()
+
+    # Workflow and notification fields
     workflow_progress = serializers.SerializerMethodField()
     available_next_steps = serializers.SerializerMethodField()
     has_pending_notifications = serializers.BooleanField(read_only=True)
@@ -223,25 +232,102 @@ class TaskSerializer(serializers.ModelSerializer):
     latest_notification = serializers.SerializerMethodField()
     workflow_step_assignments = serializers.JSONField(required=False)
 
-
     class Meta:
         model = Task
         fields = [
             'id', 'title', 'description', 'client', 'client_name', 
-            'category', 'category_name', 'assigned_to', 'assigned_to_name', 
+            'category', 'category_name', 'assigned_to', 'assigned_to_name',
+            'collaborators', 'collaborators_info', 'all_assigned_users', 'assignment_summary',
             'created_by', 'created_by_name', 'status', 'priority', 
             'deadline', 'estimated_time_minutes', 'created_at', 
             'updated_at', 'completed_at', 'workflow', 'workflow_name', 
             'current_workflow_step', 'current_workflow_step_name', 
             'workflow_comment', 'workflow_progress', 'available_next_steps',
-            'workflow_step_assignments', # Adicionado aqui
-            'workflow_step_assignee', 'has_pending_notifications', 
-            'notifications_count', 'latest_notification'
+            'workflow_step_assignments', 'workflow_step_assignee', 
+            'has_pending_notifications', 'notifications_count', 'latest_notification'
         ]
         read_only_fields = [
             'id', 'created_at', 'updated_at', 'completed_at', 
             'has_pending_notifications', 'notifications_count', 'latest_notification'
         ]
+
+    def get_collaborators_info(self, obj):
+        """Returns detailed info about collaborators (efficient with prefetch)."""
+        try:
+            # If collaborators are prefetched, this won't hit the database
+            collaborators = obj.collaborators.all()
+            return [
+                {
+                    'id': user.id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'email': user.email
+                }
+                for user in collaborators
+            ]
+        except:
+            return []
+
+    def get_all_assigned_users(self, obj):
+        """Returns all users assigned to this task in any capacity."""
+        try:
+            all_users = obj.get_all_assigned_users()
+            return [
+                {
+                    'id': user.id,
+                    'username': user.username,
+                    'role': obj.get_user_role_in_task(user),
+                    'is_primary': user == obj.assigned_to
+                }
+                for user in all_users
+            ]
+        except:
+            return []
+
+    def get_assignment_summary(self, obj):
+        """Provides a summary of task assignments for UI display."""
+        try:
+            summary = {
+                'primary_assignee': None,
+                'collaborators_count': 0,
+                'workflow_assignees_count': 0,
+                'total_assigned_users': 0,
+                'has_multiple_assignees': False
+            }
+
+            # Primary assignee
+            if obj.assigned_to:
+                summary['primary_assignee'] = {
+                    'id': obj.assigned_to.id,
+                    'username': obj.assigned_to.username
+                }
+
+            # Collaborators count
+            summary['collaborators_count'] = obj.collaborators.count()
+
+            # Workflow assignees count
+            if obj.workflow_step_assignments:
+                unique_workflow_users = set(
+                    str(user_id) for user_id in obj.workflow_step_assignments.values()
+                    if user_id and str(user_id).isdigit()
+                )
+                summary['workflow_assignees_count'] = len(unique_workflow_users)
+
+            # Total count
+            all_users = obj.get_all_assigned_users()
+            summary['total_assigned_users'] = len(all_users)
+            summary['has_multiple_assignees'] = len(all_users) > 1
+
+            return summary
+        except:
+            return {
+                'primary_assignee': None,
+                'collaborators_count': 0,
+                'workflow_assignees_count': 0,
+                'total_assigned_users': 0,
+                'has_multiple_assignees': False
+            }
 
     def get_workflow_progress(self, obj):
         """Calls the optimized model method."""
@@ -253,7 +339,6 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def get_latest_notification(self, obj):
         """Gets the latest notification from the prefetched set (efficient)."""
-        # This assumes the ViewSet prefetches `workflow_notifications` ordered by `-created_at`
         if hasattr(obj, 'workflow_notifications') and obj.workflow_notifications.all():
             latest = obj.workflow_notifications.all()[0]
             return {
@@ -263,6 +348,58 @@ class TaskSerializer(serializers.ModelSerializer):
             }
         return None
 
+    def validate(self, data):
+        """Enhanced validation for multi-user assignments."""
+        request = self.context.get('request')
+        user = request.user if request else None
+        
+        # Validate that collaborators don't include the primary assignee
+        assigned_to = data.get('assigned_to')
+        collaborators = data.get('collaborators', [])
+        
+        if assigned_to and assigned_to in collaborators:
+            raise serializers.ValidationError({
+                'collaborators': 'O responsável principal não pode ser incluído como colaborador.'
+            })
+
+        # Validate that all collaborators belong to the same organization
+        if user and collaborators:
+            try:
+                user_profile = user.profile
+                if user_profile.organization:
+                    # Check if all collaborators belong to the same organization
+                    collaborator_profiles = Profile.objects.filter(
+                        user__in=collaborators,
+                        organization=user_profile.organization
+                    )
+                    if len(collaborator_profiles) != len(collaborators):
+                        raise serializers.ValidationError({
+                            'collaborators': 'Todos os colaboradores devem pertencer à mesma organização.'
+                        })
+            except Profile.DoesNotExist:
+                pass  # Handle superuser case
+
+        return data
+
+    def create(self, validated_data):
+        """Enhanced create method to handle collaborators."""
+        collaborators_data = validated_data.pop('collaborators', [])
+        task = super().create(validated_data)
+        
+        if collaborators_data:
+            task.collaborators.set(collaborators_data)
+        
+        return task
+
+    def update(self, instance, validated_data):
+        """Enhanced update method to handle collaborators."""
+        collaborators_data = validated_data.pop('collaborators', None)
+        task = super().update(instance, validated_data)
+        
+        if collaborators_data is not None:
+            task.collaborators.set(collaborators_data)
+        
+        return task
 
 class NotificationStatsSerializer(serializers.Serializer):
     total_notifications = serializers.IntegerField()

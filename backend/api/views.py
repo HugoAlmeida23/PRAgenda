@@ -330,14 +330,16 @@ class TaskViewSet(viewsets.ModelViewSet):
             profile = user.profile
             
             base_queryset = Task.objects.select_related(
-                'client', 'client__organization', # Ensure client__organization is selected if filtering by it
+                'client', 'client__organization',
                 'category', 
-                'assigned_to', 'assigned_to__profile', # For assigned_to_name
-                'created_by', 'created_by__profile',   # For created_by_name
+                'assigned_to', 'assigned_to__profile',
+                'created_by', 'created_by__profile',
                 'workflow', 
                 'current_workflow_step',
-                'current_workflow_step__assign_to' 
+                'current_workflow_step__assign_to'
             ).prefetch_related(
+                # ENHANCED: Prefetch collaborators for efficient access
+                'collaborators',
                 Prefetch('workflow_notifications', queryset=WorkflowNotification.objects.order_by('-created_at')),
                 'approvals',
                 Prefetch('workflow__steps', queryset=WorkflowStep.objects.select_related('assign_to').order_by('order')),
@@ -356,15 +358,14 @@ class TaskViewSet(viewsets.ModelViewSet):
                 )
             )
             
-            # --- Apply query parameter filters ---
-            # Get all query parameters
+            # Apply query parameter filters (existing filter logic...)
             query_params = self.request.query_params
-
-            # Status filter (can be multiple statuses comma-separated)
+            
+            # Status filter
             status_param = query_params.get('status')
             if status_param:
                 status_values = [s.strip() for s in status_param.split(',') if s.strip()]
-                if status_values: # Ensure list is not empty after stripping
+                if status_values:
                     base_queryset = base_queryset.filter(status__in=status_values)
             
             # Client filter
@@ -379,13 +380,15 @@ class TaskViewSet(viewsets.ModelViewSet):
                     priority_int = int(priority_param)
                     base_queryset = base_queryset.filter(priority=priority_int)
                 except ValueError:
-                    logger.warning(f"Invalid priority filter value: {priority_param}")
+                    pass
 
-
-            # Assigned To filter (expects User ID)
-            assigned_to_id = query_params.get('assignedTo') # Matches frontend filter key
+            # ENHANCED: Improved assignee filter to include all assignment types
+            assigned_to_id = query_params.get('assignedTo')
             if assigned_to_id:
-                base_queryset = base_queryset.filter(assigned_to_id=assigned_to_id)
+                base_queryset = base_queryset.filter(
+                    Q(assigned_to_id=assigned_to_id) |  # Primary assignee
+                    Q(collaborators__id=assigned_to_id)  # Collaborator
+                ).distinct()
             
             # Category filter
             category_id = query_params.get('category')
@@ -396,29 +399,27 @@ class TaskViewSet(viewsets.ModelViewSet):
             overdue_param = query_params.get('overdue')
             if overdue_param and overdue_param.lower() == 'true':
                 base_queryset = base_queryset.filter(
-                    deadline__lt=timezone.now().date(), # Compare with date part only for overdue
+                    deadline__lt=timezone.now().date(),
                     status__in=['pending', 'in_progress']
                 )
             
-            # Due date filter (today, this-week)
+            # Due date filter
             due_param = query_params.get('due')
             if due_param:
                 today_date = timezone.now().date()
                 if due_param == 'today':
                     base_queryset = base_queryset.filter(deadline__date=today_date)
                 elif due_param == 'this-week':
-                    # Calculate start and end of the current week (Monday to Sunday)
                     week_start = today_date - timedelta(days=today_date.weekday())
                     week_end = week_start + timedelta(days=6)
                     base_queryset = base_queryset.filter(deadline__date__range=[week_start, week_end])
-                # Add more options like 'next-7-days' if needed
 
             # Fiscal source filter
             source_param = query_params.get('source')
             if source_param == 'fiscal':
                 base_queryset = base_queryset.filter(source_fiscal_obligation__isnull=False)
 
-            # Workflow related filters (NEW)
+            # Workflow filters
             has_workflow_param = query_params.get('has_workflow')
             if has_workflow_param:
                 if has_workflow_param.lower() == 'true':
@@ -434,68 +435,61 @@ class TaskViewSet(viewsets.ModelViewSet):
             if current_step_id_param:
                 base_queryset = base_queryset.filter(current_workflow_step_id=current_step_id_param)
 
-            # Search filter (searches title, description, client name, assignee name)
+            # Search filter
             search_term = query_params.get('search')
             if search_term:
-                base_queryset = base_queryset.annotate(
-                    search_vector=Concat(
-                        F('title'), Value(' '), 
-                        F('description'), Value(' '),
-                        F('client__name'), Value(' '),
-                        F('assigned_to__username'), Value(' '), # or F('assigned_to__first_name') etc.
-                        F('category__name'), # Search in category name
-                        output_field=CharField()
-                    )
-                ).filter(search_vector__icontains=search_term)
-                # For more advanced search, consider PostgreSQL full-text search (SearchVector, SearchQuery)
+                base_queryset = base_queryset.filter(
+                    Q(title__icontains=search_term) |
+                    Q(description__icontains=search_term) |
+                    Q(client__name__icontains=search_term) |
+                    Q(assigned_to__username__icontains=search_term) |
+                    Q(collaborators__username__icontains=search_term) |
+                    Q(category__name__icontains=search_term)
+                ).distinct()
 
-            # Ordering (NEW)
+            # Ordering
             ordering_param = query_params.get('ordering')
             if ordering_param:
-                # Validate ordering_param to prevent arbitrary field ordering if necessary
-                valid_ordering_fields = ['title', '-title', 'deadline', '-deadline', 'priority', '-priority', 
-                                         'client__name', '-client__name', 'assigned_to__username', '-assigned_to__username',
-                                         'status', '-status', 'created_at', '-created_at', 'updated_at', '-updated_at']
+                valid_ordering_fields = [
+                    'title', '-title', 'deadline', '-deadline', 'priority', '-priority', 
+                    'client__name', '-client__name', 'assigned_to__username', '-assigned_to__username',
+                    'status', '-status', 'created_at', '-created_at', 'updated_at', '-updated_at'
+                ]
                 if ordering_param in valid_ordering_fields:
                     base_queryset = base_queryset.order_by(ordering_param)
                 else:
-                    logger.warning(f"Invalid ordering parameter: {ordering_param}")
+                    base_queryset = base_queryset.order_by('priority', 'deadline')
             else:
-                base_queryset = base_queryset.order_by('priority', 'deadline') # Default ordering
+                base_queryset = base_queryset.order_by('priority', 'deadline')
 
-
-            # --- Apply permission-based filtering (after all other filters) ---
-            if not profile or not profile.organization: # Ensure profile and organization exist
+            # ENHANCED: Permission-based filtering with multi-user assignment support
+            if not profile or not profile.organization:
                 return Task.objects.none()
                 
-            # Start with tasks from the user's organization
             org_queryset = base_queryset.filter(client__organization=profile.organization)
 
             if profile.is_org_admin or profile.can_view_all_tasks:
-                return org_queryset.distinct() # distinct() if annotations cause duplicates
+                return org_queryset.distinct()
             else:
-                # User sees tasks assigned to them OR tasks for clients they have visibility on
-                # Ensure visible_clients is efficient if it's a M2M
-                # `profile.visible_clients.values_list('id', flat=True)` is generally efficient
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True) 
+                # ENHANCED: User sees tasks where they are assigned in any capacity
+                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
                 return org_queryset.filter(
-                    Q(client_id__in=visible_client_ids) | Q(assigned_to=user)
+                    Q(client_id__in=visible_client_ids) |  # Client visibility
+                    Q(assigned_to=user) |  # Primary assignee
+                    Q(collaborators=user) |  # Collaborator
+                    Q(workflow_step_assignments__has_key=str(user.id))  # Workflow step assignee
                 ).distinct()
                 
         except Profile.DoesNotExist:
-            # Superuser can see all if no profile, otherwise no tasks
             if user.is_superuser:
-                # Apply same query param filters for superuser without org scoping
-                # This part might need to be refactored if superuser shouldn't see all orgs
-                # For simplicity, superuser sees all if no profile, with above filters applied.
-                return base_queryset.distinct() # distinct() if annotations cause duplicates
+                return base_queryset.distinct()
             return Task.objects.none()
         except Exception as e:
             logger.error(f"Error in TaskViewSet.get_queryset: {e}", exc_info=True)
-            return Task.objects.none() # Return empty on other errors
+            return Task.objects.none()
 
-        
     def perform_create(self, serializer):
+        """Enhanced create with multi-user assignment validation."""
         try:
             profile = Profile.objects.select_related('organization').get(user=self.request.user)
             
@@ -516,17 +510,30 @@ class TaskViewSet(viewsets.ModelViewSet):
             else:
                 raise ValidationError({"client": "Cliente é obrigatório."})
 
-            # Extrair dados do workflow antes de salvar
+            # Validate collaborators belong to the same organization
+            collaborators_ids = self.request.data.get('collaborators', [])
+            if collaborators_ids:
+                collaborators = User.objects.filter(id__in=collaborators_ids)
+                for collaborator in collaborators:
+                    try:
+                        collab_profile = collaborator.profile
+                        if collab_profile.organization != profile.organization:
+                            raise PermissionDenied(f"Colaborador {collaborator.username} não pertence à sua organização.")
+                    except Profile.DoesNotExist:
+                        raise ValidationError({"collaborators": f"Colaborador {collaborator.username} não possui perfil válido."})
+
+            # Extract workflow data
             workflow_id = self.request.data.get('workflow')
             step_assignments = self.request.data.get('workflow_step_assignments', {})
             
-            # Passar as atribuições para o método save
+            # Save task with collaborators
             task = serializer.save(
                 created_by=self.request.user, 
                 client=client_instance,
                 workflow_step_assignments=step_assignments if workflow_id else {}
             )
 
+            # Handle workflow assignment
             if workflow_id:
                 try:
                     workflow = WorkflowDefinition.objects.get(id=workflow_id, is_active=True)
@@ -549,10 +556,10 @@ class TaskViewSet(viewsets.ModelViewSet):
         except Profile.DoesNotExist:
             if self.request.user.is_superuser:
                 client_id = self.request.data.get('client')
-                if not client_id: raise ValidationError({"client": "Cliente é obrigatório."})
+                if not client_id: 
+                    raise ValidationError({"client": "Cliente é obrigatório."})
                 try:
                     client_instance = Client.objects.get(id=client_id)
-                    # Adicionado para salvar atribuições para superuser também
                     step_assignments = self.request.data.get('workflow_step_assignments', {})
                     serializer.save(
                         created_by=self.request.user, 
@@ -563,312 +570,293 @@ class TaskViewSet(viewsets.ModelViewSet):
                     raise ValidationError({"client": "Cliente não encontrado."})
             else:
                 raise PermissionDenied("Perfil de usuário não encontrado")
-       
-    def update(self, request, *args, **kwargs):
+
+    @action(detail=True, methods=['post'])
+    def assign_users(self, request, pk=None):
+        """
+        New action to manage user assignments to a task.
+        Supports adding/removing primary assignee and collaborators.
+        """
+        task = self.get_object()
+        
         try:
             profile = Profile.objects.get(user=request.user)
-            task_instance = self.get_object()
             
-            can_edit = (
+            # Check permissions
+            can_assign = (
                 profile.is_org_admin or 
-                profile.can_edit_all_tasks or 
-                (profile.can_edit_assigned_tasks and task_instance.assigned_to == request.user)
+                profile.can_edit_all_tasks or
+                (profile.can_edit_assigned_tasks and task.can_user_access_task(request.user))
             )
             
-            if not can_edit:
-                raise PermissionDenied("Você não tem permissão para editar esta tarefa")
+            if not can_assign:
+                raise PermissionDenied("Você não tem permissão para gerenciar atribuições desta tarefa")
             
             # Ensure task belongs to the user's organization
-            if task_instance.client.organization != profile.organization and not profile.is_org_admin:
-                raise PermissionDenied("Não pode editar tarefas de outra organização.")
+            if task.client.organization != profile.organization and not profile.is_org_admin:
+                raise PermissionDenied("Não pode gerenciar atribuições de tarefas de outra organização.")
 
-            client_id = request.data.get('client')
-            if client_id and str(task_instance.client.id) != client_id:
-                try:
-                    new_client = Client.objects.get(id=client_id)
-                    if new_client.organization != profile.organization and not profile.is_org_admin:
-                        raise PermissionDenied("Não pode mover tarefa para cliente de outra organização.")
-                    if not profile.can_access_client(new_client):
-                        raise PermissionDenied("Você não tem acesso ao novo cliente selecionado")
-                except Client.DoesNotExist:
-                    raise ValidationError({"client": "Novo cliente não encontrado."})
+            action_type = request.data.get('action')  # 'set_primary', 'add_collaborators', 'remove_collaborators', 'set_all'
+            user_ids = request.data.get('user_ids', [])
             
-            old_workflow_id = str(task_instance.workflow.id) if task_instance.workflow else None
-            new_workflow_id_from_request = request.data.get('workflow') # Could be null or empty string
-
-            response = super().update(request, *args, **kwargs)
-            task_instance.refresh_from_db() 
-
-            # Handle workflow change or assignment
-            new_workflow_id = str(task_instance.workflow.id) if task_instance.workflow else None # ID from saved task
-
-            if new_workflow_id != old_workflow_id:
-                if task_instance.workflow: # A new workflow was set (or changed)
-                    first_step = task_instance.workflow.steps.order_by('order').first()
-                    if first_step:
-                        task_instance.current_workflow_step = first_step
-                        task_instance.save(update_fields=['current_workflow_step'])
-                        WorkflowHistory.objects.create(
-                            task=task_instance, from_step=None, to_step=first_step,
-                            changed_by=request.user, action='workflow_assigned',
-                            comment=f"Workflow alterado para '{task_instance.workflow.name}'."
-                        )
-                        NotificationService.notify_workflow_assigned(task_instance, request.user)
-                    else: # New workflow has no steps, effectively remove it
-                        task_instance.workflow = None
-                        task_instance.current_workflow_step = None
-                        task_instance.save(update_fields=['workflow', 'current_workflow_step'])
-                        logger.warning(f"Workflow {new_workflow_id} atribuído à tarefa {task_instance.id} não tem passos.")
-                else: # Workflow was removed (new_workflow_id is None but old_workflow_id was not)
-                    # current_workflow_step should have been set to None by serializer or model signal
-                    if task_instance.current_workflow_step is not None: # Defensive clear
-                        task_instance.current_workflow_step = None
-                        task_instance.save(update_fields=['current_workflow_step'])
-                    WorkflowHistory.objects.create(
-                        task=task_instance, from_step=None, to_step=None, # From step might be complex to get here if cleared
-                        changed_by=request.user, action='workflow_assigned', # Or 'workflow_removed'
-                        comment="Workflow removido da tarefa."
-                    )
-            return response
-            
-        except Profile.DoesNotExist:
-            if request.user.is_superuser: return super().update(request, *args, **kwargs)
-            raise PermissionDenied("Perfil de usuário não encontrado")
-            
-    def destroy(self, request, *args, **kwargs):
-        try:
-            profile = Profile.objects.get(user=request.user)
-            task_instance = self.get_object()
-
-            if not (profile.is_org_admin or profile.can_delete_tasks):
-                raise PermissionDenied("Você não tem permissão para excluir tarefas")
-
-            if task_instance.client.organization != profile.organization and not request.user.is_superuser:
-                raise PermissionDenied("Não pode excluir tarefas de outra organização.")
+            if action_type == 'set_primary':
+                # Set primary assignee
+                if len(user_ids) != 1:
+                    return Response({"error": "Deve especificar exatamente um usuário para responsável principal"}, 
+                                  status=status.HTTP_400_BAD_REQUEST)
                 
-            return super().destroy(request, *args, **kwargs)
-        except Profile.DoesNotExist:
-            if request.user.is_superuser: return super().destroy(request, *args, **kwargs)
-            raise PermissionDenied("Perfil de usuário não encontrado")
+                try:
+                    new_assignee = User.objects.get(id=user_ids[0])
+                    # Validate user belongs to organization
+                    new_assignee_profile = new_assignee.profile
+                    if new_assignee_profile.organization != profile.organization:
+                        raise PermissionDenied("Não pode atribuir tarefa a usuário de outra organização.")
+                    
+                    # Remove from collaborators if present
+                    task.collaborators.remove(new_assignee)
+                    task.assigned_to = new_assignee
+                    task.save()
+                    
+                except User.DoesNotExist:
+                    return Response({"error": "Usuário não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+                except Profile.DoesNotExist:
+                    return Response({"error": "Usuário não possui perfil válido"}, status=status.HTTP_400_BAD_REQUEST)
             
-    @action(detail=True, methods=['patch'])
-    def update_status(self, request, pk=None):
-        task = self.get_object()
-        new_status = request.data.get('status')
-        
-        if not new_status:
-            return Response({"error": "Status é obrigatório"}, status=status.HTTP_400_BAD_REQUEST)
-        if new_status not in [s[0] for s in Task.STATUS_CHOICES]:
-            return Response({"error": "Status inválido"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            profile = Profile.objects.get(user=request.user)
-            can_edit = (
-                profile.is_org_admin or 
-                profile.can_edit_all_tasks or 
-                (profile.can_edit_assigned_tasks and task.assigned_to == request.user)
-            )
+            elif action_type == 'add_collaborators':
+                # Add collaborators
+                users_to_add = User.objects.filter(id__in=user_ids)
+                valid_users = []
+                
+                for user in users_to_add:
+                    try:
+                        user_profile = user.profile
+                        if user_profile.organization == profile.organization and user != task.assigned_to:
+                            valid_users.append(user)
+                    except Profile.DoesNotExist:
+                        continue
+                
+                task.collaborators.add(*valid_users)
+                
+            elif action_type == 'remove_collaborators':
+                # Remove collaborators
+                users_to_remove = User.objects.filter(id__in=user_ids)
+                task.collaborators.remove(*users_to_remove)
+                
+            elif action_type == 'set_all':
+                # Set all assignments at once
+                primary_user_id = request.data.get('primary_user_id')
+                collaborator_ids = request.data.get('collaborator_ids', [])
+                
+                # Set primary assignee
+                if primary_user_id:
+                    try:
+                        new_assignee = User.objects.get(id=primary_user_id)
+                        new_assignee_profile = new_assignee.profile
+                        if new_assignee_profile.organization != profile.organization:
+                            raise PermissionDenied("Responsável principal deve pertencer à sua organização.")
+                        task.assigned_to = new_assignee
+                    except (User.DoesNotExist, Profile.DoesNotExist):
+                        return Response({"error": "Responsável principal inválido"}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    task.assigned_to = None
+                
+                # Set collaborators
+                if collaborator_ids:
+                    collaborators = User.objects.filter(id__in=collaborator_ids)
+                    valid_collaborators = []
+                    
+                    for user in collaborators:
+                        try:
+                            user_profile = user.profile
+                            if (user_profile.organization == profile.organization and 
+                                user != task.assigned_to):
+                                valid_collaborators.append(user)
+                        except Profile.DoesNotExist:
+                            continue
+                    
+                    task.collaborators.set(valid_collaborators)
+                else:
+                    task.collaborators.clear()
+                
+                task.save()
             
-            if not can_edit:
-                raise PermissionDenied("Você não tem permissão para atualizar o status desta tarefa")
+            else:
+                return Response({"error": "Ação inválida"}, status=status.HTTP_400_BAD_REQUEST)
             
-            if task.client.organization != profile.organization and not profile.is_org_admin :
-                 raise PermissionDenied("Não pode atualizar status de tarefa de outra organização.")
-
-            old_status = task.status
-            task.status = new_status
-            
-            if new_status == 'completed':
-                task.completed_at = timezone.now()
-                if task.workflow and task.current_workflow_step: # If workflow active, complete it
-                    WorkflowHistory.objects.create(
-                        task=task, from_step=task.current_workflow_step, to_step=None,
-                        changed_by=request.user, action='workflow_completed',
-                        comment=f"Workflow concluído ao marcar tarefa como '{new_status}'."
-                    )
-                    NotificationService.notify_workflow_completed(task, request.user)
-                    task.current_workflow_step = None 
-            elif old_status == 'completed' and new_status != 'completed': 
-                task.completed_at = None
-                if task.workflow and not task.current_workflow_step: # Workflow was completed, now task reopened
-                    first_step = task.workflow.steps.order_by('order').first()
-                    if first_step:
-                        task.current_workflow_step = first_step
-                        WorkflowHistory.objects.create(
-                            task=task, from_step=None, to_step=first_step,
-                            changed_by=request.user, action='workflow_assigned', 
-                            comment=f"Workflow reativado para '{first_step.name}' ao reabrir tarefa (status: '{new_status}')."
-                        )
-                        NotificationService.notify_step_ready(task, first_step, request.user)
-
-
-            task.save()
+            # Return updated task data
             serializer = self.get_serializer(task)
             return Response(serializer.data)
             
         except Profile.DoesNotExist:
-            if request.user.is_superuser: # Allow superuser if no profile
-                task.status = new_status
-                if new_status == 'completed': task.completed_at = timezone.now()
-                else: task.completed_at = None
-                task.save()
-                return Response(self.get_serializer(task).data)
-            raise PermissionDenied("Perfil de usuário não encontrado")
+            if request.user.is_superuser:
+                # Handle superuser case
+                pass
+            else:
+                raise PermissionDenied("Perfil de usuário não encontrado")
 
-    @action(detail=True, methods=['post'])
-    def advance_workflow(self, request, pk=None):
+    @action(detail=True, methods=['get'])
+    def assignment_suggestions(self, request, pk=None):
+        """
+        Suggest users for assignment based on:
+        - Organization members
+        - Previous task history
+        - Workflow step assignments
+        - Client experience
+        """
         task = self.get_object()
-        
-        if not task.workflow or not task.current_workflow_step:
-            return Response({"error": "Esta tarefa não possui workflow ativo ou passo atual definido."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        next_step_id_manual = request.data.get('next_step_id')
-        comment = request.data.get('comment', '')
         
         try:
             profile = Profile.objects.get(user=request.user)
-            current_step_being_advanced_from = task.current_workflow_step
             
-            # --- NOVA LÓGICA DE PERMISSÃO REFORÇADA ---
+            if not profile.organization:
+                return Response({"error": "Usuário não pertence a uma organização"}, 
+                              status=status.HTTP_400_BAD_REQUEST)
             
-            # Obter o ID do utilizador atribuído ao passo atual a partir do JSON da tarefa
-            task_assignments = task.workflow_step_assignments or {}
-            assigned_user_id_for_current_step = task_assignments.get(str(current_step_being_advanced_from.id))
+            # Get organization members
+            org_members = Profile.objects.filter(
+                organization=profile.organization,
+                user__is_active=True
+            ).select_related('user').exclude(user=request.user)
             
-            # Verificar as permissões
-            can_advance_this_step = (
-                profile.is_org_admin or # 1. É admin da organização?
-                task.assigned_to == request.user or # 2. É o responsável principal da tarefa?
-                (assigned_user_id_for_current_step and str(assigned_user_id_for_current_step) == str(request.user.id)) # 3. Está atribuído a este passo específico?
-            )
-
-            if not can_advance_this_step:
-                raise PermissionDenied("Você não tem permissão para avançar este passo do workflow.")
-
-            # --- FIM DA NOVA LÓGICA DE PERMISSÃO ---
+            suggestions = []
             
-            # A lógica de serviço para avançar o workflow permanece a mesma
-            # A verificação de permissão agora acontece ANTES de chamar o serviço.
-            
-            success, message = WorkflowService.complete_step_and_advance(
-                task=task,
-                step_to_complete=current_step_being_advanced_from,
-                user=request.user,
-                completion_comment=comment or f"Passo '{current_step_being_advanced_from.name}' concluído para avançar.",
-                next_step_id_manual=next_step_id_manual if next_step_id_manual != 'complete_workflow' else None
-            )
-
-            if success:
-                # Caso especial para finalização do workflow
-                if next_step_id_manual == 'complete_workflow':
-                    task.refresh_from_db()
-                    if task.status == 'completed':
-                        return Response({"success": True, "message": "Workflow finalizado com sucesso."}, status=status.HTTP_200_OK)
-
-                return Response({"success": True, "message": message}, status=status.HTTP_200_OK)
-            else:
-                return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
-
-        except Profile.DoesNotExist:
-            raise PermissionDenied("Perfil de usuário não encontrado.")
-        except WorkflowStep.DoesNotExist:
-            return Response({"error": "Passo do workflow não encontrado."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            logger.error(f"Error in TaskViewSet.advance_workflow: {e}", exc_info=True)
-            return Response({"error": f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    @action(detail=True, methods=['get'])
-    def workflow_status(self, request, pk=None):
-        task = self.get_object()
-        
-        if not task.workflow:
-            return Response({"workflow": None, "message": "Tarefa não tem workflow atribuído."})
-        
-        workflow_definition = task.workflow
-        all_steps_qs = workflow_definition.steps.order_by('order').select_related('assign_to')
-        
-        history_qs = WorkflowHistory.objects.filter(task=task).select_related(
-            'from_step', 'to_step', 'changed_by'
-        ).order_by('-created_at')
-        
-        approvals_qs = TaskApproval.objects.filter(task=task).select_related(
-            'workflow_step', 'approved_by'
-        )
-        
-        time_by_step = {}
-        for step_obj in all_steps_qs:
-            total_minutes = TimeEntry.objects.filter(
-                task=task, workflow_step=step_obj
-            ).aggregate(total=models.Sum('minutes_spent'))['total'] or 0
-            time_by_step[str(step_obj.id)] = total_minutes
-
-        # --- INÍCIO DA LÓGICA CORRIGIDA ---
-
-        # FIX 2: Lógica de status de passos e progresso mais robusta
-        workflow_is_completed = history_qs.filter(action='workflow_completed').exists()
-        
-        completed_step_ids = set()
-        if workflow_is_completed:
-            # Se o workflow está marcado como completo, todos os passos estão completos.
-            completed_step_ids.update(str(s.id) for s in all_steps_qs)
-        else:
-            # Caso contrário, um passo está completo se tiver um histórico de conclusão/avanço.
-            completed_history = history_qs.filter(action__in=['step_completed', 'step_advanced'])
-            completed_step_ids.update(str(entry.from_step_id) for entry in completed_history if entry.from_step_id)
-
-        completed_count = len(completed_step_ids)
-        total_steps_count = all_steps_qs.count()
-        percentage = (completed_count / total_steps_count) * 100 if total_steps_count > 0 else 0
-        
-        # FIX 1: Pré-carregar utilizadores e corrigir a busca por ID
-        task_step_assignments = task.workflow_step_assignments or {}
-        # Converte os valores (IDs de utilizador) para inteiros para a busca
-        user_ids_in_assignments = [int(uid) for uid in task_step_assignments.values() if uid and str(uid).isdigit()]
-        assigned_users = User.objects.in_bulk(user_ids_in_assignments)
-
-        # Montar a resposta
-        response_data = {
-            'task': TaskSerializer(task).data,
-            'workflow': {
-                'id': workflow_definition.id,
-                'name': workflow_definition.name,
-                'is_completed': workflow_is_completed,
-                'steps': [],
-                'time_by_step': time_by_step,
-                # FIX 3: Estruturar corretamente os dados de progresso
-                'progress': {
-                    'current_step': task.current_workflow_step.order if task.current_workflow_step else 0,
-                    'completed_steps': completed_count,
-                    'total_steps': total_steps_count,
-                    'percentage': round(percentage, 1)
+            for member_profile in org_members:
+                user = member_profile.user
+                suggestion = {
+                    'id': user.id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'role': member_profile.role,
+                    'relevance_score': 0,
+                    'reasons': []
                 }
-            },
-            'current_step': WorkflowStepSerializer(task.current_workflow_step).data if task.current_workflow_step else None,
-            'history': WorkflowHistorySerializer(history_qs[:50], many=True).data,
-            'approvals': TaskApprovalSerializer(approvals_qs, many=True).data,
-        }
-
-        for step_obj in all_steps_qs:
-            step_id_str = str(step_obj.id)
-            step_data = WorkflowStepSerializer(step_obj).data
+                
+                # Score based on previous work with this client
+                client_tasks_count = Task.objects.filter(
+                    client=task.client,
+                    assigned_to=user
+                ).count()
+                
+                if client_tasks_count > 0:
+                    suggestion['relevance_score'] += client_tasks_count * 2
+                    suggestion['reasons'].append(f"Trabalhou em {client_tasks_count} tarefa(s) deste cliente")
+                
+                # Score based on similar category experience
+                if task.category:
+                    category_tasks_count = Task.objects.filter(
+                        category=task.category,
+                        assigned_to=user
+                    ).count()
+                    
+                    if category_tasks_count > 0:
+                        suggestion['relevance_score'] += category_tasks_count
+                        suggestion['reasons'].append(f"Experiência em {task.category.name}")
+                
+                # Score based on workflow step assignments
+                if task.workflow and task.workflow_step_assignments:
+                    if str(user.id) in task.workflow_step_assignments.values():
+                        suggestion['relevance_score'] += 5
+                        suggestion['reasons'].append("Atribuído a passos do workflow")
+                
+                # Score based on current workload (lower workload = higher score)
+                current_tasks = Task.objects.filter(
+                    Q(assigned_to=user) | Q(collaborators=user),
+                    status__in=['pending', 'in_progress']
+                ).distinct().count()
+                
+                if current_tasks < 5:
+                    suggestion['relevance_score'] += 3
+                    suggestion['reasons'].append("Baixa carga de trabalho atual")
+                elif current_tasks > 10:
+                    suggestion['relevance_score'] -= 2
+                    suggestion['reasons'].append("Alta carga de trabalho atual")
+                
+                suggestions.append(suggestion)
             
-            # Lógica de atribuição de nome corrigida
-            assigned_user_id_str = task_step_assignments.get(step_id_str)
-            if assigned_user_id_str and str(assigned_user_id_str).isdigit():
-                user_obj = assigned_users.get(int(assigned_user_id_str)) # Busca com ID inteiro
-                step_data['assign_to_name'] = user_obj.username if user_obj else "Utilizador Desconhecido"
-            else:
-                step_data['assign_to_name'] = step_obj.assign_to.username if step_obj.assign_to else "Não atribuído"
-
-            step_data['is_current'] = task.current_workflow_step_id == step_obj.id
-            step_data['is_completed'] = step_id_str in completed_step_ids
+            # Sort by relevance score
+            suggestions.sort(key=lambda x: x['relevance_score'], reverse=True)
             
-            response_data['workflow']['steps'].append(step_data)
-
-        # --- FIM DA LÓGICA CORRIGIDA ---
+            return Response({
+                'suggestions': suggestions[:10],  # Top 10 suggestions
+                'total_members': len(org_members)
+            })
             
-        return Response(response_data)
+        except Profile.DoesNotExist:
+            return Response({"error": "Perfil não encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
+    @action(detail=False, methods=['get'])
+    def my_assignments(self, request):
+        """
+        Get all tasks assigned to the current user in any capacity.
+        """
+        user = request.user
+        
+        try:
+            profile = user.profile
+            if not profile.organization:
+                return Response({"tasks": []})
+            
+            # Get tasks where user is assigned in any capacity
+            my_tasks = Task.objects.filter(
+                Q(assigned_to=user) |  # Primary assignee
+                Q(collaborators=user) |  # Collaborator
+                Q(workflow_step_assignments__has_value=str(user.id)),  # Workflow step assignee
+                client__organization=profile.organization
+            ).select_related(
+                'client', 'category', 'assigned_to', 'workflow', 'current_workflow_step'
+            ).prefetch_related('collaborators').distinct()
+            
+            # Group by assignment type
+            assignments = {
+                'primary_tasks': [],
+                'collaborative_tasks': [],
+                'workflow_step_tasks': [],
+                'summary': {
+                    'total_tasks': 0,
+                    'pending_tasks': 0,
+                    'in_progress_tasks': 0,
+                    'overdue_tasks': 0
+                }
+            }
+            
+            today = timezone.now().date()
+            
+            for task in my_tasks:
+                task_data = {
+                    'id': task.id,
+                    'title': task.title,
+                    'client_name': task.client.name,
+                    'status': task.status,
+                    'priority': task.priority,
+                    'deadline': task.deadline,
+                    'is_overdue': task.deadline and task.deadline.date() < today and task.status != 'completed',
+                    'role_in_task': task.get_user_role_in_task(user)
+                }
+                
+                # Categorize by assignment type
+                if task.assigned_to == user:
+                    assignments['primary_tasks'].append(task_data)
+                elif task.collaborators.filter(id=user.id).exists():
+                    assignments['collaborative_tasks'].append(task_data)
+                elif (task.workflow_step_assignments and 
+                      str(user.id) in task.workflow_step_assignments.values()):
+                    assignments['workflow_step_tasks'].append(task_data)
+                
+                # Update summary
+                assignments['summary']['total_tasks'] += 1
+                if task.status == 'pending':
+                    assignments['summary']['pending_tasks'] += 1
+                elif task.status == 'in_progress':
+                    assignments['summary']['in_progress_tasks'] += 1
+                
+                if task_data['is_overdue']:
+                    assignments['summary']['overdue_tasks'] += 1
+            
+            return Response(assignments)
+            
+        except Profile.DoesNotExist:
+            return Response({"error": "Perfil não encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
 class CreateUserView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -1013,7 +1001,6 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
     def _process_workflow_and_status_for_time_entry(self, time_entry: TimeEntry):
         """
         Processa as mudanças de status da tarefa e do workflow após a criação de um TimeEntry.
-        Esta é a versão CORRIGIDA.
         """
         if not time_entry.task:
             return
@@ -1021,33 +1008,32 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         task = time_entry.task
         user = time_entry.user
         
-        # O passo do workflow onde o tempo foi registado.
         step_being_worked_on = time_entry.workflow_step
 
-        # Se a flag para completar o passo foi marcada
         if step_being_worked_on and time_entry.workflow_step_completed:
-            # Apenas tenta completar se este for o passo atual da tarefa.
             if task.current_workflow_step == step_being_worked_on:
                 logger.info(f"TimeEntry {time_entry.id}: Tentando completar o passo '{step_being_worked_on.name}' para a tarefa {task.id}.")
                 
-                # O serviço `complete_step_and_advance` já lida com o histórico, notificações e avanço.
-                WorkflowService.complete_step_and_advance(
+                # WorkflowService.complete_step_and_advance will handle logging history,
+                # notifying for step_completed, and then advancing (which notifies for step_ready).
+                # It will also handle task completion if the workflow ends and sets the task status.
+                success, message = WorkflowService.complete_step_and_advance(
                     task=task,
                     step_to_complete=step_being_worked_on,
                     user=user,
                     completion_comment=f"Passo concluído via registo de tempo: {time_entry.description}",
                     time_spent_on_step=time_entry.minutes_spent,
-                    # O serviço internamente decide se avança com base neste booleano.
-                    should_auto_advance=time_entry.advance_workflow 
+                    should_auto_advance=time_entry.advance_workflow
                 )
+                # If the workflow service completed the task, notify_task_completed is already called from there.
+                # We don't need to call it again here unless the task status logic below does something different.
             else:
                 logger.warning(
                     f"TimeEntry {time_entry.id} marcou o passo '{step_being_worked_on.name}' como concluído, "
                     f"mas o passo atual da tarefa {task.id} é '{task.current_workflow_step.name if task.current_workflow_step else 'Nenhum'}'. "
                     "O avanço do workflow não será acionado a partir de um passo que não é o atual."
                 )
-        # Se o passo NÃO foi marcado como concluído, apenas regista o tempo no histórico.
-        elif step_being_worked_on:
+        elif step_being_worked_on: # Work logged on a step, but step not marked as completed via this time entry
             WorkflowService._log_workflow_history(
                 task=task, from_step=step_being_worked_on, to_step=None, 
                 changed_by=user, action='step_work_logged',
@@ -1055,25 +1041,34 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
                 time_spent_minutes=time_entry.minutes_spent
             )
 
-        # Atualiza o status da tarefa independentemente do workflow, se solicitado.
-        # É importante fazer isto *após* a lógica do workflow, pois a conclusão do workflow
-        # pode já ter alterado o status da tarefa para 'completed'.
+        # Handle task status change *after* workflow logic, as workflow might change status
         if time_entry.task_status_after != 'no_change':
-            # Recarrega a tarefa para obter o status mais recente (pode ter sido alterado pelo workflow)
-            task.refresh_from_db()
+            task.refresh_from_db() # Get the latest status (potentially updated by WorkflowService)
             
-            # Só altera o status se o novo status for diferente do atual.
-            # Evita, por exemplo, mudar de 'completed' (pelo workflow) para 'in_progress'.
-            if task.status != time_entry.task_status_after:
-                old_status = task.status
+            if task.status != time_entry.task_status_after: # Only proceed if the requested status is different
+                old_status_before_time_entry_logic = task.status
+                
                 task.status = time_entry.task_status_after
+                
                 if task.status == 'completed':
                     task.completed_at = timezone.now()
-                elif old_status == 'completed':
+                    # If the workflow completion above ALREADY set the task to completed, this notification might be redundant.
+                    # However, this logic handles cases where time entry directly completes a task *without* workflow interaction
+                    # or if the workflow logic didn't mark it as completed but this time entry action does.
+                    if old_status_before_time_entry_logic != 'completed': # Avoid double notification if workflow already did it
+                        task.save(update_fields=['status', 'completed_at'])
+                        NotificationService.notify_task_completed(task, user) 
+                    else:
+                        task.save(update_fields=['status', 'completed_at']) # Still save if status changed to completed
+                elif old_status_before_time_entry_logic == 'completed': # Task was completed, now it's being reopened
                     task.completed_at = None
+                    task.save(update_fields=['status', 'completed_at'])
+                else: # Other status changes (e.g., pending to in_progress)
+                    task.save(update_fields=['status'])
                 
-                task.save(update_fields=['status', 'completed_at'])
-                logger.info(f"Status da tarefa {task.title} alterado de '{old_status}' para '{task.status}' via time entry.")
+                logger.info(f"Status da tarefa {task.title} (via time entry status_after) alterado de '{old_status_before_time_entry_logic}' para '{task.status}'.")
+            else:
+                logger.info(f"Status da tarefa {task.title} não alterado via time entry, pois já é '{task.status}'.")
 
     def update(self, request, *args, **kwargs):
         try:

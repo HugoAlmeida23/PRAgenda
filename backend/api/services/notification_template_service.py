@@ -75,15 +75,15 @@ class NotificationTemplateService:
                 'message_template': 'A tarefa "{task_title}" completou o passo "{completed_step_name}" e tem múltiplos caminhos possíveis: {next_steps_names_list}. É necessário escolher manualmente o próximo passo.',
                 'default_priority': 'high'
             },
-            'workflow_completed': {
-                'title_template': 'Workflow concluído: {task_title}',
-                'message_template': 'O workflow "{workflow_name}" da tarefa "{task_title}" (Cliente: {client_name}) foi concluído com sucesso por {changed_by_name}.\n\nData: {current_date}',
-                'default_priority': 'normal'
-            },
             'deadline_approaching': {
                 'title_template': 'Prazo próximo ({days_remaining_text}): {task_title}',
                 'message_template': 'A tarefa "{task_title}" (Cliente: {client_name}) vence {days_remaining_text} ({deadline_date}).\n\nPasso atual: {step_name}\nPor favor, verifique os detalhes.',
                 'default_priority': 'high' # Will be overridden by NotificationService based on days_remaining
+            },
+            'task_completed': { 
+                'title_template': '✅ Tarefa Concluída: {task_title}',
+                'message_template': 'A tarefa "{task_title}" (Cliente: {client_name}) foi marcada como concluída por {changed_by_name}.',
+                 'default_priority': 'normal'
             },
             'step_overdue': {
                 'title_template': 'Passo atrasado: {step_name} (Tarefa: {task_title})',

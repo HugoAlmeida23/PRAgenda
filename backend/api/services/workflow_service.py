@@ -70,9 +70,9 @@ class WorkflowService:
                 action='workflow_completed',
                 comment=f"Workflow concluído após passo: '{completed_step.name}'. {comment_for_advance}".strip()
             )
-            NotificationService.notify_workflow_completed(task, user)
-            logger.info(f"Workflow para a tarefa {task.id} concluído após o passo '{completed_step.name}'.")
-            return True, "Workflow finalizado."
+            NotificationService.notify_task_completed(task, user)
+            logger.info(f"Workflow para a tarefa {task.id} concluído após o passo '{completed_step.name}'. Tarefa marcada como concluída.")
+            return True, "Workflow finalizado e tarefa marcada como concluída."
 
         actual_next_step = None
         if len(possible_next_steps) == 1:
