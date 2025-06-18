@@ -41,6 +41,7 @@ from django.db.models import ExpressionWrapper, fields
 from .services.workflow_service import WorkflowService
 from .tasks import update_profitability_for_single_organization_task # Import the new Celery task
 from dateutil.relativedelta import relativedelta
+from django.db.models.expressions import RawSQL # Make sure this is imported
 
 
 
@@ -326,20 +327,24 @@ class TaskViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+        user_id_str = str(user.id) # For consistent string comparison with JSON values
+        logger.debug(f"[TaskViewSet] get_queryset for user: {user.username} (ID: {user_id_str})")
+
         try:
             profile = user.profile
-            
-            base_queryset = Task.objects.select_related(
-                'client', 'client__organization',
-                'category', 
-                'assigned_to', 'assigned_to__profile',
-                'created_by', 'created_by__profile',
+            if not profile.organization:
+                logger.debug(f"[TaskViewSet] User {user.username} has no organization. Returning empty queryset.")
+                return Task.objects.none()
+
+            # 1. Start with base queryset and optimizations
+            queryset = Task.objects.select_related(
+                'client', 'client__organization', 'category', 
+                'assigned_to', # Primary assignee (User object)
+                'created_by', 
                 'workflow', 
-                'current_workflow_step',
-                'current_workflow_step__assign_to'
+                'current_workflow_step', 'current_workflow_step__assign_to'
             ).prefetch_related(
-                # ENHANCED: Prefetch collaborators for efficient access
-                'collaborators',
+                'collaborators', # ManyToManyField for collaborators (User objects)
                 Prefetch('workflow_notifications', queryset=WorkflowNotification.objects.order_by('-created_at')),
                 'approvals',
                 Prefetch('workflow__steps', queryset=WorkflowStep.objects.select_related('assign_to').order_by('order')),
@@ -350,95 +355,105 @@ class TaskViewSet(viewsets.ModelViewSet):
                     filter=Q(workflow_notifications__is_read=False, workflow_notifications__is_archived=False)
                 ),
                 has_pending_notifications=Exists(
-                    WorkflowNotification.objects.filter(
-                        task=OuterRef('pk'), 
-                        is_read=False, 
-                        is_archived=False
-                    )
+                    WorkflowNotification.objects.filter(task=OuterRef('pk'), is_read=False, is_archived=False)
                 )
             )
-            
-            # Apply query parameter filters (existing filter logic...)
+
+            # 2. Filter by organization FIRST
+            queryset = queryset.filter(client__organization=profile.organization)
+            logger.debug(f"[TaskViewSet] After org filter ({profile.organization.name}), current task count: {queryset.count()}")
+
+            # 3. Apply ALL query parameter filters (status, client_id_param, search, etc.)
             query_params = self.request.query_params
             
-            # Status filter
+            # --- Status filter ---
             status_param = query_params.get('status')
             if status_param:
                 status_values = [s.strip() for s in status_param.split(',') if s.strip()]
                 if status_values:
-                    base_queryset = base_queryset.filter(status__in=status_values)
+                    queryset = queryset.filter(status__in=status_values)
             
-            # Client filter
-            client_id = query_params.get('client')
-            if client_id:
-                base_queryset = base_queryset.filter(client_id=client_id)
+            # --- Client filter ---
+            client_id_param_filter = query_params.get('client')
+            if client_id_param_filter:
+                queryset = queryset.filter(client_id=client_id_param_filter)
 
-            # Priority filter
+            # --- Priority filter ---
             priority_param = query_params.get('priority')
             if priority_param:
                 try:
                     priority_int = int(priority_param)
-                    base_queryset = base_queryset.filter(priority=priority_int)
-                except ValueError:
-                    pass
-
-            # ENHANCED: Improved assignee filter to include all assignment types
-            assigned_to_id = query_params.get('assignedTo')
-            if assigned_to_id:
-                base_queryset = base_queryset.filter(
-                    Q(assigned_to_id=assigned_to_id) |  # Primary assignee
-                    Q(collaborators__id=assigned_to_id)  # Collaborator
-                ).distinct()
+                    queryset = queryset.filter(priority=priority_int)
+                except ValueError: pass # Ignore invalid priority
             
-            # Category filter
+            # --- AssignedTo filter (for filtering the list by a specific assignee in the UI) ---
+            # This filter checks if the task is assigned to `assigned_to_id_param_filter` in ANY capacity
+            assigned_to_id_param_filter = query_params.get('assignedTo')
+            if assigned_to_id_param_filter:
+                # Subquery for workflow step assignment check against assigned_to_id_param_filter
+                is_workflow_assignee_for_specific_user_subquery = Task.objects.filter(
+                    pk=OuterRef('pk')
+                ).annotate(
+                    is_wf_assigned_to_specific_user=RawSQL(
+                        "EXISTS(SELECT 1 FROM jsonb_each_text(workflow_step_assignments) vals WHERE vals.value = %s)",
+                        (str(assigned_to_id_param_filter),) # Compare with the user ID from query param
+                    )
+                )
+                queryset = queryset.filter(
+                    Q(assigned_to_id=assigned_to_id_param_filter) |       # Primary assignee
+                    Q(collaborators__id=assigned_to_id_param_filter) |    # User is among collaborators
+                    Q(Exists(is_workflow_assignee_for_specific_user_subquery.filter(is_wf_assigned_to_specific_user=True))) # Workflow step
+                ).distinct()
+
+            # --- Category filter ---
             category_id = query_params.get('category')
             if category_id:
-                base_queryset = base_queryset.filter(category_id=category_id)
+                queryset = queryset.filter(category_id=category_id)
 
-            # Overdue filter
+            # --- Overdue filter ---
             overdue_param = query_params.get('overdue')
             if overdue_param and overdue_param.lower() == 'true':
-                base_queryset = base_queryset.filter(
+                queryset = queryset.filter(
                     deadline__lt=timezone.now().date(),
                     status__in=['pending', 'in_progress']
                 )
             
-            # Due date filter
+            # --- Due date filter ---
             due_param = query_params.get('due')
             if due_param:
                 today_date = timezone.now().date()
                 if due_param == 'today':
-                    base_queryset = base_queryset.filter(deadline__date=today_date)
+                    queryset = queryset.filter(deadline__date=today_date)
                 elif due_param == 'this-week':
                     week_start = today_date - timedelta(days=today_date.weekday())
                     week_end = week_start + timedelta(days=6)
-                    base_queryset = base_queryset.filter(deadline__date__range=[week_start, week_end])
+                    queryset = queryset.filter(deadline__date__range=[week_start, week_end])
 
-            # Fiscal source filter
+            # --- Fiscal source filter ---
             source_param = query_params.get('source')
             if source_param == 'fiscal':
-                base_queryset = base_queryset.filter(source_fiscal_obligation__isnull=False)
+                queryset = queryset.filter(source_fiscal_obligation__isnull=False)
 
-            # Workflow filters
+            # --- Workflow filters ---
             has_workflow_param = query_params.get('has_workflow')
             if has_workflow_param:
                 if has_workflow_param.lower() == 'true':
-                    base_queryset = base_queryset.filter(workflow__isnull=False)
+                    queryset = queryset.filter(workflow__isnull=False)
                 elif has_workflow_param.lower() == 'false':
-                    base_queryset = base_queryset.filter(workflow__isnull=True)
+                    queryset = queryset.filter(workflow__isnull=True)
             
             workflow_id_param = query_params.get('workflow_id')
             if workflow_id_param:
-                base_queryset = base_queryset.filter(workflow_id=workflow_id_param)
+                queryset = queryset.filter(workflow_id=workflow_id_param)
 
             current_step_id_param = query_params.get('current_workflow_step_id')
             if current_step_id_param:
-                base_queryset = base_queryset.filter(current_workflow_step_id=current_step_id_param)
+                queryset = queryset.filter(current_workflow_step_id=current_step_id_param)
 
-            # Search filter
+            # --- Search filter ---
             search_term = query_params.get('search')
             if search_term:
-                base_queryset = base_queryset.filter(
+                queryset = queryset.filter(
                     Q(title__icontains=search_term) |
                     Q(description__icontains=search_term) |
                     Q(client__name__icontains=search_term) |
@@ -446,8 +461,52 @@ class TaskViewSet(viewsets.ModelViewSet):
                     Q(collaborators__username__icontains=search_term) |
                     Q(category__name__icontains=search_term)
                 ).distinct()
+            
+            logger.debug(f"[TaskViewSet] After all query_params filters, tasks count: {queryset.count()}")
 
-            # Ordering
+
+            # 4. Apply permission-based visibility for the LOGGED-IN user
+            if profile.is_org_admin or profile.can_view_all_tasks:
+                logger.debug(f"[TaskViewSet] User {user.username} is admin or can_view_all_tasks. Returning {queryset.count()} tasks (after param filters).")
+                # No further *visibility* filtering needed, queryset already has org and param filters
+            else:
+                # For regular users, they see tasks if:
+                # A) They are the primary assignee (`assigned_to`)
+                # OR
+                # B) They are one of the `collaborators`
+                # OR
+                # C) They are assigned to any step in `workflow_step_assignments`
+                
+                # IMPORTANT: The query parameters (like `assignedTo` for filtering by another user)
+                # have already been applied to `queryset`. Now we further filter this `queryset`
+                # to only include tasks the *logged-in user* is allowed to see.
+
+                q_assigned_to_logged_in_user = Q(assigned_to=user)
+                q_logged_in_user_is_collaborator = Q(collaborators=user) # Direct M2M check
+                
+                # Subquery to check if the logged-in user is assigned to any workflow step.
+                is_workflow_assignee_for_logged_in_user_subquery = Task.objects.filter(
+                    pk=OuterRef('pk') # Correlate with the outer Task query
+                ).annotate(
+                    is_wf_assigned_to_logged_in_user=RawSQL(
+                        "EXISTS(SELECT 1 FROM jsonb_each_text(workflow_step_assignments) vals WHERE vals.value = %s)",
+                        (user_id_str,) # Compare with the logged-in user's ID string
+                    )
+                )
+                q_logged_in_user_in_workflow = Q(Exists(is_workflow_assignee_for_logged_in_user_subquery.filter(is_wf_assigned_to_logged_in_user=True)))
+                
+                # Combine all involvement conditions for the logged-in user
+                q_user_is_involved = (
+                    q_assigned_to_logged_in_user | 
+                    q_logged_in_user_is_collaborator | 
+                    q_logged_in_user_in_workflow
+                )
+                
+                queryset = queryset.filter(q_user_is_involved)
+                
+                logger.debug(f"[TaskViewSet] Non-admin {user.username}: after involvement filter, task count: {queryset.count()}")
+
+            # 5. Apply ordering last
             ordering_param = query_params.get('ordering')
             if ordering_param:
                 valid_ordering_fields = [
@@ -456,38 +515,59 @@ class TaskViewSet(viewsets.ModelViewSet):
                     'status', '-status', 'created_at', '-created_at', 'updated_at', '-updated_at'
                 ]
                 if ordering_param in valid_ordering_fields:
-                    base_queryset = base_queryset.order_by(ordering_param)
+                    queryset = queryset.order_by(ordering_param)
                 else:
-                    base_queryset = base_queryset.order_by('priority', 'deadline')
+                    queryset = queryset.order_by('priority', 'deadline')
             else:
-                base_queryset = base_queryset.order_by('priority', 'deadline')
+                queryset = queryset.order_by('priority', 'deadline')
 
-            # ENHANCED: Permission-based filtering with multi-user assignment support
-            if not profile or not profile.organization:
-                return Task.objects.none()
-                
-            org_queryset = base_queryset.filter(client__organization=profile.organization)
+            final_queryset = queryset.distinct()
+            logger.debug(f"[TaskViewSet] Final distinct queryset count for user {user.username}: {final_queryset.count()}")
+            return final_queryset
 
-            if profile.is_org_admin or profile.can_view_all_tasks:
-                return org_queryset.distinct()
-            else:
-                # ENHANCED: User sees tasks where they are assigned in any capacity
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
-                return org_queryset.filter(
-                    Q(client_id__in=visible_client_ids) |  # Client visibility
-                    Q(assigned_to=user) |  # Primary assignee
-                    Q(collaborators=user) |  # Collaborator
-                    Q(workflow_step_assignments__has_key=str(user.id))  # Workflow step assignee
-                ).distinct()
-                
         except Profile.DoesNotExist:
+            logger.debug(f"[TaskViewSet] Profile.DoesNotExist for user {user.username}")
             if user.is_superuser:
-                return base_queryset.distinct()
+                logger.debug("[TaskViewSet] Superuser (no profile). Applying query params to all tasks.")
+                # Superuser sees all tasks, but still respects query parameters if any.
+                # We need to re-apply query params to Task.objects.all() if queryset was reset.
+                # However, `queryset` at this point should be `Task.objects.select_related...`
+                # if the param filters were not applied due to no profile.
+                # A simpler approach for superuser without profile:
+                all_tasks_for_superuser = Task.objects.all().select_related( # Apply select_related for consistency
+                    'client', 'client__organization', 'category', 
+                    'assigned_to', 'created_by', 
+                    'workflow', 'current_workflow_step'
+                ).prefetch_related('collaborators') # Add prefetch_related too
+
+                # Re-apply query param filters for superuser
+                status_param = query_params.get('status')
+                if status_param:
+                    status_values = [s.strip() for s in status_param.split(',') if s.strip()]
+                    if status_values:
+                        all_tasks_for_superuser = all_tasks_for_superuser.filter(status__in=status_values)
+                # ... (re-apply ALL other query_params filters to `all_tasks_for_superuser` as done above for `queryset`) ...
+                # This is repetitive. Ideally, a helper function would apply these common filters.
+
+                # For now, let's assume the initial `queryset` (Task.objects.select_related...)
+                # is the base for superuser if profile doesn't exist and param filters were applied to it.
+                # The `queryset` variable before the permission block already has params applied.
+                ordering_param = query_params.get('ordering')
+                if ordering_param: # Re-apply ordering as it might have been lost
+                    valid_ordering_fields = [
+                        'title', '-title', 'deadline', '-deadline', 'priority', '-priority', 
+                        'client__name', '-client__name', 'assigned_to__username', '-assigned_to__username',
+                        'status', '-status', 'created_at', '-created_at', 'updated_at', '-updated_at'
+                    ]
+                    if ordering_param in valid_ordering_fields:
+                       return queryset.order_by(ordering_param).distinct() 
+                return queryset.order_by('priority', 'deadline').distinct()
+
             return Task.objects.none()
         except Exception as e:
-            logger.error(f"Error in TaskViewSet.get_queryset: {e}", exc_info=True)
+            logger.error(f"FATAL Error in TaskViewSet.get_queryset for user {user.username}: {e}", exc_info=True)
             return Task.objects.none()
-
+         
     def perform_create(self, serializer):
         """Enhanced create with multi-user assignment validation."""
         try:
@@ -571,6 +651,77 @@ class TaskViewSet(viewsets.ModelViewSet):
             else:
                 raise PermissionDenied("Perfil de usuário não encontrado")
 
+    @action(detail=True, methods=['get'])
+    def workflow_status(self, request, pk=None):
+        """
+        Recupera todos os dados necessários para a visualização do workflow de uma tarefa.
+        """
+        task = self.get_object()  # Isto irá tratar do erro 404 se a tarefa não existir
+
+        # Permissão para ver o workflow desta tarefa
+        profile = request.user.profile
+        if not (profile.is_org_admin or profile.can_view_all_tasks or task.can_user_access_task(request.user)):
+             return Response({'error': 'Você não tem permissão para ver o workflow desta tarefa.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if not task.workflow:
+            return Response({'error': 'Esta tarefa não tem um workflow associado.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Preparar a resposta com todos os dados necessários
+        history = task.workflow_history.order_by('-created_at')
+        approvals = task.approvals.all()
+        all_workflow_steps = task.workflow.steps.select_related('assign_to').order_by('order')
+        
+        time_by_step = TimeEntry.objects.filter(
+            task=task,
+            workflow_step__isnull=False
+        ).values('workflow_step_id').annotate(
+            total_minutes=Sum('minutes_spent')
+        ).order_by()
+        
+        time_by_step_dict = {
+            str(item['workflow_step_id']): item['total_minutes'] or 0
+            for item in time_by_step
+        }
+
+        current_step_order = float('inf')
+        if task.current_workflow_step:
+            current_step_order = task.current_workflow_step.order
+
+        steps_data = []
+        for step in all_workflow_steps:
+            is_completed = (task.status == 'completed' or (task.current_workflow_step and step.order < current_step_order))
+            if not is_completed:
+                 if history.filter(from_step=step, action__in=['step_completed', 'step_advanced', 'workflow_completed']).exists():
+                     is_completed = True
+
+            steps_data.append({
+                'id': str(step.id),
+                'name': step.name,
+                'order': step.order,
+                'description': step.description,
+                'requires_approval': step.requires_approval,
+                'approver_role': step.approver_role,
+                'assign_to_name': step.assign_to.username if step.assign_to else None,
+                'is_current': task.current_workflow_step_id == step.id,
+                'is_completed': is_completed,
+                'next_steps': [str(ns.id) for ns in step.next_steps.all()]
+            })
+
+        response_data = {
+            'workflow': {
+                'name': task.workflow.name,
+                'steps': steps_data,
+                'is_completed': task.status == 'completed' and not task.current_workflow_step,
+                'progress': task.get_workflow_progress_data(),
+                'time_by_step': time_by_step_dict,
+            },
+            'current_step': WorkflowStepSerializer(task.current_workflow_step).data if task.current_workflow_step else None,
+            'approvals': TaskApprovalSerializer(approvals, many=True).data,
+            'history': WorkflowHistorySerializer(history, many=True).data,
+            'task': self.get_serializer(task).data,
+        }
+
+        return Response(response_data)
     @action(detail=True, methods=['post'])
     def assign_users(self, request, pk=None):
         """

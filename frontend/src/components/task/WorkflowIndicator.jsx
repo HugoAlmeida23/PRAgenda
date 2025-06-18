@@ -79,7 +79,6 @@ const WorkflowIndicator = ({ task, onViewWorkflow }) => {
     const totalSteps = progressData.total_steps || 0;
     const percentage = progressData.percentage || 0;
     const isCompleted = progressData.is_completed || false;
-    // const currentStepName = progressData.current_step_name || "N/A"; // If available
 
     let displayText;
     let displayColor;

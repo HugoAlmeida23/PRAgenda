@@ -88,7 +88,7 @@ const fetchTasksOnly = async (userId, permissions, taskFilters, taskSearchTerm, 
     taskParams.append('ordering', `${taskSortConfig.direction === 'desc' ? '-' : ''}${taskSortConfig.key}`);
   }
 
-  const tasksEndpoint = `/tasks/?${taskParams.toString()}`;
+  const tasksEndpoint = `/tasks/`;
   const tasksRes = await api.get(tasksEndpoint);
   return tasksRes.data.results || tasksRes.data || [];
 };
@@ -249,9 +249,9 @@ const TaskManagement = () => {
     }
   });
 
-  const tasksForDisplay = useMemo(() => {
+   const tasksForDisplay = useMemo(() => {
     // If user is an admin, show all tasks that came from the server
-    if (permissions.isOrgAdmin) {
+    if (permissions.isOrgAdmin || permissions.canViewAllTasks) { // Added canViewAllTasks
       return tasks;
     }
     
@@ -262,19 +262,24 @@ const TaskManagement = () => {
             return true;
         }
 
-        // Condition 2: A workflow step in this task is assigned to the current user
+        // Condition 2: User is a collaborator
+        if (task.collaborators && task.collaborators.some(c => (c.id || c) === permissions.userId)) { // Check c.id or c
+            return true;
+        }
+
+        // Condition 3: A workflow step in this task is assigned to the current user
         if (task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object') {
             // Object.values gets all user IDs assigned to steps
             const assignedUserIdsInWorkflow = Object.values(task.workflow_step_assignments);
-            if (assignedUserIdsInWorkflow.includes(permissions.userId)) {
+            // Ensure comparison is consistent (e.g., both strings or both numbers)
+            if (assignedUserIdsInWorkflow.map(String).includes(String(permissions.userId))) {
                 return true;
             }
         }
 
-        // If neither condition is met, hide the task
         return false;
     });
-  }, [tasks, permissions.isOrgAdmin, permissions.userId]);
+  }, [tasks, permissions.isOrgAdmin, permissions.canViewAllTasks, permissions.userId]);
   
   const handleSort = useCallback((key) => { setSortConfigStore(key); }, [setSortConfigStore]);
 
@@ -450,7 +455,7 @@ const TaskManagement = () => {
     );
   }
   
-  const canViewAnyTask = permissions.isOrgAdmin || permissions.canViewAllTasks || permissions.canViewAssignedTasks;
+  const canViewAnyTask = permissions.canEditAssignedTasks;
   if (!permissions.loading && !canViewAnyTask && !isEssentialDataLoading && !pageLevelError) {
      return (
       <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>

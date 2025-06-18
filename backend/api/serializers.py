@@ -240,7 +240,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'collaborators', 'collaborators_info', 'all_assigned_users', 'assignment_summary',
             'created_by', 'created_by_name', 'status', 'priority', 
             'deadline', 'estimated_time_minutes', 'created_at', 
-            'updated_at', 'completed_at', 'workflow', 'workflow_name', 
+            'updated_at', 'completed_at','workflow', 'workflow_name', 
             'current_workflow_step', 'current_workflow_step_name', 
             'workflow_comment', 'workflow_progress', 'available_next_steps',
             'workflow_step_assignments', 'workflow_step_assignee', 
@@ -385,21 +385,24 @@ class TaskSerializer(serializers.ModelSerializer):
         """Enhanced create method to handle collaborators."""
         collaborators_data = validated_data.pop('collaborators', [])
         task = super().create(validated_data)
-        
-        if collaborators_data:
+        if collaborators_data: # Only set collaborators if provided (multiple mode)
             task.collaborators.set(collaborators_data)
-        
         return task
 
     def update(self, instance, validated_data):
-        """Enhanced update method to handle collaborators."""
-        collaborators_data = validated_data.pop('collaborators', None)
-        task = super().update(instance, validated_data)
+        collaborators_data = validated_data.pop('collaborators', None) 
+        # If 'multiple' mode, frontend should send assigned_to as null
+        # If 'single' mode, frontend sends assigned_to value and collaborators as empty array
         
-        if collaborators_data is not None:
-            task.collaborators.set(collaborators_data)
+        instance = super().update(instance, validated_data)
+
+        if collaborators_data is not None: # If collaborators key was in request.data
+            instance.collaborators.set(collaborators_data)
+        elif 'collaborators' in validated_data and not collaborators_data: # Explicit empty list means clear them
+            instance.collaborators.clear()
+        # If 'collaborators' key is not in validated_data at all, don't touch them.
         
-        return task
+        return instance
 
 class NotificationStatsSerializer(serializers.Serializer):
     total_notifications = serializers.IntegerField()
@@ -517,7 +520,7 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
         fields = [
             'email_notifications_enabled', 'push_notifications_enabled',
             'notify_step_ready', 'notify_step_completed', 'notify_approval_needed',
-            'notify_approval_completed', 'notify_workflow_completed', 
+            'notify_approval_completed', 'notify_task_completed', 
             'notify_deadline_approaching', 'notify_step_overdue',
             'notify_workflow_assigned', 'notify_step_rejected', 'notify_manual_reminders',
             'digest_frequency', 'digest_time', 'deadline_days_notice',

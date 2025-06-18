@@ -1,5 +1,6 @@
-// src/components/task/TaskTable.jsx - Enhanced with multi-user assignment display
-import React, { useState } from 'react';
+// src/components/task/TaskTable.jsx
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // Added useEffect, useRef
+import ReactDOM from 'react-dom'; // Import ReactDOM for Portals
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ChevronUp, ChevronDown, Edit3 as EditIcon, Trash2, CheckCircle, Clock, Calendar, 
@@ -11,30 +12,36 @@ import { STATUS_OPTIONS, PRIORITY_OPTIONS } from '../../pages/TaskManagement';
 import WorkflowIndicator from './WorkflowIndicator';
 
 const glassStyle = {
-    background: 'rgba(255, 255, 255, 0.1)',
-    backdropFilter: 'blur(12px)',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    borderRadius: '8px'
+    background: 'rgba(30, 41, 59, 0.85)', // Darker, less transparent for better readability
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(255, 255, 255, 0.2)', // Brighter border
+    borderRadius: '8px', // Consistent rounding
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)', // Softer shadow
 };
 
+
 const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
+    // ... (AssignmentIndicator component remains the same)
     const [showDetails, setShowDetails] = useState(false);
     
     const getUserName = (userId) => {
         if (!usersData || !userId) return "Desconhecido";
-        const user = usersData.find(u => u.user === userId);
+        const user = usersData.find(u => u.user === userId); // Assuming usersData has profile with 'user' as ID
         return user ? user.username : "Desconhecido";
     };
 
     const primaryAssignee = task.assigned_to ? getUserName(task.assigned_to) : null;
     const collaborators = task.collaborators_info || [];
-    const workflowAssignees = task.workflow_step_assignments ? 
+     // Ensure workflow_step_assignments is an object before trying to get its values
+    const workflowAssigneesCount = task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object' ? 
         Object.values(task.workflow_step_assignments).filter(Boolean).length : 0;
-    
-    const totalAssigned = (primaryAssignee ? 1 : 0) + collaborators.length + workflowAssignees;
-    const hasMultipleAssignments = totalAssigned > 1;
 
-    if (totalAssigned === 0) {
+
+    const totalDirectlyAssigned = (task.assigned_to ? 1 : 0) + (task.collaborators?.length || 0);
+    const hasMultipleAssignments = totalDirectlyAssigned > 1 || (totalDirectlyAssigned === 1 && workflowAssigneesCount > 0) || workflowAssigneesCount > 1;
+
+
+    if (totalDirectlyAssigned === 0 && workflowAssigneesCount === 0) {
         return (
             <div style={{
                 display: 'flex',
@@ -61,12 +68,19 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
             </div>
         );
     }
+    
+    const totalUsersInvolved = new Set([
+        ...(task.assigned_to ? [task.assigned_to] : []),
+        ...(task.collaborators || []),
+        ...(task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object' ? Object.values(task.workflow_step_assignments).filter(Boolean) : [])
+    ]).size;
+
 
     return (
         <div style={{ position: 'relative' }}>
             <motion.div
                 whileHover={{ scale: 1.02 }}
-                onClick={() => setShowDetails(!showDetails)}
+                onClick={(e) => {e.stopPropagation(); setShowDetails(!showDetails);}}
                 style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -81,7 +95,7 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                 }}
             >
                 <Users size={16} style={{ color: 'rgb(59, 130, 246)' }} />
-                <span>{totalAssigned} utilizadores</span>
+                <span>{totalUsersInvolved} utilizador(es)</span>
                 <ChevronRight 
                     size={14} 
                     style={{ 
@@ -100,17 +114,22 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                         exit={{ opacity: 0, scale: 0.95, y: -10 }}
                         style={{
                             position: 'absolute',
-                            top: '100%',
+                            // top: '100%', // This might still cause clipping if parent table row is short
+                            // Instead, position it with JS, or ensure it's high enough z-index and potentially fixed
+                            // For now, let's try to keep it relative with higher z-index
+                            top: 'calc(100% + 5px)',
                             left: 0,
-                            right: 0,
-                            zIndex: 50,
+                            // right: 0, // Let width be auto
+                            zIndex: 150, // Higher than table rows
                             marginTop: '0.5rem',
                             ...glassStyle,
                             padding: '0.75rem',
-                            background: 'rgba(30, 41, 59, 0.95)',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                            minWidth: '250px'
+                            background: 'rgba(30, 41, 59, 0.98)', // More opaque
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            minWidth: '280px', // Ensure enough width
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
                         }}
+                        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
                     >
                         <div style={{
                             fontSize: '0.75rem',
@@ -119,7 +138,9 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                             marginBottom: '0.5rem',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '0.25rem'
+                            gap: '0.25rem',
+                            paddingBottom: '0.5rem',
+                            borderBottom: '1px solid rgba(255,255,255,0.1)'
                         }}>
                             <Users size={12} />
                             Atribuições da Tarefa
@@ -170,14 +191,14 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                                         Colaboradores ({collaborators.length}):
                                     </span>
                                 </div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)', marginLeft: '1rem' }}>
-                                    {collaborators.map(c => c.username).join(', ')}
+                                <div style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.8)', marginLeft: '1rem', display: 'flex', flexDirection:'column', gap:'0.2rem' }}>
+                                    {collaborators.map(c => <span key={c.id || c.user}>{c.username}</span>)}
                                 </div>
                             </div>
                         )}
 
-                        {workflowAssignees > 0 && (
-                            <div style={{
+                        {workflowAssigneesCount > 0 && (
+                             <div style={{
                                 padding: '0.375rem',
                                 background: 'rgba(251, 191, 36, 0.1)',
                                 borderRadius: '4px'
@@ -194,7 +215,7 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                                         background: 'rgb(251, 191, 36)'
                                     }} />
                                     <span style={{ fontSize: '0.75rem', color: 'white' }}>
-                                        <strong>Workflow:</strong> {workflowAssignees} passo(s) atribuído(s)
+                                        <strong>Workflow:</strong> {workflowAssigneesCount} passo(s) atribuído(s)
                                     </span>
                                 </div>
                             </div>
@@ -206,90 +227,108 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
     );
 };
 
+
 const TaskActionsMenu = ({ task, permissions, onEdit, onDelete, onUpdateStatus, onViewWorkflow, onLogTime }) => {
     const [showMenu, setShowMenu] = useState(false);
+    const buttonRef = useRef(null); // Ref for the "..." button
+    const menuRef = useRef(null);   // Ref for the menu itself
+    const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, right: 'auto', visible: false });
 
+    // --- Permission checks (same as before) ---
     const canEdit = permissions.isOrgAdmin || 
                    permissions.canEditAllTasks || 
                    (permissions.canEditAssignedTasks && task.assigned_to === permissions.userId);
-    
     const canDelete = permissions.isOrgAdmin || permissions.canDeleteTasks;
-    
     const canLogTime = permissions.isOrgAdmin || 
-                       permissions.canLogTimeEntries || 
-                       (permissions.canLogOwnTimeEntries && task.assigned_to === permissions.userId);
+                       permissions.canLogTime /* Assuming a general perm */ || 
+                       (permissions.canEditOwnTime && task.assigned_to === permissions.userId); // Or tie to own tasks
 
     const actions = [];
-
-    // Status actions
     if (task.status !== "completed" && canEdit) {
-        actions.push({
-            icon: CheckCircle,
-            label: "Concluir",
-            color: 'rgb(52, 211, 153)',
-            onClick: () => onUpdateStatus(task, "completed")
-        });
+        actions.push({ icon: CheckCircle, label: "Concluir", color: 'rgb(52, 211, 153)', onClick: () => onUpdateStatus(task, "completed") });
     }
-
     if (task.status === "pending" && canEdit) {
-        actions.push({
-            icon: Clock,
-            label: "Iniciar",
-            color: 'rgb(59, 130, 246)',
-            onClick: () => onUpdateStatus(task, "in_progress")
-        });
+        actions.push({ icon: Clock, label: "Iniciar", color: 'rgb(59, 130, 246)', onClick: () => onUpdateStatus(task, "in_progress") });
     }
-
-    // Edit action
     if (canEdit) {
-        actions.push({
-            icon: EditIcon,
-            label: "Editar",
-            color: 'rgb(147, 51, 234)',
-            onClick: () => onEdit(task)
-        });
+        actions.push({ icon: EditIcon, label: "Editar", color: 'rgb(147, 51, 234)', onClick: () => onEdit(task) });
     }
-
-    // Workflow action
     if (task.workflow_name) {
-        actions.push({
-            icon: Workflow,
-            label: "Ver Workflow",
-            color: 'rgb(251, 146, 60)',
-            onClick: () => onViewWorkflow(task)
-        });
+        actions.push({ icon: Workflow, label: "Ver Workflow", color: 'rgb(251, 146, 60)', onClick: () => onViewWorkflow(task) });
     }
-
-    // Time logging action
     if (canLogTime) {
-        actions.push({
-            icon: Clock,
-            label: "Registar Tempo",
-            color: 'rgb(52, 211, 153)',
-            onClick: () => onLogTime(task)
-        });
+        actions.push({ icon: Clock, label: "Registar Tempo", color: 'rgb(52, 211, 153)', onClick: () => onLogTime(task) });
     }
-
-    // Delete action
     if (canDelete) {
-        actions.push({
-            icon: Trash2,
-            label: "Excluir",
-            color: 'rgb(239, 68, 68)',
-            onClick: () => onDelete(task.id)
-        });
+        actions.push({ icon: Trash2, label: "Excluir", color: 'rgb(239, 68, 68)', onClick: () => onDelete(task.id) });
     }
 
-    if (actions.length === 0) {
-        return null;
-    }
+    const toggleMenu = (event) => {
+        event.stopPropagation(); 
+        if (menuPosition.visible) {
+            setMenuPosition({ top: 0, left: 0, right: 'auto', visible: false });
+        } else {
+            if (buttonRef.current) {
+                const rect = buttonRef.current.getBoundingClientRect();
+                let top = rect.bottom + window.scrollY + 5;
+                
+                // CALCULAR PARA ABRIR À ESQUERDA
+                // Assumimos uma largura de menu (pode ser dinâmica se conseguir medir o menuRef antes de mostrar)
+                const menuWidthEstimate = 180; // Ajuste este valor conforme a largura real do seu menu
+                let left = rect.left + window.scrollX - menuWidthEstimate + rect.width; // Alinha a borda DIREITA do menu com a borda DIREITA do botão
+                let right = 'auto';
+
+                // Opcional: Se for demasiado para a esquerda e sair da tela, alinhe com a borda esquerda da tela
+                if (left < 0) {
+                    left = 5; // Pequena margem da borda da tela
+                }
+
+                // Ajuste para não ir para fora do ecrã no topo (como antes)
+                const menuHeightEstimate = actions.length * 35 + 20; 
+                if (top + menuHeightEstimate > window.innerHeight + window.scrollY) {
+                    top = rect.top + window.scrollY - menuHeightEstimate - 5;
+                }
+                
+                // Se preferir usar `right` para posicionar a partir da direita do viewport em vez de `left`
+                // (útil se o botão estiver muito à direita e o menu for largo)
+                // let right = window.innerWidth - (rect.right + window.scrollX);
+                // let left = 'auto';
+                // if (rect.right + window.scrollX - menuWidthEstimate < 0) { // Se for sair da tela pela esquerda
+                //    right = 5; // Pequena margem da direita
+                // }
+
+
+                setMenuPosition({ top, left, right, visible: true });
+            }
+        }
+    };
+
+    // Effect to close menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target) &&
+                buttonRef.current && !buttonRef.current.contains(event.target)) {
+                setMenuPosition({ top: 0, left: 0, visible: false });
+            }
+        };
+        if (menuPosition.visible) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [menuPosition.visible]);
+
+
+    if (actions.length === 0) return null;
 
     return (
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
             <motion.button
+                ref={buttonRef}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={() => setShowMenu(!showMenu)}
+                onClick={toggleMenu}
                 style={{
                     background: 'rgba(255, 255, 255, 0.1)',
                     border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -305,24 +344,26 @@ const TaskActionsMenu = ({ task, permissions, onEdit, onDelete, onUpdateStatus, 
                 <MoreHorizontal size={16} />
             </motion.button>
 
-            <AnimatePresence>
-                {showMenu && (
+            {menuPosition.visible && ReactDOM.createPortal(
+                <AnimatePresence>
                     <motion.div
+                        ref={menuRef}
                         initial={{ opacity: 0, scale: 0.95, y: -10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -10, transition: {duration: 0.15} }}
                         style={{
                             position: 'absolute',
-                            top: '100%',
-                            right: 0,
-                            zIndex: 50,
-                            marginTop: '0.5rem',
+                            top: `${menuPosition.top}px`,
+                            left: `${menuPosition.left}px`,
+                            zIndex: 1050, // High z-index
                             ...glassStyle,
                             padding: '0.5rem',
-                            background: 'rgba(30, 41, 59, 0.95)',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                            minWidth: '150px'
+                            background: 'rgba(40, 50, 70, 0.98)', // More opaque for portal
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            minWidth: '180px', // Ensure a minimum width
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.35)'
                         }}
+                        onClick={e => e.stopPropagation()} // Prevent portal click from closing via body listener
                     >
                         {actions.map((action, index) => (
                             <motion.button
@@ -330,33 +371,35 @@ const TaskActionsMenu = ({ task, permissions, onEdit, onDelete, onUpdateStatus, 
                                 whileHover={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}
                                 onClick={() => {
                                     action.onClick();
-                                    setShowMenu(false);
+                                    setMenuPosition({ top: 0, left: 0, visible: false }); // Close menu on action
                                 }}
                                 style={{
                                     width: '100%',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '0.5rem',
-                                    padding: '0.5rem',
+                                    gap: '0.75rem', // Increased gap
+                                    padding: '0.75rem 1rem', // Increased padding
                                     background: 'none',
                                     border: 'none',
-                                    borderRadius: '4px',
+                                    borderRadius: '6px', // Slightly more rounded
                                     color: action.color,
                                     cursor: 'pointer',
-                                    fontSize: '0.875rem',
+                                    fontSize: '0.875rem', // Standardized font size
                                     textAlign: 'left'
                                 }}
                             >
-                                <action.icon size={14} />
+                                <action.icon size={16} /> {/* Slightly larger icon */}
                                 {action.label}
                             </motion.button>
                         ))}
                     </motion.div>
-                )}
-            </AnimatePresence>
+                </AnimatePresence>,
+                document.body // Render portal content into document.body
+            )}
         </div>
     );
 };
+
 
 const TaskTable = ({
     tasks,
@@ -371,7 +414,7 @@ const TaskTable = ({
         sortConfig,
         openFormForEdit,
         openWorkflowView,
-        openTimeEntryModal
+        openTimeEntryModal // Assuming you'll use this for onLogTime
     } = useTaskStore();
 
     const getClientName = (clientId) => {
@@ -379,6 +422,11 @@ const TaskTable = ({
         const client = clientsData.find(c => c.id === clientId);
         return client ? client.name : "Desconhecido";
     };
+    
+    const handleLogTime = useCallback((task) => {
+        openTimeEntryModal(task); // Use the store action
+    }, [openTimeEntryModal]);
+
 
     const headers = [
         { key: "title", label: "Título" },
@@ -386,9 +434,9 @@ const TaskTable = ({
         { key: "priority", label: "Prioridade" },
         { key: "deadline", label: "Prazo" },
         { key: "status", label: "Status" },
-        { key: null, label: "Atribuições" }, // Not sortable
-        { key: null, label: "Workflow" }, // Not sortable
-        { key: null, label: "Ações" } // Not sortable
+        { key: null, label: "Atribuições" },
+        { key: null, label: "Workflow" },
+        { key: null, label: "Ações" }
     ];
 
     if (tasks.length === 0) {
@@ -402,9 +450,10 @@ const TaskTable = ({
     }
 
     return (
-        <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }} className="custom-scrollbar-dark">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' /* Ensure table is wide enough */ }}>
                 <thead>
+                    {/* ... (thead content remains the same) ... */}
                     <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
                         {headers.map(header => (
                             <th 
@@ -416,7 +465,7 @@ const TaskTable = ({
                                     fontSize: '0.875rem', 
                                     fontWeight: '600', 
                                     color: 'rgba(255,255,255,0.9)',
-                                    minWidth: header.label === 'Atribuições' ? '200px' : 'auto'
+                                    minWidth: header.label === 'Atribuições' ? '200px' : (header.label === 'Título' ? '250px' : 'auto')
                                 }}
                             >
                                 {header.key ? (
@@ -467,9 +516,10 @@ const TaskTable = ({
                                     borderBottom: '1px solid rgba(255,255,255,0.05)' 
                                 }}
                                 whileHover={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                                // onClick={() => openFormForEdit(task)} // Make row itself less interactive if actions are distinct
                             >
                                 {/* Title Column */}
-                                <td style={{ padding: '1rem', maxWidth: '300px' }}>
+                                <td style={{ padding: '1rem', maxWidth: '250px' }} onClick={() => openFormForEdit(task)}>
                                     <div style={{ 
                                         fontWeight: '600', 
                                         color: 'white', 
@@ -477,7 +527,7 @@ const TaskTable = ({
                                         marginBottom: '0.25rem',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap'
+                                        // whiteSpace: 'nowrap' // Allow wrap if needed
                                     }}>
                                         {task.title}
                                     </div>
@@ -485,15 +535,17 @@ const TaskTable = ({
                                         <div style={{ 
                                             color: 'rgba(255,255,255,0.6)', 
                                             fontSize: '0.75rem', 
-                                            maxWidth: '280px', 
+                                            // maxWidth: '230px', 
                                             overflow: 'hidden', 
                                             textOverflow: 'ellipsis', 
-                                            whiteSpace: 'nowrap' 
+                                            display: '-webkit-box',
+                                            WebkitLineClamp: 2,
+                                            WebkitBoxOrient: 'vertical'
                                         }}>
                                             {task.description}
                                         </div>
                                     )}
-                                    {task.source_fiscal_obligation && (
+                                     {task.source_fiscal_obligation && (
                                         <div style={{
                                             fontSize: '0.6rem',
                                             color: 'rgb(251, 191, 36)',
@@ -509,7 +561,7 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Client Column */}
-                                <td style={{ padding: '1rem' }}>
+                                <td style={{ padding: '1rem' }} onClick={() => openFormForEdit(task)}>
                                     <span style={{ 
                                         color: 'rgba(255,255,255,0.8)', 
                                         fontSize: '0.875rem' 
@@ -519,7 +571,7 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Priority Column */}
-                                <td style={{ padding: '1rem' }}>
+                                <td style={{ padding: '1rem' }} onClick={() => openFormForEdit(task)}>
                                     <div style={{ 
                                         display: 'inline-flex', 
                                         alignItems: 'center', 
@@ -536,7 +588,7 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Deadline Column */}
-                                <td style={{ padding: '1rem' }}>
+                                <td style={{ padding: '1rem' }} onClick={() => openFormForEdit(task)}>
                                     <div style={{ 
                                         display: 'flex', 
                                         alignItems: 'center', 
@@ -557,7 +609,7 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Status Column */}
-                                <td style={{ padding: '1rem' }}>
+                                <td style={{ padding: '1rem' }} onClick={() => openFormForEdit(task)}>
                                     <div style={{ 
                                         display: 'inline-flex', 
                                         alignItems: 'center', 
@@ -578,32 +630,20 @@ const TaskTable = ({
                                     <AssignmentIndicator 
                                         task={task} 
                                         usersData={usersData}
-                                        onViewDetails={() => {
-                                            // Could open a detailed view or modal
-                                            console.log('View assignment details for task:', task.id);
-                                        }}
+                                        // onViewDetails could be a prop if AssignmentIndicator needs complex interactions
                                     />
                                 </td>
 
                                 {/* Workflow Column */}
                                 <td style={{ padding: '1rem' }}>
-                                    {task.workflow_name ? (
-                                        <WorkflowIndicator 
-                                            task={task} 
-                                            onViewWorkflow={() => openWorkflowView(task)} 
-                                        />
-                                    ) : (
-                                        <span style={{ 
-                                            color: 'rgba(255,255,255,0.4)', 
-                                            fontSize: '0.875rem' 
-                                        }}>
-                                            Sem workflow
-                                        </span>
-                                    )}
+                                    <WorkflowIndicator 
+                                        task={task} 
+                                        onViewWorkflow={openWorkflowView} 
+                                    />
                                 </td>
 
-                                {/* Actions Column */}
-                                <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                {/* Actions Column - IMPORTANT: Stop propagation here */}
+                                <td style={{ padding: '1rem', textAlign: 'center'}} onClick={e => e.stopPropagation()}>
                                     <TaskActionsMenu
                                         task={task}
                                         permissions={permissions}
@@ -611,7 +651,7 @@ const TaskTable = ({
                                         onDelete={onDelete}
                                         onUpdateStatus={onUpdateStatus}
                                         onViewWorkflow={openWorkflowView}
-                                        onLogTime={openTimeEntryModal}
+                                        onLogTime={handleLogTime} // Use the store action
                                     />
                                 </td>
                             </motion.tr>
@@ -619,31 +659,11 @@ const TaskTable = ({
                     })}
                 </tbody>
             </table>
-
-            {/* Click outside handler for menus */}
-            <style jsx>{`
-                tr:hover .task-actions-visible {
-                    opacity: 1;
-                }
-                
-                .task-actions-visible {
-                    opacity: 0.7;
-                    transition: opacity 0.2s ease;
-                }
-                
-                @media (max-width: 768px) {
-                    table {
-                        font-size: 0.75rem;
-                    }
-                    
-                    th, td {
-                        padding: 0.75rem 0.5rem;
-                    }
-                    
-                    .assignment-details {
-                        min-width: 200px;
-                    }
-                }
+            <style jsx global>{`
+                .custom-scrollbar-dark::-webkit-scrollbar { width: 6px; height: 6px; }
+                .custom-scrollbar-dark::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 3px; }
+                .custom-scrollbar-dark::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+                .custom-scrollbar-dark::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
             `}</style>
         </div>
     );
