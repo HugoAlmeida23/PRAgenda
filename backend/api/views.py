@@ -4439,7 +4439,7 @@ def generate_report(request):
     Endpoint para gerar relatórios personalizados.
     """
     try:
-        profile = Profile.objects.get(user=request.user)
+        profile = Profile.objects.select_related('organization').get(user=request.user) # Added select_related
         
         if not (profile.is_org_admin or profile.can_export_reports or profile.can_create_custom_reports):
             return Response(
@@ -4466,7 +4466,6 @@ def generate_report(request):
         
         params = request.data.get('parameters', {})
         
-        # Convert date strings from params to aware datetimes
         date_from_str = params.get('date_from')
         date_to_str = params.get('date_to')
         
@@ -4482,69 +4481,70 @@ def generate_report(request):
         if date_to_str:
             try:
                 naive_date_to = datetime.strptime(date_to_str, '%Y-%m-%d')
-                # For date_to, set time to end of day
                 aware_date_to_start_of_day = timezone.make_aware(naive_date_to, timezone.get_default_timezone())
                 date_to = aware_date_to_start_of_day.replace(hour=23, minute=59, second=59, microsecond=999999)
             except ValueError:
                 return Response({'error': f"Formato inválido para date_to: {date_to_str}. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            file_buffer = None
+            content_type = None
+
             if report_type == 'client_summary':
                 file_buffer, content_type = ReportGenerationService.generate_client_summary_report(
-                    organization=organization,
-                    client_ids=params.get('client_ids'),
+                    organization=organization, client_ids=params.get('client_ids'),
                     include_profitability=params.get('include_profitability', True),
                     include_tasks=params.get('include_tasks', True),
                     include_time_entries=params.get('include_time_entries', True),
-                    date_from=date_from, # Pass aware datetime
-                    date_to=date_to,     # Pass aware datetime
-                    format_type=report_format
+                    date_from=date_from, date_to=date_to, format_type=report_format
                 )
-                
             elif report_type == 'profitability_analysis':
-                # Profitability report might not use date_from/date_to directly, but year/month
-                # If it does, ensure they are handled correctly (e.g., passed as aware or converted as needed)
                 file_buffer, content_type = ReportGenerationService.generate_profitability_analysis_report(
-                    organization=organization,
-                    client_ids=params.get('client_ids'),
+                    organization=organization, client_ids=params.get('client_ids'),
                     year=int(params['year']) if params.get('year') else None,
                     month=int(params['month']) if params.get('month') else None,
                     format_type=report_format
                 )
-                
             elif report_type == 'time_tracking_summary':
                 file_buffer, content_type = ReportGenerationService.generate_time_tracking_summary_report(
-                    organization=organization,
-                    user_ids=params.get('user_ids'),
-                    client_ids=params.get('client_ids'),
-                    date_from=date_from, # Pass aware datetime
-                    date_to=date_to,     # Pass aware datetime
-                    format_type=report_format
+                    organization=organization, user_ids=params.get('user_ids'),
+                    client_ids=params.get('client_ids'), date_from=date_from,
+                    date_to=date_to, format_type=report_format
                 )
             elif report_type == 'task_performance':
-                return Response({'error': 'Tipo de relatório ainda não implementado'}, status=status.HTTP_501_NOT_IMPLEMENTED)
+                 file_buffer, content_type = ReportGenerationService.generate_task_performance_report(
+                    organization=organization, date_from=date_from, date_to=date_to,
+                    client_ids=params.get('client_ids'), user_ids=params.get('user_ids'),
+                    category_ids=params.get('category_ids'), statuses=params.get('statuses'),
+                    format_type=report_format
+                )
             elif report_type == 'custom_report':
-                return Response({'error': 'Relatórios personalizados ainda não implementados'}, status=status.HTTP_501_NOT_IMPLEMENTED)
+                # Still a placeholder, but ensure it returns a buffer and content_type
+                file_buffer, content_type = ReportGenerationService.generate_custom_report(
+                    organization=organization, params=params, format_type=report_format
+                )
             else:
                 return Response({'error': 'Tipo de relatório não reconhecido'}, status=status.HTTP_400_BAD_REQUEST)
             
+            if not file_buffer or not content_type:
+                 raise ValueError("Serviço de geração de relatório não retornou arquivo ou tipo de conteúdo.")
+
             file_extension = 'pdf' if report_format == 'pdf' else ('csv' if report_format == 'csv' else 'xlsx')
             filename = f"reports/{organization.id}/{uuid.uuid4()}.{file_extension}"
             
-            if hasattr(settings, 'MEDIA_ROOT') and settings.DEBUG: # Use local media in DEBUG
+            storage_url = "" # Initialize
+            if hasattr(settings, 'MEDIA_ROOT') and settings.DEBUG:
                 os.makedirs(os.path.join(settings.MEDIA_ROOT, 'reports', str(organization.id)), exist_ok=True)
-                file_path = os.path.join(settings.MEDIA_ROOT, filename)
+                file_path_on_disk = os.path.join(settings.MEDIA_ROOT, filename) # Use a different name for clarity
                 
-                with open(file_path, 'wb') as f:
+                with open(file_path_on_disk, 'wb') as f:
                     f.write(file_buffer.getvalue())
                 
-                storage_url = f"{settings.MEDIA_URL}{filename}"
-                if hasattr(request, 'build_absolute_uri'):
-                    storage_url = request.build_absolute_uri(storage_url)
+                storage_url = request.build_absolute_uri(f"{settings.MEDIA_URL}{filename}")
             else:
                 file_content = ContentFile(file_buffer.getvalue())
-                file_path = default_storage.save(filename, file_content)
-                storage_url = default_storage.url(file_path)
+                saved_file_path = default_storage.save(filename, file_content) # Use a different name
+                storage_url = default_storage.url(saved_file_path)
             
             file_size_kb = len(file_buffer.getvalue()) // 1024
             
@@ -4557,9 +4557,40 @@ def generate_report(request):
                 parameters=params,
                 storage_url=storage_url,
                 file_size_kb=file_size_kb,
-                description=params.get('description', f'Relatório {report_type} gerado automaticamente')
+                description=params.get('description', f'Relatório {report_type} gerado')
             )
             
+            # --- NOTIFY ORGANIZATION ADMINS ---
+            try:
+                admin_profiles = Profile.objects.filter(
+                    organization=organization, 
+                    is_org_admin=True,
+                    user__is_active=True # Ensure admin user is active
+                ).select_related('user', 'user__notification_settings') # Optimize
+                
+                for admin_profile in admin_profiles:
+                    # Check if admin has general email notifications enabled (optional, based on your NotificationSettings logic)
+                    should_notify_admin = True # Default to true
+                    try:
+                        if hasattr(admin_profile.user, 'notification_settings') and \
+                           not admin_profile.user.notification_settings.email_notifications_enabled: # Or a more specific setting for reports
+                            should_notify_admin = False
+                    except NotificationSettings.DoesNotExist:
+                        pass # No specific settings, proceed with notification
+
+                    if should_notify_admin:
+                        NotificationTemplateService.create_notification_with_template(
+                            user_target=admin_profile.user,
+                            notification_type='report_generated',
+                            report=generated_report, # Pass the report object
+                            created_by=request.user, # User who generated the report
+                            priority_override='low' # Or 'normal'
+                        )
+                        logger.info(f"Notificação de relatório gerado enviada para o admin {admin_profile.user.username}")
+            except Exception as notify_err:
+                logger.error(f"Erro ao notificar admins sobre relatório gerado {generated_report.id}: {notify_err}", exc_info=True)
+            # --- END NOTIFICATION LOGIC ---
+
             serializer = GeneratedReportSerializer(generated_report)
             logger.info(f"Relatório {report_type} gerado com sucesso para organização {organization.name} por {request.user.username}")
             
@@ -4671,6 +4702,22 @@ def get_report_generation_context(request):
                 'color': category.color
             }
             for category in categories
+        ]
+        
+        org_users_profiles = Profile.objects.filter(
+            organization=organization,
+            user__is_active=True
+        ).select_related('user').order_by('user__username')
+        
+        context['users'] = [ # This should be a list of Profile objects, not User objects directly
+            {
+                'id': profile_item.user.id, # Use user ID
+                'username': profile_item.user.username,
+                'first_name': profile_item.user.first_name,
+                'last_name': profile_item.user.last_name,
+                'role': profile_item.role
+            }
+            for profile_item in org_users_profiles
         ]
         
         return Response(context)

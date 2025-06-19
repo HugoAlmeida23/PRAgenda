@@ -1109,7 +1109,126 @@ class FiscalObligationDefinition(models.Model):
         return f"{self.name}{org_name}"
 
 
-            
+class WorkflowNotification(models.Model):
+    """
+    Notificações relacionadas a atualizações de workflow
+    """
+    NOTIFICATION_TYPES = [
+        ('step_assigned', 'Passo Atribuído'),
+        ('step_ready', 'Passo Pronto para Execução'),
+        ('step_completed', 'Passo Concluído'),
+        ('approval_needed', 'Aprovação Necessária'),
+        ('approval_completed', 'Aprovação Concluída'),
+        ('task_completed', 'Tarefa Concluída'), 
+        ('task_assigned_to_you', 'Nova Tarefa Atribuída a Si'),
+        ('deadline_approaching', 'Prazo Próximo'),
+        ('step_overdue', 'Passo Atrasado'),
+        ('manual_reminder', 'Lembrete Manual'),
+        ('workflow_assigned', 'Workflow Atribuído'),
+        ('step_rejected', 'Passo Rejeitado'),
+        ('manual_advance_needed', 'Avanço Manual Necessário'),
+        ('report_generated', 'Relatório Gerado'), # NEW TYPE
+    ]
+    
+    PRIORITY_LEVELS = [
+        ('low', 'Baixa'),
+        ('normal', 'Normal'),
+        ('high', 'Alta'),
+        ('urgent', 'Urgente'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='workflow_notifications',
+        verbose_name="Usuário"
+    )
+    task = models.ForeignKey( # Task can be null for non-task-specific notifications like report generation
+        Task,
+        on_delete=models.CASCADE,
+        related_name='workflow_notifications',
+        verbose_name="Tarefa",
+        null=True, # Allow null for report_generated
+        blank=True  # Allow blank for report_generated
+    )
+    workflow_step = models.ForeignKey(
+        WorkflowStep,
+        on_delete=models.CASCADE,
+        related_name='notifications',
+        verbose_name="Passo do Workflow",
+        null=True,
+        blank=True
+    )
+    
+    notification_type = models.CharField(
+        max_length=50,
+        choices=NOTIFICATION_TYPES,
+        verbose_name="Tipo de Notificação"
+    )
+    
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_LEVELS,
+        default='normal',
+        verbose_name="Prioridade"
+    )
+    
+    title = models.CharField(max_length=200, verbose_name="Título")
+    message = models.TextField(verbose_name="Mensagem")
+    
+    is_read = models.BooleanField(default=False, verbose_name="Lida")
+    is_archived = models.BooleanField(default=False, verbose_name="Arquivada")
+    email_sent = models.BooleanField(default=False, verbose_name="Email Enviado")
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name="Lida em")
+    scheduled_for = models.DateTimeField(null=True, blank=True, verbose_name="Agendada para")
+    
+    metadata = models.JSONField(
+        default=dict, 
+        verbose_name="Metadados",
+        help_text="Dados adicionais da notificação (e.g., report_id for 'report_generated')" # UPDATED HELP TEXT
+    )
+    
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_notifications',
+        verbose_name="Criado por"
+    )
+    
+    class Meta:
+        verbose_name = "Notificação de Workflow" # Name can remain, it's a general notification model
+        verbose_name_plural = "Notificações de Workflow"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=['user', 'is_read']),
+            models.Index(fields=['task', 'notification_type']),
+            models.Index(fields=['created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.title}"
+    
+    def mark_as_read(self):
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at'])
+    
+    def mark_as_unread(self):
+        if self.is_read:
+            self.is_read = False
+            self.read_at = None
+            self.save(update_fields=['is_read', 'read_at'])
+    
+    def archive(self):
+        self.is_archived = True
+        self.save(update_fields=['is_archived'])
 class TimeEntry(models.Model):
     """
     Registro de tempo gasto em tarefas para clientes.
@@ -1199,132 +1318,6 @@ class TimeEntry(models.Model):
     def __str__(self):
         step_info = f" - {self.workflow_step.name}" if self.workflow_step else ""
         return f"{self.client.name} - {self.minutes_spent}min - {self.date}{step_info}"
-
-class WorkflowNotification(models.Model):
-    """
-    Notificações relacionadas a atualizações de workflow
-    """
-    NOTIFICATION_TYPES = [
-        ('step_assigned', 'Passo Atribuído'),
-        ('step_ready', 'Passo Pronto para Execução'),
-        ('step_completed', 'Passo Concluído'),
-        ('approval_needed', 'Aprovação Necessária'),
-        ('approval_completed', 'Aprovação Concluída'),
-        ('task_completed', 'Tarefa Concluída'), 
-        ('task_assigned_to_you', 'Nova Tarefa Atribuída a Si'), # NOVO TIPO
-        ('deadline_approaching', 'Prazo Próximo'),
-        ('step_overdue', 'Passo Atrasado'),
-        ('manual_reminder', 'Lembrete Manual'),
-        ('workflow_assigned', 'Workflow Atribuído'),
-        ('step_rejected', 'Passo Rejeitado'),
-        ('manual_advance_needed', 'Avanço Manual Necessário'),
-    ]
-    
-    PRIORITY_LEVELS = [
-        ('low', 'Baixa'),
-        ('normal', 'Normal'),
-        ('high', 'Alta'),
-        ('urgent', 'Urgente'),
-    ]
-    
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='workflow_notifications',
-        verbose_name="Usuário"
-    )
-    task = models.ForeignKey(
-        Task,
-        on_delete=models.CASCADE,
-        related_name='workflow_notifications',
-        verbose_name="Tarefa"
-    )
-    workflow_step = models.ForeignKey(
-        WorkflowStep,
-        on_delete=models.CASCADE,
-        related_name='notifications',
-        verbose_name="Passo do Workflow",
-        null=True,
-        blank=True
-    )
-    
-    notification_type = models.CharField(
-        max_length=50,
-        choices=NOTIFICATION_TYPES,
-        verbose_name="Tipo de Notificação"
-    )
-    
-    priority = models.CharField(
-        max_length=10,
-        choices=PRIORITY_LEVELS,
-        default='normal',
-        verbose_name="Prioridade"
-    )
-    
-    title = models.CharField(max_length=200, verbose_name="Título")
-    message = models.TextField(verbose_name="Mensagem")
-    
-    # Campos de estado
-    is_read = models.BooleanField(default=False, verbose_name="Lida")
-    is_archived = models.BooleanField(default=False, verbose_name="Arquivada")
-    email_sent = models.BooleanField(default=False, verbose_name="Email Enviado")
-    
-    # Campos de timing
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
-    read_at = models.DateTimeField(null=True, blank=True, verbose_name="Lida em")
-    scheduled_for = models.DateTimeField(null=True, blank=True, verbose_name="Agendada para")
-    
-    # Metadados adicionais
-    metadata = models.JSONField(
-        default=dict, 
-        verbose_name="Metadados",
-        help_text="Dados adicionais da notificação"
-    )
-    
-    # Quem criou a notificação (para notificações manuais)
-    created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='created_notifications',
-        verbose_name="Criado por"
-    )
-    
-    class Meta:
-        verbose_name = "Notificação de Workflow"
-        verbose_name_plural = "Notificações de Workflow"
-        ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=['user', 'is_read']),
-            models.Index(fields=['task', 'notification_type']),
-            models.Index(fields=['created_at']),
-        ]
-    
-    def __str__(self):
-        return f"{self.user.username} - {self.title}"
-    
-    def mark_as_read(self):
-        """Marca a notificação como lida"""
-        if not self.is_read:
-            self.is_read = True
-            self.read_at = timezone.now()
-            self.save(update_fields=['is_read', 'read_at'])
-    
-    def mark_as_unread(self):
-        """Marca a notificação como não lida"""
-        if self.is_read:
-            self.is_read = False
-            self.read_at = None
-            self.save(update_fields=['is_read', 'read_at'])
-    
-    def archive(self):
-        """Arquiva a notificação"""
-        self.is_archived = True
-        self.save(update_fields=['is_archived'])
-
 
 # NOVO: Modelo para histórico de workflow
 class WorkflowHistory(models.Model):
@@ -1423,6 +1416,8 @@ class NotificationSettings(models.Model):
     notify_step_rejected = models.BooleanField(default=True)
     notify_manual_reminders = models.BooleanField(default=True)
     notify_task_assigned_to_you = models.BooleanField(default=True) # NOVO CAMPO
+    notify_report_generated = models.BooleanField(default=True) # NEW FIELD
+
 
     # Configurações de frequência
     digest_frequency = models.CharField(
@@ -1480,6 +1475,7 @@ class NotificationSettings(models.Model):
             'manual_reminder': self.notify_manual_reminders,
             'manual_advance_needed': self.notify_manual_advance_needed,
             'task_assigned_to_you': self.notify_task_assigned_to_you, # NOVO MAPPING
+            'report_generated': self.notify_report_generated, # NEW MAPPING
         }
         return type_mapping.get(notification_type, True)
     
@@ -1800,3 +1796,4 @@ class FiscalSystemSettings(models.Model):
                 recipients.append(admin.user.email)
         
         return recipients
+    

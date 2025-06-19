@@ -4,7 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { BellRing, Loader2, AlertTriangle, Workflow, CheckSquare, AlertCircle, Clock, Calendar, Send } from 'lucide-react';
+import { 
+    BellRing, Loader2, AlertTriangle, Workflow, CheckSquare, 
+    AlertCircle, Clock, Calendar, Send, FileText // Added FileText
+} from 'lucide-react';
 
 import BackgroundElements from '../components/HeroSection/BackgroundElements';
 
@@ -80,18 +83,15 @@ const SettingRow = ({ label, description, isEnabled, onToggle, isUpdating }) => 
 const NotificationSettingsPage = () => {
     const queryClient = useQueryClient();
 
-    // 1. Fetch current settings
     const { data: settings, isLoading, isError, error } = useQuery({
         queryKey: ['notificationSettings'],
         queryFn: () => api.get('/notification-settings/my_settings/').then(res => res.data),
-        staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+        staleTime: 5 * 60 * 1000, 
     });
 
-    // 2. Setup mutation to update settings
     const updateSettingsMutation = useMutation({
         mutationFn: ({ settingName, value }) => api.patch('/notification-settings/update_settings/', { [settingName]: value }),
         onSuccess: (data, variables) => {
-            // Optimistically update the query cache
             queryClient.setQueryData(['notificationSettings'], oldData => ({
                 ...oldData,
                 [variables.settingName]: variables.value
@@ -100,7 +100,6 @@ const NotificationSettingsPage = () => {
         },
         onError: (err, variables) => {
             toast.error('Falha ao atualizar. Tente novamente.');
-            // Revert optimistic update on error
             queryClient.setQueryData(['notificationSettings'], oldData => ({
                 ...oldData,
                 [variables.settingName]: !variables.value
@@ -118,12 +117,14 @@ const NotificationSettingsPage = () => {
             icon: BellRing,
             settings: [
                 { key: 'email_notifications_enabled', label: 'Notificações por Email', description: 'Receber um resumo por email (se configurado).' },
+                { key: 'notify_report_generated', label: 'Relatório Gerado', description: 'Quando um novo relatório é gerado.' }, // NEW SETTING
             ]
         },
         {
-            title: 'Eventos de Workflow',
+            title: 'Eventos de Tarefas e Workflows', // Combined for brevity
             icon: Workflow,
             settings: [
+                { key: 'notify_task_assigned_to_you', label: 'Tarefa Atribuída a Si', description: 'Quando uma nova tarefa é atribuída a si diretamente.'},
                 { key: 'notify_workflow_assigned', label: 'Workflow Atribuído', description: 'Quando um workflow é atribuído a uma tarefa.' },
                 { key: 'notify_step_ready', label: 'Passo Pronto', description: 'Quando um passo está pronto para ser trabalhado.' },
                 { key: 'notify_step_completed', label: 'Passo Concluído', description: 'Quando um colega completa um passo.' },
@@ -149,6 +150,15 @@ const NotificationSettingsPage = () => {
             ]
         }
     ];
+    
+    // Modify the 'Geral' group icon if 'notify_report_generated' exists
+    const generalGroup = notificationSettingsMap.find(g => g.title === 'Geral');
+    if (generalGroup && generalGroup.settings.find(s => s.key === 'notify_report_generated')) {
+        // Example: If you want to change the icon for the general group if it contains report setting.
+        // This is just an example, you might choose a different icon or logic.
+        // For now, let's keep BellRing but you could add FileText if it's primary.
+    }
+
 
     if (isLoading) {
         return (
@@ -159,13 +169,13 @@ const NotificationSettingsPage = () => {
         );
     }
 
-    if (isError) {
+    if (isError || !settings) { // Check if settings data is available
         return (
             <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', textAlign: 'center' }}>
                 <BackgroundElements />
                 <AlertTriangle size={48} style={{ color: 'rgb(239,68,68)', marginBottom: '1rem' }} />
                 <h2 style={{margin: 0}}>Erro ao carregar configurações</h2>
-                <p style={{color: 'rgba(255,255,255,0.7)'}}>{error.message}</p>
+                <p style={{color: 'rgba(255,255,255,0.7)'}}>{error?.message || "Não foi possível obter os dados das configurações."}</p>
             </div>
         );
     }
@@ -207,7 +217,7 @@ const NotificationSettingsPage = () => {
                                     key={setting.key}
                                     label={setting.label}
                                     description={setting.description}
-                                    isEnabled={settings?.[setting.key] ?? false}
+                                    isEnabled={settings?.[setting.key] ?? false} // Handle case where setting might not exist yet in DB
                                     onToggle={(newValue) => handleToggle(setting.key, newValue)}
                                     isUpdating={updateSettingsMutation.isPending && updateSettingsMutation.variables?.settingName === setting.key}
                                 />

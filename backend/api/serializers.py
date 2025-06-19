@@ -551,6 +551,8 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
             'notify_approval_completed', 'notify_task_completed', 
             'notify_deadline_approaching', 'notify_step_overdue',
             'notify_workflow_assigned', 'notify_step_rejected', 'notify_manual_reminders',
+            'notify_task_assigned_to_you',
+            'notify_report_generated',
             'digest_frequency', 'digest_time', 'deadline_days_notice',
             'overdue_threshold_days', 'approval_reminder_days',
             'quiet_start_time', 'quiet_end_time'

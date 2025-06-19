@@ -2,12 +2,15 @@
 from django.db.models import Count, Q, F
 from django.utils import timezone
 from datetime import timedelta, datetime # Keep this
-from ..models import WorkflowNotification, Task, WorkflowHistory, TaskApproval, Profile, NotificationTemplate, User # Added User
+from ..models import WorkflowNotification, Task, WorkflowHistory, TaskApproval, Profile, NotificationTemplate, User, GeneratedReport # Added User
 from .notification_service import NotificationService # Circular import potential, let's be careful
 import csv # Not used here
 import json # Not used here
 from io import StringIO # Not used here
 import logging
+from typing import Optional
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +62,20 @@ class NotificationTemplateService:
         template.default_priority = template_data['default_priority']
         
         def render_template(context_vars):
-            # Certifique-se que todas as chaves usadas nos templates estão no context_vars
-            # ou têm um fallback para evitar KeyErrors.
             safe_context = context_vars.copy() # Create a mutable copy
             
             # Define default values for keys that might be missing
-            expected_keys = ['user_first_name', 'task_title', 'client_name', 'changed_by_name', 'deadline_date', 'priority_label', 'fallback_message']
+            expected_keys = [
+                            'user_first_name', 'task_title', 'client_name', 'step_name', 
+                            'workflow_name', 'organization_name', 'current_date', 'current_time',
+                            'changed_by_name', 'deadline_date', 'priority_label', 'fallback_message',
+                            'reminder_prefix', 'comment', 'approval_status', 'approval_status_text',
+                            'approver_name', 'approval_comment', 'completed_step_name', 'next_steps_names_list',
+                            'days_remaining_text', 'days_overdue_text', 'step_assignee_name',
+                            'manual_title', 'manual_message', 
+                            'report_name', 'report_type_display', 'report_format_display', 
+                            'report_file_size_kb', 'report_download_url' # New for reports
+                        ]            
             for key in expected_keys:
                 if key not in safe_context:
                     safe_context[key] = f"{{Informação em falta: {key}}}" # Placeholder
@@ -172,6 +183,17 @@ class NotificationTemplateService:
                 'title_template': 'Lembrete: {manual_title}',
                 'message_template': 'Olá {user_first_name},\n\nEste é um lembrete sobre: {manual_message}\n\nRelacionado à tarefa: "{task_title}" (Cliente: {client_name})\n\nCriado por: {changed_by_name}\nData: {current_date}',
                 'default_priority': 'normal'
+            },
+            'report_generated': { # NEW DEFAULT TEMPLATE
+                'title_template': '📊 Relatório Gerado: {report_name}',
+                'message_template': (
+                    'Olá {user_first_name},\n\n'
+                    'O relatório "{report_name}" ({report_type_display}) foi gerado com sucesso por {changed_by_name}.\n'
+                    'Formato: {report_format_display}\n'
+                    'Tamanho: {report_file_size_kb} KB\n\n'
+                    'Pode aceder ao relatório na Central de Relatórios ou através do link (se disponível): {report_download_url}'
+                ),
+                'default_priority': 'low' # Reports are usually less urgent than task notifications
             }
         }
         
@@ -211,65 +233,75 @@ class NotificationTemplateService:
     
     @staticmethod
     def create_notification_with_template(
-        user_target: User, # Renamed for clarity
-        task: Task, 
+        user_target: User,
         notification_type: str, 
-        workflow_step: 'WorkflowStep' = None, # Forward reference if WorkflowStep is in models
-        created_by: User = None, 
-        extra_context: dict = None, 
-        priority_override: str = None, # Added priority override
-        **kwargs # For other NotificationService.create_notification params like scheduled_for, check_existing_recent
+        task: Optional[Task] = None,  # Task is now optional
+        workflow_step: Optional['WorkflowStep'] = None,
+        created_by: Optional[User] = None, 
+        extra_context: Optional[dict] = None, 
+        priority_override: Optional[str] = None,
+        report: Optional[GeneratedReport] = None, # NEW: Pass the report object
+        **kwargs 
     ):
-        """
-        Cria notificação usando template.
-        Moved from NotificationService to here to avoid circular dependency.
-        """
-        from .notification_service import NotificationService # Import locally to break cycle
+        from .notification_service import NotificationService 
 
-        # Determinar organização
         organization = None
-        # Prioritize task's organization, then user's profile organization
-        if task and task.client and task.client.organization:
+        if report and report.organization:
+            organization = report.organization
+        elif task and task.client and task.client.organization:
             organization = task.client.organization
         elif hasattr(user_target, 'profile') and user_target.profile and user_target.profile.organization:
             organization = user_target.profile.organization
         
-        # If still no organization, it could be a system notification or user without org.
-        # In this case, only system default templates will be used by get_template.
         if not organization:
-            logger.debug(f"Não foi possível determinar organização para notificação para {user_target.username}, tipo {notification_type}. Usando template padrão do sistema.")
+            logger.debug(f"Não foi possível determinar organização para notificação ({notification_type}) para {user_target.username}. Usando template padrão do sistema.")
         
-        # Obter template
         template = NotificationTemplateService.get_template(organization, notification_type)
         
-        context = NotificationTemplate.get_context_variables(task=task, user=user_target, workflow_step=workflow_step)
+        # Use the more robust get_context_variables from NotificationTemplate model
+        context = NotificationTemplate.get_context_variables(
+            task=task, user=user_target, workflow_step=workflow_step
+        )
 
         if created_by:
             context['changed_by_name'] = created_by.get_full_name() or created_by.username
         else:
-            context['changed_by_name'] = "Sistema"
+            context['changed_by_name'] = "Sistema" # Or "TarefAI" or similar
+
+        # Add report-specific context if a report is provided
+        if report:
+            context['report_name'] = report.name
+            context['report_type_display'] = report.get_report_type_display()
+            context['report_format_display'] = report.get_report_format_display()
+            context['report_file_size_kb'] = report.file_size_kb or "N/A"
+            context['report_download_url'] = report.storage_url or "Link não disponível"
+            # If the notification is for a report, metadata should include report_id
+            if 'metadata' not in kwargs or not isinstance(kwargs['metadata'], dict):
+                kwargs['metadata'] = {}
+            kwargs['metadata']['report_id'] = str(report.id)
+
 
         if extra_context:
             context.update(extra_context)
         
-        # Renderizar template
         title, message = template.render(context)
         
-        # Usar prioridade do override, then template, then kwargs, then default 'normal'
         priority_to_use = priority_override or template.default_priority or kwargs.get('priority', 'normal')
         
-        # Create notification using the main NotificationService method
-        # This might seem recursive, but it's calling the core creation logic.
-        return NotificationService.create_notification( # Call the original create_notification
+        # For report_generated, task and workflow_step will be None
+        task_for_notification = task if notification_type != 'report_generated' else None
+        step_for_notification = workflow_step if notification_type != 'report_generated' else None
+
+        return NotificationService.create_notification( 
             user=user_target,
-            task=task,
-            workflow_step=workflow_step,
+            task=task_for_notification, 
+            workflow_step=step_for_notification,
             notification_type=notification_type,
             title=title,
             message=message,
-            priority=priority_to_use, # Use the determined priority
+            priority=priority_to_use,
             created_by=created_by,
-            metadata=kwargs.get('metadata', context), # Pass full context as metadata
+            metadata=kwargs.get('metadata', context),
             scheduled_for=kwargs.get('scheduled_for'),
             check_existing_recent=kwargs.get('check_existing_recent', False),
             recent_threshold_hours=kwargs.get('recent_threshold_hours', 24)

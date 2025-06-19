@@ -74,9 +74,9 @@ const ReportsPage = () => {
     const REPORT_TYPE_CHOICES_FRONTEND = [
         { value: 'client_summary', label: 'Resumo de Cliente(s)' },
         { value: 'profitability_analysis', label: 'Análise de Rentabilidade' },
-        { value: 'task_performance', label: 'Performance de Tarefas' },
+        { value: 'task_performance', label: 'Performance de Tarefas' }, // NEW
         { value: 'time_tracking_summary', label: 'Resumo de Registo de Tempos' },
-        { value: 'custom_report', label: 'Relatório Personalizado' },
+        // { value: 'custom_report', label: 'Relatório Personalizado' }, // Keep if you want to show it as "coming soon"
     ];
 
     const containerVariants = {

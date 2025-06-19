@@ -1,8 +1,8 @@
 // src/components/reports/ReportCreationModal.jsx
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-    X, FileText, Users, Calendar, Filter, Settings, 
+import {
+    X, FileText, Users, Calendar, Filter, Settings,
     Download, Loader2, AlertCircle, CheckCircle,
     PieChart, Clock, BarChart3
 } from 'lucide-react';
@@ -40,12 +40,12 @@ const labelStyle = {
 
 const ReportCreationModal = () => {
     const queryClient = useQueryClient();
-    const { 
-        showReportCreationModal, 
-        currentReportTypeForCreation, 
+    const {
+        showReportCreationModal,
+        currentReportTypeForCreation,
         currentReportParams,
         closeReportCreationModal,
-        updateCurrentReportParam 
+        updateCurrentReportParam
     } = useReportStore();
 
     const [step, setStep] = useState(1); // 1: Tipo, 2: Configuração, 3: Geração
@@ -97,7 +97,7 @@ const ReportCreationModal = () => {
 
     const handleGenerateReport = () => {
         setIsGenerating(true);
-        
+
         const reportData = {
             report_type: currentReportTypeForCreation,
             format: selectedFormat,
@@ -115,7 +115,7 @@ const ReportCreationModal = () => {
         const types = {
             'client_summary': 'Resumo de Clientes',
             'profitability_analysis': 'Análise de Rentabilidade',
-            'task_performance': 'Performance de Tarefas',
+            'task_performance': 'Performance de Tarefas', // NEW
             'time_tracking_summary': 'Resumo de Registo de Tempos',
             'custom_report': 'Relatório Personalizado'
         };
@@ -126,7 +126,7 @@ const ReportCreationModal = () => {
         const icons = {
             'client_summary': <Users size={24} />,
             'profitability_analysis': <PieChart size={24} />,
-            'task_performance': <BarChart3 size={24} />,
+            'task_performance': <BarChart3 size={24} />, // NEW
             'time_tracking_summary': <Clock size={24} />,
             'custom_report': <Settings size={24} />
         };
@@ -177,14 +177,14 @@ const ReportCreationModal = () => {
                             </div>
                             <div>
                                 <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '700' }}>
-                                    {step === 1 ? 'Criar Novo Relatório' : 
-                                     step === 2 ? 'Configurar Relatório' : 
-                                     'Relatório Gerado'}
+                                    {step === 1 ? 'Criar Novo Relatório' :
+                                        step === 2 ? 'Configurar Relatório' :
+                                            'Relatório Gerado'}
                                 </h2>
                                 <p style={{ margin: '0.25rem 0 0 0', color: 'rgba(255,255,255,0.7)', fontSize: '0.875rem' }}>
                                     {step === 1 ? 'Escolha o tipo de relatório que deseja gerar' :
-                                     step === 2 ? 'Configure os parâmetros do relatório' :
-                                     'O seu relatório foi gerado com sucesso'}
+                                        step === 2 ? 'Configure os parâmetros do relatório' :
+                                            'O seu relatório foi gerado com sucesso'}
                                 </p>
                             </div>
                         </div>
@@ -208,10 +208,10 @@ const ReportCreationModal = () => {
                     <div style={{ marginBottom: '2rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                             {['Tipo', 'Configuração', 'Concluído'].map((label, index) => (
-                                <span 
+                                <span
                                     key={label}
-                                    style={{ 
-                                        fontSize: '0.75rem', 
+                                    style={{
+                                        fontSize: '0.75rem',
                                         color: step > index ? 'rgb(34, 197, 94)' : step === index + 1 ? 'white' : 'rgba(255,255,255,0.5)',
                                         fontWeight: step === index + 1 ? '600' : '400'
                                     }}
@@ -241,7 +241,7 @@ const ReportCreationModal = () => {
                             style={{ display: 'grid', gap: '1rem' }}
                         >
                             <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>Selecione o Tipo de Relatório</h3>
-                            
+
                             {context?.report_types?.map((type) => (
                                 <motion.button
                                     key={type.value}
@@ -252,11 +252,11 @@ const ReportCreationModal = () => {
                                         ...glassStyle,
                                         padding: '1.5rem',
                                         cursor: 'pointer',
-                                        background: currentReportTypeForCreation === type.value 
-                                            ? 'rgba(59, 130, 246, 0.25)' 
+                                        background: currentReportTypeForCreation === type.value
+                                            ? 'rgba(59, 130, 246, 0.25)'
                                             : 'rgba(255,255,255,0.05)',
-                                        border: currentReportTypeForCreation === type.value 
-                                            ? '1px solid rgba(59, 130, 246, 0.5)' 
+                                        border: currentReportTypeForCreation === type.value
+                                            ? '1px solid rgba(59, 130, 246, 0.5)'
                                             : '1px solid rgba(255,255,255,0.1)',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -264,9 +264,9 @@ const ReportCreationModal = () => {
                                         textAlign: 'left'
                                     }}
                                 >
-                                    <div style={{ 
-                                        padding: '0.75rem', 
-                                        background: 'rgba(59, 130, 246, 0.15)', 
+                                    <div style={{
+                                        padding: '0.75rem',
+                                        background: 'rgba(59, 130, 246, 0.15)',
                                         borderRadius: '8px',
                                         color: 'rgb(96, 165, 250)'
                                     }}>
@@ -342,7 +342,7 @@ const ReportCreationModal = () => {
                                     value={currentReportParams.description || ''}
                                     onChange={(e) => updateCurrentReportParam('description', e.target.value)}
                                     placeholder="Descrição opcional do relatório..."
-                                    style={{...inputStyle, minHeight: '80px', resize: 'vertical'}}
+                                    style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
                                 />
                             </div>
 
@@ -359,20 +359,8 @@ const ReportCreationModal = () => {
                                 <ReportTimeTrackingConfig context={context} />
                             )}
 
-                            {(currentReportTypeForCreation === 'task_performance' || currentReportTypeForCreation === 'custom_report') && (
-                                <div style={{ 
-                                    padding: '1.5rem', 
-                                    background: 'rgba(251, 191, 36, 0.1)', 
-                                    border: '1px solid rgba(251, 191, 36, 0.3)', 
-                                    borderRadius: '8px',
-                                    textAlign: 'center'
-                                }}>
-                                    <AlertCircle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
-                                    <h4 style={{ margin: '0 0 0.5rem 0', color: 'rgb(251, 191, 36)' }}>Em Desenvolvimento</h4>
-                                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.8)' }}>
-                                        Este tipo de relatório ainda está em desenvolvimento. Tente outros tipos disponíveis.
-                                    </p>
-                                </div>
+                            {currentReportTypeForCreation === 'task_performance' && (
+                                <ReportTaskPerformanceConfig context={context} />
                             )}
                         </motion.div>
                     )}
@@ -391,7 +379,7 @@ const ReportCreationModal = () => {
                             <p style={{ margin: '0 0 2rem 0', color: 'rgba(255,255,255,0.8)' }}>
                                 O seu relatório foi gerado e está pronto para download.
                             </p>
-                            
+
                             {generateReportMutation.data?.report && (
                                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                                     <a
@@ -414,7 +402,7 @@ const ReportCreationModal = () => {
                                         <Download size={18} />
                                         Baixar Relatório
                                     </a>
-                                    
+
                                     <button
                                         onClick={resetModal}
                                         style={{
@@ -466,7 +454,7 @@ const ReportCreationModal = () => {
                             >
                                 {step === 1 ? 'Cancelar' : 'Voltar'}
                             </button>
-                            
+
                             <button
                                 onClick={handleNext}
                                 disabled={
@@ -512,7 +500,7 @@ const ReportClientSummaryConfig = ({ context }) => {
                 <Filter size={18} style={{ display: 'inline', marginRight: '0.5rem' }} />
                 Filtros do Relatório
             </h4>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                     <label style={labelStyle}>Data Desde</label>
@@ -543,7 +531,7 @@ const ReportClientSummaryConfig = ({ context }) => {
                         const selectedIds = Array.from(e.target.selectedOptions, option => option.value);
                         updateCurrentReportParam('client_ids', selectedIds);
                     }}
-                    style={{...inputStyle, minHeight: '120px'}}
+                    style={{ ...inputStyle, minHeight: '120px' }}
                 >
                     {context?.clients?.map(client => (
                         <option key={client.id} value={client.id} style={{ background: '#0f172a', color: '#e2e8f0' }}>
@@ -559,6 +547,64 @@ const ReportClientSummaryConfig = ({ context }) => {
     );
 };
 
+const ReportTaskPerformanceConfig = ({ context }) => {
+    const { currentReportParams, updateCurrentReportParam } = useReportStore();
+    return (
+        <div style={{ display: 'grid', gap: '1rem' }}>
+            <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: 'rgba(255,255,255,0.9)' }}>
+                <BarChart3 size={18} style={{ display: 'inline', marginRight: '0.5rem' }} />
+                Filtros de Performance de Tarefas
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                    <label style={labelStyle}>Data Criação Desde</label>
+                    <input type="date" value={currentReportParams.date_from || ''} onChange={(e) => updateCurrentReportParam('date_from', e.target.value)} style={inputStyle} />
+                </div>
+                <div>
+                    <label style={labelStyle}>Data Criação Até</label>
+                    <input type="date" value={currentReportParams.date_to || ''} onChange={(e) => updateCurrentReportParam('date_to', e.target.value)} style={inputStyle} />
+                </div>
+            </div>
+            <div>
+                <label style={labelStyle}>Clientes (opcional)</label>
+                <select multiple value={currentReportParams.client_ids || []} onChange={(e) => updateCurrentReportParam('client_ids', Array.from(e.target.selectedOptions, option => option.value))} style={{ ...inputStyle, minHeight: '80px' }}>
+                    {context?.clients?.map(client => (
+                        <option key={client.id} value={client.id} style={{ background: '#0f172a', color: '#e2e8f0' }}>{client.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div>
+                <label style={labelStyle}>Responsáveis (opcional)</label>
+                <select multiple value={currentReportParams.user_ids || []} onChange={(e) => updateCurrentReportParam('user_ids', Array.from(e.target.selectedOptions, option => option.value))} style={{ ...inputStyle, minHeight: '80px' }}>
+                    {context?.users?.map(user => (
+                        <option key={user.id} value={user.id} style={{ background: '#0f172a', color: '#e2e8f0' }}>{user.username}</option>
+                    ))}
+                </select>
+            </div>
+            <div>
+                <label style={labelStyle}>Categorias (opcional)</label>
+                <select multiple value={currentReportParams.category_ids || []} onChange={(e) => updateCurrentReportParam('category_ids', Array.from(e.target.selectedOptions, option => option.value))} style={{ ...inputStyle, minHeight: '80px' }}>
+                    {context?.categories?.map(cat => (
+                        <option key={cat.id} value={cat.id} style={{ background: '#0f172a', color: '#e2e8f0' }}>{cat.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div>
+                <label style={labelStyle}>Status (opcional)</label>
+                <select multiple value={currentReportParams.statuses || []} onChange={(e) => updateCurrentReportParam('statuses', Array.from(e.target.selectedOptions, option => option.value))} style={{ ...inputStyle, minHeight: '80px' }}>
+                    {/* Assuming STATUS_OPTIONS from TaskManagement is available or defined here */}
+                    {[{ value: 'pending', label: 'Pendente' }, { value: 'in_progress', label: 'Em Progresso' }, { value: 'completed', label: 'Concluída' }, { value: 'cancelled', label: 'Cancelada' }].map(opt => (
+                        <option key={opt.value} value={opt.value} style={{ background: '#0f172a', color: '#e2e8f0' }}>{opt.label}</option>
+                    ))}
+                </select>
+            </div>
+            <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', margin: '0.5rem 0 0 0', gridColumn: '1 / -1' }}>
+                Mantenha Ctrl/Cmd pressionado para selecionar múltiplos itens. Se nenhum for selecionado para um filtro opcional, todos serão incluídos.
+            </p>
+        </div>
+    );
+};
+
 const ReportTimeTrackingConfig = ({ context }) => {
     const { currentReportParams, updateCurrentReportParam } = useReportStore();
 
@@ -568,7 +614,7 @@ const ReportTimeTrackingConfig = ({ context }) => {
                 <Clock size={18} style={{ display: 'inline', marginRight: '0.5rem' }} />
                 Filtros de Registo de Tempo
             </h4>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                     <label style={labelStyle}>Data Desde</label>
@@ -600,7 +646,7 @@ const ReportTimeTrackingConfig = ({ context }) => {
                             const selectedIds = Array.from(e.target.selectedOptions, option => option.value);
                             updateCurrentReportParam('user_ids', selectedIds);
                         }}
-                        style={{...inputStyle, minHeight: '120px'}}
+                        style={{ ...inputStyle, minHeight: '120px' }}
                     >
                         {context?.users?.map(user => (
                             <option key={user.id} value={user.id} style={{ background: '#0f172a', color: '#e2e8f0' }}>
@@ -619,7 +665,7 @@ const ReportTimeTrackingConfig = ({ context }) => {
                             const selectedIds = Array.from(e.target.selectedOptions, option => option.value);
                             updateCurrentReportParam('client_ids', selectedIds);
                         }}
-                        style={{...inputStyle, minHeight: '120px'}}
+                        style={{ ...inputStyle, minHeight: '120px' }}
                     >
                         {context?.clients?.map(client => (
                             <option key={client.id} value={client.id} style={{ background: '#0f172a', color: '#e2e8f0' }}>
@@ -629,7 +675,7 @@ const ReportTimeTrackingConfig = ({ context }) => {
                     </select>
                 </div>
             </div>
-            
+
             <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', margin: '0.5rem 0 0 0' }}>
                 Mantenha Ctrl/Cmd pressionado para selecionar múltiplos itens. Se nenhum for selecionado, todos serão incluídos.
             </p>
