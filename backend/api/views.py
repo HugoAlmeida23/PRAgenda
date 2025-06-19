@@ -16,7 +16,7 @@ from django.core.exceptions import PermissionDenied
 from .models import (Organization, Client, TaskCategory, Task, TimeEntry, Expense, 
                     ClientProfitability, Profile, AutoTimeTracking, WorkflowStep,
                     WorkflowDefinition, TaskApproval, WorkflowNotification,NotificationTemplate, 
-                    WorkflowHistory,NotificationSettings, NotificationDigest, FiscalObligationDefinition, FiscalSystemSettings)
+                    WorkflowHistory,NotificationSettings, NotificationDigest, FiscalObligationDefinition, FiscalSystemSettings,GeneratedReport)
 
 from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializer,
                          TimeEntrySerializer, ExpenseSerializer, ClientProfitabilitySerializer,
@@ -25,7 +25,7 @@ from .serializers import (ClientSerializer, TaskCategorySerializer, TaskSerializ
                          WorkflowStepSerializer, TaskApprovalSerializer, WorkflowNotificationSerializer,
                          WorkflowHistorySerializer, NotificationSettingsSerializer,NotificationTemplateSerializer,
                          NotificationDigestSerializer,FiscalGenerationRequestSerializer,FiscalStatsSerializer,
-                         FiscalObligationTestSerializer, FiscalObligationDefinitionSerializer, FiscalSystemSettingsSerializer)
+                         FiscalObligationTestSerializer, FiscalObligationDefinitionSerializer, FiscalSystemSettingsSerializer,GeneratedReportSerializer)
 from django.db import models
 from .services.notification_service import NotificationService 
 from .services.notifications_metrics import NotificationMetricsService
@@ -44,8 +44,81 @@ from dateutil.relativedelta import relativedelta
 from django.db.models.expressions import RawSQL # Make sure this is imported
 
 
-
 logger = logging.getLogger(__name__)
+
+class GeneratedReportViewSet(viewsets.ReadOnlyModelViewSet): # ReadOnly por agora, criação será via "gerar relatório"
+    serializer_class = GeneratedReportSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        logger.debug(f"[GeneratedReportViewSet] get_queryset for user: {user.username}")
+        try:
+            profile = user.profile
+            if not profile.organization:
+                logger.warn(f"[GeneratedReportViewSet] User {user.username} has no organization.")
+                return GeneratedReport.objects.none()
+
+            # Permissão para ver relatórios: ser admin da org OU ter permissão 'can_view_analytics' OU 'can_export_reports'
+            can_view_reports = (
+                profile.is_org_admin or 
+                getattr(profile, 'can_view_analytics', False) or # getattr com default False
+                getattr(profile, 'can_export_reports', False)
+            )
+
+            if can_view_reports:
+                logger.debug(f"[GeneratedReportViewSet] User {user.username} can view reports for org {profile.organization.name}.")
+                base_qs = GeneratedReport.objects.filter(organization=profile.organization)
+            else:
+                # Se não tem permissão geral, talvez possa ver relatórios que ele mesmo gerou?
+                # (Pode ser uma regra futura, por agora, se não pode ver análises/exportar, não vê a lista)
+                logger.warn(f"[GeneratedReportViewSet] User {user.username} does not have general report viewing permissions.")
+                return GeneratedReport.objects.none()
+        
+        except Profile.DoesNotExist:
+            if user.is_superuser:
+                logger.debug(f"[GeneratedReportViewSet] Superuser {user.username} accessing all reports.")
+                base_qs = GeneratedReport.objects.all()
+            else:
+                logger.warn(f"[GeneratedReportViewSet] Profile does not exist for non-superuser {user.username}.")
+                return GeneratedReport.objects.none()
+
+        # Aplicar filtros de query params
+        filters_applied = {}
+        report_type_param = self.request.query_params.get('report_type')
+        if report_type_param:
+            base_qs = base_qs.filter(report_type=report_type_param)
+            filters_applied['report_type'] = report_type_param
+
+        date_from_param = self.request.query_params.get('created_at__gte')
+        if date_from_param:
+            base_qs = base_qs.filter(created_at__gte=date_from_param)
+            filters_applied['created_at__gte'] = date_from_param
+
+        date_to_param = self.request.query_params.get('created_at__lte')
+        if date_to_param:
+            # Ajustar para incluir o dia todo
+            try:
+                date_to_obj = datetime.strptime(date_to_param, '%Y-%m-%d').date()
+                datetime_to = datetime.combine(date_to_obj, datetime.max.time())
+                base_qs = base_qs.filter(created_at__lte=datetime_to)
+                filters_applied['created_at__lte'] = date_to_param
+            except ValueError:
+                logger.warn(f"Invalid date_to_param: {date_to_param}")
+
+
+        # Adicionar pesquisa se o frontend enviar `search_term` e você quiser filtrar no backend
+        search_term_param = self.request.query_params.get('search') # Supondo que o frontend use 'search'
+        if search_term_param:
+             base_qs = base_qs.filter(
+                 Q(name__icontains=search_term_param) |
+                 Q(description__icontains=search_term_param) |
+                 Q(parameters__icontains=search_term_param) # Pesquisa dentro do JSON de parâmetros
+             )
+             filters_applied['search'] = search_term_param
+        
+        logger.debug(f"[GeneratedReportViewSet] Filters applied: {filters_applied}, Count after filters: {base_qs.count()}")
+        return base_qs.select_related('organization', 'generated_by').order_by('-created_at')
 
 class FiscalObligationDefinitionViewSet(viewsets.ModelViewSet):
     serializer_class = FiscalObligationDefinitionSerializer
@@ -569,11 +642,14 @@ class TaskViewSet(viewsets.ModelViewSet):
             return Task.objects.none()
          
     def perform_create(self, serializer):
-        """Enhanced create with multi-user assignment validation."""
+        user_making_request = self.request.user
+        logger.debug(f"[TaskViewSet perform_create] User making request: {user_making_request.username}")
+
         try:
-            profile = Profile.objects.select_related('organization').get(user=self.request.user)
+            profile_making_request = Profile.objects.select_related('organization').get(user=user_making_request)
             
-            if not (profile.is_org_admin or profile.can_create_tasks):
+            if not (profile_making_request.is_org_admin or profile_making_request.can_create_tasks):
+                logger.warning(f"[TaskViewSet perform_create] User {user_making_request.username} does not have permission to create tasks.")
                 raise PermissionDenied("Você não tem permissão para criar tarefas")
                 
             client_id = self.request.data.get('client')
@@ -581,37 +657,66 @@ class TaskViewSet(viewsets.ModelViewSet):
             if client_id:
                 try:
                     client_instance = Client.objects.select_related('organization').get(id=client_id)
-                    if client_instance.organization != profile.organization:
+                    if client_instance.organization != profile_making_request.organization:
+                         logger.warning(f"[TaskViewSet perform_create] User {user_making_request.username} trying to create task for client in another org.")
                          raise PermissionDenied("Não pode criar tarefa para cliente de outra organização.")
-                    if not profile.can_access_client(client_instance):
-                        raise PermissionDenied("Você não tem acesso a este cliente para criar tarefas")
+                    # A verificação profile.can_access_client pode ser redundante se can_create_tasks já implicar isso
+                    # ou se a lógica de atribuição de cliente já for feita no frontend com base nos clientes visíveis.
                 except Client.DoesNotExist:
+                    logger.error(f"[TaskViewSet perform_create] Client with ID {client_id} not found.")
                     raise ValidationError({"client": "Cliente não encontrado."})
             else:
+                logger.error("[TaskViewSet perform_create] Client ID is mandatory.")
                 raise ValidationError({"client": "Cliente é obrigatório."})
 
-            # Validate collaborators belong to the same organization
-            collaborators_ids = self.request.data.get('collaborators', [])
-            if collaborators_ids:
-                collaborators = User.objects.filter(id__in=collaborators_ids)
-                for collaborator in collaborators:
-                    try:
-                        collab_profile = collaborator.profile
-                        if collab_profile.organization != profile.organization:
-                            raise PermissionDenied(f"Colaborador {collaborator.username} não pertence à sua organização.")
-                    except Profile.DoesNotExist:
-                        raise ValidationError({"collaborators": f"Colaborador {collaborator.username} não possui perfil válido."})
+            collaborators_ids_from_request = self.request.data.get('collaborators', []) # Vem do frontend
+            assigned_to_id_from_request = self.request.data.get('assigned_to') # Vem do frontend
 
-            # Extract workflow data
-            workflow_id = self.request.data.get('workflow')
-            step_assignments = self.request.data.get('workflow_step_assignments', {})
+            # Validar colaboradores pertencem à mesma organização (se houver)
+            if collaborators_ids_from_request:
+                collaborators_qs = User.objects.filter(id__in=collaborators_ids_from_request)
+                for collaborator_user in collaborators_qs:
+                    try:
+                        collab_profile = collaborator_user.profile
+                        if collab_profile.organization != profile_making_request.organization:
+                            logger.warning(f"[TaskViewSet perform_create] Collaborator {collaborator_user.username} not in same org.")
+                            raise PermissionDenied(f"Colaborador {collaborator_user.username} não pertence à sua organização.")
+                    except Profile.DoesNotExist:
+                        logger.error(f"[TaskViewSet perform_create] Profile for collaborator {collaborator_user.username} not found.")
+                        raise ValidationError({"collaborators": f"Colaborador {collaborator_user.username} não possui perfil válido."})
             
-            # Save task with collaborators
+            # O serializer.save() irá criar a tarefa com assigned_to e
+            # depois vamos definir os collaborators se existirem.
+            # O serializer deve ser configurado para aceitar 'collaborators' como writeable ManyToManyField.
+            # No frontend, ao submeter, deve enviar collaborators como uma lista de IDs.
+            
+            step_assignments = self.request.data.get('workflow_step_assignments', {})
+            workflow_id = self.request.data.get('workflow')
+
+            # Save task
+            # O serializer.save() precisa que 'collaborators' não esteja no validated_data inicial
+            # se for ser tratado separadamente com .set()
+            validated_data_for_creation = serializer.validated_data.copy()
+            
+            # collaborators_ids_for_set é a lista de IDs para o M2M
+            collaborators_ids_for_set = validated_data_for_creation.pop('collaborators', []) 
+            
             task = serializer.save(
-                created_by=self.request.user, 
+                created_by=user_making_request, 
                 client=client_instance,
+                # Se 'assigned_to' e 'collaborators' já estão no validated_data do serializer, ótimo.
+                # Caso contrário, o 'assigned_to' já estaria sendo salvo e 'collaborators' precisa ser setado depois.
                 workflow_step_assignments=step_assignments if workflow_id else {}
             )
+            logger.debug(f"[TaskViewSet perform_create] Task {task.id} created successfully by serializer.")
+
+            # Set collaborators if any were provided (and if mode was 'multiple' potentially)
+            # This step assumes serializer's `create` method does not handle 'collaborators' M2M directly,
+            # or if you prefer to set it explicitly after instance creation.
+            if collaborators_ids_for_set:
+                task.collaborators.set(collaborators_ids_for_set)
+                logger.debug(f"[TaskViewSet perform_create] Collaborators {collaborators_ids_for_set} set for task {task.id}.")
+
 
             # Handle workflow assignment
             if workflow_id:
@@ -624,32 +729,94 @@ class TaskViewSet(viewsets.ModelViewSet):
                         task.save(update_fields=['workflow', 'current_workflow_step'])
                         WorkflowHistory.objects.create(
                             task=task, from_step=None, to_step=first_step,
-                            changed_by=self.request.user, action='workflow_assigned',
+                            changed_by=user_making_request, action='workflow_assigned',
                             comment=f"Workflow '{workflow.name}' atribuído na criação da tarefa."
                         )
-                        NotificationService.notify_workflow_assigned(task, self.request.user)
+                        # NotificationService.notify_workflow_assigned(task, user_making_request)
+                        # Esta notificação acima é para o primeiro responsável do passo do workflow.
+                        # A nova notificação abaixo é para a atribuição geral da tarefa.
                     else:
-                        logger.warning(f"Workflow {workflow_id} selecionado para tarefa {task.id} não tem passos definidos.")
+                        logger.warning(f"[TaskViewSet perform_create] Workflow {workflow_id} for task {task.id} has no steps.")
                 except WorkflowDefinition.DoesNotExist:
-                    logger.warning(f"Workflow {workflow_id} não encontrado ou inativo para tarefa {task.id}.")
+                    logger.warning(f"[TaskViewSet perform_create] Workflow {workflow_id} not found or inactive for task {task.id}.")
+
+            # --- NOTIFICATION LOGIC ---
+            users_to_notify_ids = set()
+            if task.assigned_to:
+                users_to_notify_ids.add(task.assigned_to.id)
+            
+            # Get collaborators from the task instance after .set()
+            for collaborator in task.collaborators.all():
+                users_to_notify_ids.add(collaborator.id)
+
+            logger.debug(f"[TaskViewSet perform_create] Users to notify for new task assignment: {users_to_notify_ids}")
+
+            for user_id_to_notify in users_to_notify_ids:
+                # Não notificar o criador da tarefa se ele for um dos atribuídos
+                if user_id_to_notify == user_making_request.id:
+                    continue
+                
+                try:
+                    target_user = User.objects.get(id=user_id_to_notify)
+                    NotificationService.create_notification(
+                        user=target_user,
+                        task=task,
+                        notification_type='task_assigned_to_you', # NOVO TIPO
+                        title=f"Nova tarefa atribuída: {task.title}",
+                        message=f"Você foi atribuído(a) à tarefa '{task.title}' para o cliente '{task.client.name}'. Criada por: {user_making_request.username}.",
+                        created_by=user_making_request
+                    )
+                    logger.info(f"[TaskViewSet perform_create] Sent 'task_assigned_to_you' notification to {target_user.username} for task {task.id}")
+                except User.DoesNotExist:
+                    logger.error(f"[TaskViewSet perform_create] User with ID {user_id_to_notify} not found for notification.")
+                except Exception as e_notify:
+                    logger.error(f"[TaskViewSet perform_create] Error sending task assignment notification to user ID {user_id_to_notify}: {e_notify}")
+            
+            # Se um workflow foi atribuído E tem um primeiro passo com responsável,
+            # a notificação de "passo pronto" para esse responsável já é tratada por notify_workflow_assigned.
+            # Mas, se o primeiro passo do workflow não tiver um responsável direto,
+            # e a tarefa tiver um `assigned_to` geral, ele já foi notificado acima.
+            # Se o primeiro passo do workflow tiver um responsável diferente do `assigned_to` geral e dos `collaborators`,
+            # a notificação `notify_workflow_assigned` (que internamente chama `notify_step_ready`) cuidará disso.
+            if task.workflow and task.current_workflow_step and task.current_workflow_step.assign_to:
+                 if task.current_workflow_step.assign_to.id not in users_to_notify_ids and task.current_workflow_step.assign_to.id != user_making_request.id:
+                    NotificationService.notify_step_ready(task, task.current_workflow_step, user_making_request)
+                    logger.info(f"[TaskViewSet perform_create] Sent 'step_ready' for initial workflow step to {task.current_workflow_step.assign_to.username}")
+
 
         except Profile.DoesNotExist:
-            if self.request.user.is_superuser:
+            # Esta parte é para o superuser que não tem perfil (não recomendado)
+            logger.warning(f"[TaskViewSet perform_create] Profile.DoesNotExist for request user {user_making_request.username}. Is superuser: {user_making_request.is_superuser}")
+            if user_making_request.is_superuser:
                 client_id = self.request.data.get('client')
                 if not client_id: 
                     raise ValidationError({"client": "Cliente é obrigatório."})
                 try:
                     client_instance = Client.objects.get(id=client_id)
-                    step_assignments = self.request.data.get('workflow_step_assignments', {})
-                    serializer.save(
-                        created_by=self.request.user, 
+                    # Superuser path, less restrictive, but needs care
+                    # Ensure collaborators are handled if passed for superuser
+                    validated_data_for_creation = serializer.validated_data.copy()
+                    collaborators_ids_for_set = validated_data_for_creation.pop('collaborators', [])
+
+                    task = serializer.save(
+                        created_by=user_making_request, 
                         client=client_instance,
-                        workflow_step_assignments=step_assignments
+                        # assigned_to handled by serializer
+                        # collaborators to be set after save
+                        workflow_step_assignments=self.request.data.get('workflow_step_assignments', {}) if self.request.data.get('workflow') else {}
                     )
+                    if collaborators_ids_for_set:
+                        task.collaborators.set(collaborators_ids_for_set)
+                    
+                    # ... (notification logic for superuser-created tasks could be added here if needed) ...
+
                 except Client.DoesNotExist:
                     raise ValidationError({"client": "Cliente não encontrado."})
             else:
                 raise PermissionDenied("Perfil de usuário não encontrado")
+        except Exception as e:
+            logger.error(f"[TaskViewSet perform_create] Unexpected error: {e}", exc_info=True)
+            raise # Re-raise a generic server error or a specific one
 
     @action(detail=True, methods=['get'])
     def workflow_status(self, request, pk=None):
@@ -4256,3 +4423,298 @@ def time_entry_context(request):
     except Exception as e:
         logger.error(f"Erro ao construir contexto de registo de tempo: {e}", exc_info=True)
         return Response({"error": "Erro interno ao buscar contexto."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+# Adicionar ao final do views.py existente
+
+from .services.report_generation_service import ReportGenerationService
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+import uuid
+import os
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def generate_report(request):
+    """
+    Endpoint para gerar relatórios personalizados.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not (profile.is_org_admin or profile.can_export_reports or profile.can_create_custom_reports):
+            return Response(
+                {'error': 'Sem permissão para gerar relatórios'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        organization = profile.organization
+        if not organization:
+            return Response(
+                {'error': 'Utilizador não está associado a uma organização'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        report_type = request.data.get('report_type')
+        report_format = request.data.get('format', 'pdf')
+        report_name = request.data.get('name', f'Relatório {report_type}')
+        
+        if not report_type:
+            return Response({'error': 'Tipo de relatório é obrigatório'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if report_format not in ['pdf', 'csv', 'xlsx']:
+            return Response({'error': 'Formato deve ser pdf, csv ou xlsx'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        params = request.data.get('parameters', {})
+        
+        # Convert date strings from params to aware datetimes
+        date_from_str = params.get('date_from')
+        date_to_str = params.get('date_to')
+        
+        date_from = None
+        if date_from_str:
+            try:
+                naive_date_from = datetime.strptime(date_from_str, '%Y-%m-%d')
+                date_from = timezone.make_aware(naive_date_from, timezone.get_default_timezone())
+            except ValueError:
+                return Response({'error': f"Formato inválido para date_from: {date_from_str}. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        date_to = None
+        if date_to_str:
+            try:
+                naive_date_to = datetime.strptime(date_to_str, '%Y-%m-%d')
+                # For date_to, set time to end of day
+                aware_date_to_start_of_day = timezone.make_aware(naive_date_to, timezone.get_default_timezone())
+                date_to = aware_date_to_start_of_day.replace(hour=23, minute=59, second=59, microsecond=999999)
+            except ValueError:
+                return Response({'error': f"Formato inválido para date_to: {date_to_str}. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            if report_type == 'client_summary':
+                file_buffer, content_type = ReportGenerationService.generate_client_summary_report(
+                    organization=organization,
+                    client_ids=params.get('client_ids'),
+                    include_profitability=params.get('include_profitability', True),
+                    include_tasks=params.get('include_tasks', True),
+                    include_time_entries=params.get('include_time_entries', True),
+                    date_from=date_from, # Pass aware datetime
+                    date_to=date_to,     # Pass aware datetime
+                    format_type=report_format
+                )
+                
+            elif report_type == 'profitability_analysis':
+                # Profitability report might not use date_from/date_to directly, but year/month
+                # If it does, ensure they are handled correctly (e.g., passed as aware or converted as needed)
+                file_buffer, content_type = ReportGenerationService.generate_profitability_analysis_report(
+                    organization=organization,
+                    client_ids=params.get('client_ids'),
+                    year=int(params['year']) if params.get('year') else None,
+                    month=int(params['month']) if params.get('month') else None,
+                    format_type=report_format
+                )
+                
+            elif report_type == 'time_tracking_summary':
+                file_buffer, content_type = ReportGenerationService.generate_time_tracking_summary_report(
+                    organization=organization,
+                    user_ids=params.get('user_ids'),
+                    client_ids=params.get('client_ids'),
+                    date_from=date_from, # Pass aware datetime
+                    date_to=date_to,     # Pass aware datetime
+                    format_type=report_format
+                )
+            elif report_type == 'task_performance':
+                return Response({'error': 'Tipo de relatório ainda não implementado'}, status=status.HTTP_501_NOT_IMPLEMENTED)
+            elif report_type == 'custom_report':
+                return Response({'error': 'Relatórios personalizados ainda não implementados'}, status=status.HTTP_501_NOT_IMPLEMENTED)
+            else:
+                return Response({'error': 'Tipo de relatório não reconhecido'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            file_extension = 'pdf' if report_format == 'pdf' else ('csv' if report_format == 'csv' else 'xlsx')
+            filename = f"reports/{organization.id}/{uuid.uuid4()}.{file_extension}"
+            
+            if hasattr(settings, 'MEDIA_ROOT') and settings.DEBUG: # Use local media in DEBUG
+                os.makedirs(os.path.join(settings.MEDIA_ROOT, 'reports', str(organization.id)), exist_ok=True)
+                file_path = os.path.join(settings.MEDIA_ROOT, filename)
+                
+                with open(file_path, 'wb') as f:
+                    f.write(file_buffer.getvalue())
+                
+                storage_url = f"{settings.MEDIA_URL}{filename}"
+                if hasattr(request, 'build_absolute_uri'):
+                    storage_url = request.build_absolute_uri(storage_url)
+            else:
+                file_content = ContentFile(file_buffer.getvalue())
+                file_path = default_storage.save(filename, file_content)
+                storage_url = default_storage.url(file_path)
+            
+            file_size_kb = len(file_buffer.getvalue()) // 1024
+            
+            generated_report = GeneratedReport.objects.create(
+                name=report_name,
+                report_type=report_type,
+                report_format=report_format,
+                organization=organization,
+                generated_by=request.user,
+                parameters=params,
+                storage_url=storage_url,
+                file_size_kb=file_size_kb,
+                description=params.get('description', f'Relatório {report_type} gerado automaticamente')
+            )
+            
+            serializer = GeneratedReportSerializer(generated_report)
+            logger.info(f"Relatório {report_type} gerado com sucesso para organização {organization.name} por {request.user.username}")
+            
+            return Response({
+                'success': True,
+                'message': 'Relatório gerado com sucesso',
+                'report': serializer.data
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as generation_error:
+            logger.error(f"Erro na geração do relatório {report_type}: {generation_error}", exc_info=True)
+            return Response({
+                'error': f'Erro ao gerar relatório: {str(generation_error)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Profile.DoesNotExist:
+        return Response({'error': 'Perfil não encontrado'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erro geral no endpoint de geração de relatórios: {e}", exc_info=True)
+        return Response({
+            'error': f'Erro interno: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_report_generation_context(request):
+    """
+    Endpoint para obter contexto necessário para geração de relatórios
+    (clientes, utilizadores, etc.)
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not (profile.is_org_admin or profile.can_export_reports or profile.can_create_custom_reports):
+            return Response(
+                {'error': 'Sem permissão para aceder ao contexto de relatórios'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        organization = profile.organization
+        if not organization:
+            return Response(
+                {'error': 'Utilizador não está associado a uma organização'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Obter dados para os formulários de relatório
+        context = {
+            'organization': {
+                'id': organization.id,
+                'name': organization.name
+            },
+            'clients': [],
+            'users': [],
+            'categories': [],
+            'report_types': [
+                {'value': 'client_summary', 'label': 'Resumo de Cliente(s)'},
+                {'value': 'profitability_analysis', 'label': 'Análise de Rentabilidade'},
+                {'value': 'task_performance', 'label': 'Performance de Tarefas'},
+                {'value': 'time_tracking_summary', 'label': 'Resumo de Registo de Tempos'},
+                {'value': 'custom_report', 'label': 'Relatório Personalizado'},
+            ],
+            'formats': [
+                {'value': 'pdf', 'label': 'PDF'},
+                {'value': 'csv', 'label': 'CSV'},
+                {'value': 'xlsx', 'label': 'Excel (XLSX)'},
+            ]
+        }
+        
+        # Clientes ativos
+        clients = Client.objects.filter(
+            organization=organization, 
+            is_active=True
+        ).select_related('account_manager').order_by('name')
+        
+        context['clients'] = [
+            {
+                'id': client.id,
+                'name': client.name,
+                'account_manager': client.account_manager.username if client.account_manager else None,
+                'monthly_fee': float(client.monthly_fee) if client.monthly_fee else 0
+            }
+            for client in clients
+        ]
+        
+        # Utilizadores da organização
+        org_users = Profile.objects.filter(
+            organization=organization,
+            user__is_active=True
+        ).select_related('user').order_by('user__username')
+        
+        context['users'] = [
+            {
+                'id': profile_item.user.id,
+                'username': profile_item.user.username,
+                'first_name': profile_item.user.first_name,
+                'last_name': profile_item.user.last_name,
+                'role': profile_item.role
+            }
+            for profile_item in org_users
+        ]
+        
+        # Categorias de tarefas
+        categories = TaskCategory.objects.all().order_by('name')
+        context['categories'] = [
+            {
+                'id': category.id,
+                'name': category.name,
+                'color': category.color
+            }
+            for category in categories
+        ]
+        
+        return Response(context)
+        
+    except Profile.DoesNotExist:
+        return Response({'error': 'Perfil não encontrado'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erro ao obter contexto de relatórios: {e}", exc_info=True)
+        return Response({
+            'error': f'Erro interno: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# Adicionar também este endpoint para download direto (opcional)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def download_report(request, report_id):
+    """
+    Endpoint para download direto de relatório por ID.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        
+        if not (profile.is_org_admin or profile.can_export_reports):
+            return Response(
+                {'error': 'Sem permissão para fazer download de relatórios'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Buscar relatório
+        try:
+            report = GeneratedReport.objects.get(
+                id=report_id,
+                organization=profile.organization
+            )
+        except GeneratedReport.DoesNotExist:
+            return Response({'error': 'Relatório não encontrado'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Redirect para URL de storage ou servir arquivo diretamente
+        return Response({'download_url': report.storage_url})
+        
+    except Profile.DoesNotExist:
+        return Response({'error': 'Perfil não encontrado'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erro no download do relatório {report_id}: {e}", exc_info=True)
+        return Response({
+            'error': f'Erro interno: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

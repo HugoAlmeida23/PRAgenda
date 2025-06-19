@@ -180,6 +180,7 @@ const Layout = ({ children }) => {
     path: "/workflow-management"
   };
 
+
   // Navigation groups
   const navGroups = [
     {
@@ -205,6 +206,7 @@ const Layout = ({ children }) => {
         icon: <BarChart3 size={16} />,
         items: [
             { path: "/clientprofitability", icon: DollarSign, label: "Rentabilidade" },
+            { path: "/reports", icon: DollarSign, label: "Central de Relatórios" },
         ]
     }
   ];

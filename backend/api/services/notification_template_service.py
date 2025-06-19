@@ -15,6 +15,74 @@ class NotificationTemplateService:
     """
     Serviço para gestão de templates de notificação
     """
+
+    @staticmethod
+    def _get_system_default_template(notification_type):
+        # Define more comprehensive default templates
+        default_templates = {
+            # ... (outros templates existentes) ...
+            'task_assigned_to_you': { # NOVO TEMPLATE
+                'title_template': '🚀 Nova Tarefa: {task_title}',
+                'message_template': (
+                    'Olá {user_first_name},\n\n'
+                    'Você foi atribuído(a) à tarefa "{task_title}" para o cliente "{client_name}".\n'
+                    'Criada por: {changed_by_name}.\n\n'
+                    'Prazo: {deadline_date}\n'
+                    'Prioridade: {priority_label}\n\n'
+                    'Por favor, verifique os detalhes da tarefa.'
+                ),
+                'default_priority': 'normal'
+            },
+        }
+        # ... (resto da lógica para obter e renderizar template) ...
+        # Adicionar as novas variáveis ao contexto se necessário
+        # Exemplo, ao criar o context em NotificationTemplate.get_context_variables:
+        # if task:
+        #     context['deadline_date'] = task.deadline.strftime('%d/%m/%Y') if task.deadline else "Não definido"
+        #     context['priority_label'] = task.get_priority_display() # Supondo que tem este método no modelo Task
+
+        template_data = default_templates.get(notification_type)
+        
+        if not template_data:
+            logger.warning(f"Nenhum template padrão do sistema definido para o tipo: {notification_type}. Usando fallback genérico.")
+            template_data = {
+                'title_template': 'Notificação: {task_title}',
+                'message_template': 'Você tem uma nova notificação para a tarefa "{task_title}". Detalhes: {fallback_message}',
+                'default_priority': 'normal'
+            }
+        
+        from types import SimpleNamespace
+        template = SimpleNamespace()
+        template.notification_type = notification_type
+        template.title_template = template_data['title_template']
+        template.message_template = template_data['message_template']
+        template.default_priority = template_data['default_priority']
+        
+        def render_template(context_vars):
+            # Certifique-se que todas as chaves usadas nos templates estão no context_vars
+            # ou têm um fallback para evitar KeyErrors.
+            safe_context = context_vars.copy() # Create a mutable copy
+            
+            # Define default values for keys that might be missing
+            expected_keys = ['user_first_name', 'task_title', 'client_name', 'changed_by_name', 'deadline_date', 'priority_label', 'fallback_message']
+            for key in expected_keys:
+                if key not in safe_context:
+                    safe_context[key] = f"{{Informação em falta: {key}}}" # Placeholder
+            
+            try:
+                final_title = template.title_template.format_map(safe_context)
+                final_message = template.message_template.format_map(safe_context)
+                return final_title, final_message
+            except KeyError as e:
+                logger.error(f"Variável ausente ao renderizar template padrão do sistema para '{template.notification_type}': {e}. Contexto: {safe_context}")
+                # Fallback rendering with missing keys indicated
+                final_title = template.title_template.format_map(safe_context) # Use format_map for safety
+                final_message = template.message_template.format_map(safe_context)
+                return final_title, final_message
+
+        template.render = render_template
+        return template
+    
     
     @staticmethod
     def get_template(organization, notification_type):

@@ -21,34 +21,86 @@ const glassStyle = {
 
 
 const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
-    // ... (AssignmentIndicator component remains the same)
-    const [showDetails, setShowDetails] = useState(false);
-    
+    const [showDetails, setShowDetails] = useState(false); // Controls if the portal menu is visible
+    const buttonRef = useRef(null); // Ref for the trigger button/div
+    const menuRef = useRef(null);   // Ref for the menu itself
+    const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, right: 'auto', visible: false });
+
+
     const getUserName = (userId) => {
         if (!usersData || !userId) return "Desconhecido";
-        const user = usersData.find(u => u.user === userId); // Assuming usersData has profile with 'user' as ID
+        // Assuming usersData is an array of profile-like objects where 'user' is the ID and 'username' is the name
+        const user = usersData.find(u => (u.user || u.id) === userId); 
         return user ? user.username : "Desconhecido";
     };
 
     const primaryAssignee = task.assigned_to ? getUserName(task.assigned_to) : null;
-    const collaborators = task.collaborators_info || [];
-     // Ensure workflow_step_assignments is an object before trying to get its values
+    // Ensure collaborators_info exists and is an array before using it
+    const collaborators = Array.isArray(task.collaborators_info) ? task.collaborators_info : [];
+    
     const workflowAssigneesCount = task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object' ? 
         Object.values(task.workflow_step_assignments).filter(Boolean).length : 0;
 
-
-    const totalDirectlyAssigned = (task.assigned_to ? 1 : 0) + (task.collaborators?.length || 0);
+    const totalDirectlyAssigned = (task.assigned_to ? 1 : 0) + collaborators.length;
     const hasMultipleAssignments = totalDirectlyAssigned > 1 || (totalDirectlyAssigned === 1 && workflowAssigneesCount > 0) || workflowAssigneesCount > 1;
+    
+    const totalUsersInvolved = new Set([
+        ...(task.assigned_to ? [task.assigned_to] : []),
+        // Ensure collaborators contains IDs if it's just IDs, or map to IDs if objects
+        ...(collaborators.map(c => c.id || c.user || c)), 
+        ...(task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object' ? Object.values(task.workflow_step_assignments).filter(Boolean) : [])
+    ]).size;
 
 
-    if (totalDirectlyAssigned === 0 && workflowAssigneesCount === 0) {
+    const toggleDetailsPopup = (event) => {
+        event.stopPropagation();
+        if (menuPosition.visible) {
+            setMenuPosition({ top: 0, left: 0, right: 'auto', visible: false });
+        } else {
+            if (buttonRef.current) {
+                const rect = buttonRef.current.getBoundingClientRect();
+                let top = rect.bottom + window.scrollY + 5;
+                const menuWidthEstimate = 280; // Width of your details popup
+                const menuHeightEstimate = 150; // Approximate height
+                
+                let left = rect.left + window.scrollX; 
+                // Try to open to the left if not enough space on the right
+                if (left + menuWidthEstimate > window.innerWidth - 20) { // 20px buffer
+                    left = rect.right + window.scrollX - menuWidthEstimate;
+                }
+                 if (left < 10) left = 10; // Ensure it's not off-screen left
+
+                if (top + menuHeightEstimate > window.innerHeight + window.scrollY - 20) {
+                    top = rect.top + window.scrollY - menuHeightEstimate - 5;
+                }
+                if (top < 10) top = 10; // Ensure it's not off-screen top
+
+
+                setMenuPosition({ top, left, right: 'auto', visible: true });
+            }
+        }
+    };
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target) &&
+                buttonRef.current && !buttonRef.current.contains(event.target)) {
+                setMenuPosition({ top: 0, left: 0, right: 'auto', visible: false });
+            }
+        };
+        if (menuPosition.visible) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [menuPosition.visible]);
+
+
+    if (totalUsersInvolved === 0) {
+        // ... (código para "Não atribuída" como antes) ...
         return (
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                color: 'rgba(255, 255, 255, 0.5)',
-                fontSize: '0.875rem'
-            }}>
+            <div style={{ display: 'flex', alignItems: 'center', color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.875rem' }}>
                 <User size={16} style={{ marginRight: '0.5rem' }} />
                 Não atribuída
             </div>
@@ -56,31 +108,20 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
     }
 
     if (!hasMultipleAssignments && primaryAssignee) {
+        // ... (código para mostrar só o responsável principal como antes) ...
         return (
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                color: 'rgba(255, 255, 255, 0.8)',
-                fontSize: '0.875rem'
-            }}>
+            <div style={{ display: 'flex', alignItems: 'center', color: 'rgba(255, 255, 255, 0.8)', fontSize: '0.875rem' }}>
                 <User size={16} style={{ marginRight: '0.5rem', color: 'rgba(255, 255, 255, 0.6)' }} />
                 {primaryAssignee}
             </div>
         );
     }
-    
-    const totalUsersInvolved = new Set([
-        ...(task.assigned_to ? [task.assigned_to] : []),
-        ...(task.collaborators || []),
-        ...(task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object' ? Object.values(task.workflow_step_assignments).filter(Boolean) : [])
-    ]).size;
-
 
     return (
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={buttonRef} onClick={e => e.stopPropagation()}>
             <motion.div
                 whileHover={{ scale: 1.02 }}
-                onClick={(e) => {e.stopPropagation(); setShowDetails(!showDetails);}}
+                onClick={toggleDetailsPopup} // Alterado para usar a nova função
                 style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -95,73 +136,53 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                 }}
             >
                 <Users size={16} style={{ color: 'rgb(59, 130, 246)' }} />
-                <span>{totalUsersInvolved} utilizador(es)</span>
+                <span>{collaborators.length} utilizador(es)</span>
                 <ChevronRight 
                     size={14} 
                     style={{ 
                         color: 'rgba(255, 255, 255, 0.6)',
-                        transform: showDetails ? 'rotate(90deg)' : 'rotate(0deg)',
+                        transform: menuPosition.visible ? 'rotate(90deg)' : 'rotate(0deg)',
                         transition: 'transform 0.2s ease'
                     }} 
                 />
             </motion.div>
 
-            <AnimatePresence>
-                {showDetails && (
+            {menuPosition.visible && ReactDOM.createPortal(
+                <AnimatePresence>
                     <motion.div
+                        ref={menuRef} // Adicionar ref ao menu
                         initial={{ opacity: 0, scale: 0.95, y: -10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -10, transition: {duration: 0.15} }}
                         style={{
                             position: 'absolute',
-                            // top: '100%', // This might still cause clipping if parent table row is short
-                            // Instead, position it with JS, or ensure it's high enough z-index and potentially fixed
-                            // For now, let's try to keep it relative with higher z-index
-                            top: 'calc(100% + 5px)',
-                            left: 0,
-                            // right: 0, // Let width be auto
-                            zIndex: 150, // Higher than table rows
-                            marginTop: '0.5rem',
-                            ...glassStyle,
+                            top: `${menuPosition.top}px`,
+                            left: menuPosition.left !== 'auto' ? `${menuPosition.left}px` : 'auto',
+                            right: menuPosition.right !== 'auto' ? `${menuPosition.right}px` : 'auto',
+                            zIndex: 1050, 
+                            marginTop: '0.5rem', // Espaçamento do botão, se top for rect.bottom
+                            ...glassStyle, // Reutilizar o glassStyle definido no TaskActionsMenu ou globalmente
                             padding: '0.75rem',
-                            background: 'rgba(30, 41, 59, 0.98)', // More opaque
+                            background: 'rgba(30, 41, 59, 0.98)', 
                             border: '1px solid rgba(255, 255, 255, 0.25)',
-                            minWidth: '280px', // Ensure enough width
-                            boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+                            minWidth: '280px', 
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.35)'
                         }}
-                        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
+                        onClick={(e) => e.stopPropagation()} 
                     >
+                        {/* Conteúdo do pop-up (como antes) */}
                         <div style={{
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            color: 'white',
-                            marginBottom: '0.5rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            paddingBottom: '0.5rem',
+                            fontSize: '0.75rem', fontWeight: '600', color: 'white',
+                            marginBottom: '0.5rem', display: 'flex', alignItems: 'center',
+                            gap: '0.25rem', paddingBottom: '0.5rem',
                             borderBottom: '1px solid rgba(255,255,255,0.1)'
                         }}>
-                            <Users size={12} />
-                            Atribuições da Tarefa
+                            <Users size={12} /> Atribuições da Tarefa
                         </div>
 
                         {primaryAssignee && (
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                marginBottom: '0.5rem',
-                                padding: '0.375rem',
-                                background: 'rgba(59, 130, 246, 0.1)',
-                                borderRadius: '4px'
-                            }}>
-                                <div style={{
-                                    width: '6px',
-                                    height: '6px',
-                                    borderRadius: '50%',
-                                    background: 'rgb(59, 130, 246)'
-                                }} />
+                            <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', padding: '0.375rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '4px'}}>
+                                <div style={{width: '6px', height: '6px', borderRadius: '50%', background: 'rgb(59, 130, 246)'}} />
                                 <span style={{ fontSize: '0.75rem', color: 'white' }}>
                                     <strong>Principal:</strong> {primaryAssignee}
                                 </span>
@@ -169,24 +190,9 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                         )}
 
                         {collaborators.length > 0 && (
-                            <div style={{
-                                marginBottom: '0.5rem',
-                                padding: '0.375rem',
-                                background: 'rgba(147, 51, 234, 0.1)',
-                                borderRadius: '4px'
-                            }}>
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    marginBottom: '0.25rem'
-                                }}>
-                                    <div style={{
-                                        width: '6px',
-                                        height: '6px',
-                                        borderRadius: '50%',
-                                        background: 'rgb(147, 51, 234)'
-                                    }} />
+                            <div style={{marginBottom: '0.5rem', padding: '0.375rem', background: 'rgba(147, 51, 234, 0.1)', borderRadius: '4px'}}>
+                                <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem'}}>
+                                    <div style={{width: '6px', height: '6px', borderRadius: '50%', background: 'rgb(147, 51, 234)'}} />
                                     <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: '600' }}>
                                         Colaboradores ({collaborators.length}):
                                     </span>
@@ -198,31 +204,22 @@ const AssignmentIndicator = ({ task, usersData, onViewDetails }) => {
                         )}
 
                         {workflowAssigneesCount > 0 && (
-                             <div style={{
-                                padding: '0.375rem',
-                                background: 'rgba(251, 191, 36, 0.1)',
-                                borderRadius: '4px'
-                            }}>
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem'
-                                }}>
-                                    <div style={{
-                                        width: '6px',
-                                        height: '6px',
-                                        borderRadius: '50%',
-                                        background: 'rgb(251, 191, 36)'
-                                    }} />
+                             <div style={{padding: '0.375rem', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '4px'}}>
+                                <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                                    <div style={{width: '6px', height: '6px', borderRadius: '50%', background: 'rgb(251, 191, 36)'}} />
                                     <span style={{ fontSize: '0.75rem', color: 'white' }}>
                                         <strong>Workflow:</strong> {workflowAssigneesCount} passo(s) atribuído(s)
                                     </span>
                                 </div>
                             </div>
                         )}
+                         {totalUsersInvolved === 0 && (
+                            <p style={{fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', textAlign: 'center'}}>Nenhum utilizador atribuído diretamente ou via workflow.</p>
+                        )}
                     </motion.div>
-                )}
-            </AnimatePresence>
+                </AnimatePresence>,
+                document.body
+            )}
         </div>
     );
 };
@@ -288,15 +285,6 @@ const TaskActionsMenu = ({ task, permissions, onEdit, onDelete, onUpdateStatus, 
                 if (top + menuHeightEstimate > window.innerHeight + window.scrollY) {
                     top = rect.top + window.scrollY - menuHeightEstimate - 5;
                 }
-                
-                // Se preferir usar `right` para posicionar a partir da direita do viewport em vez de `left`
-                // (útil se o botão estiver muito à direita e o menu for largo)
-                // let right = window.innerWidth - (rect.right + window.scrollX);
-                // let left = 'auto';
-                // if (rect.right + window.scrollX - menuWidthEstimate < 0) { // Se for sair da tela pela esquerda
-                //    right = 5; // Pequena margem da direita
-                // }
-
 
                 setMenuPosition({ top, left, right, visible: true });
             }
@@ -516,7 +504,6 @@ const TaskTable = ({
                                     borderBottom: '1px solid rgba(255,255,255,0.05)' 
                                 }}
                                 whileHover={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                                // onClick={() => openFormForEdit(task)} // Make row itself less interactive if actions are distinct
                             >
                                 {/* Title Column */}
                                 <td style={{ padding: '1rem', maxWidth: '250px' }} onClick={() => openFormForEdit(task)}>
@@ -527,7 +514,6 @@ const TaskTable = ({
                                         marginBottom: '0.25rem',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
-                                        // whiteSpace: 'nowrap' // Allow wrap if needed
                                     }}>
                                         {task.title}
                                     </div>
@@ -535,7 +521,6 @@ const TaskTable = ({
                                         <div style={{ 
                                             color: 'rgba(255,255,255,0.6)', 
                                             fontSize: '0.75rem', 
-                                            // maxWidth: '230px', 
                                             overflow: 'hidden', 
                                             textOverflow: 'ellipsis', 
                                             display: '-webkit-box',
@@ -630,7 +615,6 @@ const TaskTable = ({
                                     <AssignmentIndicator 
                                         task={task} 
                                         usersData={usersData}
-                                        // onViewDetails could be a prop if AssignmentIndicator needs complex interactions
                                     />
                                 </td>
 
@@ -642,7 +626,7 @@ const TaskTable = ({
                                     />
                                 </td>
 
-                                {/* Actions Column - IMPORTANT: Stop propagation here */}
+                                {/* Actions Column */}
                                 <td style={{ padding: '1rem', textAlign: 'center'}} onClick={e => e.stopPropagation()}>
                                     <TaskActionsMenu
                                         task={task}
@@ -651,7 +635,7 @@ const TaskTable = ({
                                         onDelete={onDelete}
                                         onUpdateStatus={onUpdateStatus}
                                         onViewWorkflow={openWorkflowView}
-                                        onLogTime={handleLogTime} // Use the store action
+                                        onLogTime={handleLogTime}
                                     />
                                 </td>
                             </motion.tr>

@@ -33,6 +33,8 @@ import AIAdvisorPage from "./pages/AIAdvisorPage";
 import NotificationDropdown from "./components/NotificationDropdown";
 import WorkflowDesigner from "./pages/WorkflowDesigner";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage";
+import ReportsPage from "./pages/ReportsPage";
+
 // --- React Query Client Configuration ---
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -96,6 +98,7 @@ function App() {
                 <Route path="ai-advisor" element={<AIAdvisorPage />} />
                 <Route path="notification-dropdown" element={<NotificationDropdown />} />
                 <Route path="notifications-settings" element={<NotificationSettingsPage />} />
+                <Route path="reports" element={<ReportsPage />} />
               </Route>
               
               {/* Fallback for any route that doesn't match */}

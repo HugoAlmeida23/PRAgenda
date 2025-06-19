@@ -2,7 +2,7 @@
 
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Organization, Client,NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
+from .models import Organization, Client,GeneratedReport, NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
 import json
 from django.db import models
 from django.db.models import Sum, Exists, OuterRef # Import Exists
@@ -13,6 +13,34 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+
+class GeneratedReportSerializer(serializers.ModelSerializer):
+    organization_name = serializers.ReadOnlyField(source='organization.name', allow_null=True)
+    generated_by_username = serializers.ReadOnlyField(source='generated_by.username', allow_null=True)
+    report_type_display = serializers.CharField(source='get_report_type_display', read_only=True)
+    report_format_display = serializers.CharField(source='get_report_format_display', read_only=True)
+
+    class Meta:
+        model = GeneratedReport
+        fields = [
+            'id', 'name', 'report_type', 'report_type_display', 'report_format', 'report_format_display',
+            'organization', 'organization_name', 'generated_by', 'generated_by_username',
+            'created_at', 'parameters', 'storage_url', 'file_size_kb', 'description',
+        ]
+        # Campos que não devem ser editáveis diretamente pela API de listagem/detalhe,
+        # a criação será mais controlada.
+        read_only_fields = [
+            'id', 'organization', 'organization_name', 
+            'generated_by', 'generated_by_username', 
+            'created_at', 'report_type_display', 'report_format_display',
+            'storage_url', 'file_size_kb' # Estes seriam definidos pelo backend ao gerar
+        ]
+
+    def validate_parameters(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Parâmetros devem ser um objeto JSON.")
+        return value
+    
 class FiscalObligationDefinitionSerializer(serializers.ModelSerializer):
     # These fields are now provided by the optimized queryset, no performance hit.
     organization_name = serializers.ReadOnlyField(source='organization.name', allow_null=True)

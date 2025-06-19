@@ -27,7 +27,7 @@ router.register(r'notification-templates', views.NotificationTemplateViewSet, ba
 router.register(r'notification-digests', views.NotificationDigestViewSet, basename='notification-digests')
 router.register(r'fiscal-obligation-definitions', views.FiscalObligationDefinitionViewSet, basename='fiscal-obligation-definition')
 router.register(r'fiscal-system-settings', views.FiscalSystemSettingsViewSet, basename='fiscal-system-settings')
-
+router.register(r'generated-reports', views.GeneratedReportViewSet, basename='generated-report') # NOVA LINHA
 
 urlpatterns = [
     # Autenticação
@@ -65,4 +65,8 @@ urlpatterns = [
 
     path('ai-advisor/start-session/', views.start_ai_advisor_session, name='ai-start-session'), # ADDED
     path('ai-advisor/query/', views.query_ai_advisor, name='ai-query-session'), # ADDED
+
+    path('reports/generate/', views.generate_report, name='generate-report'),
+    path('reports/context/', views.get_report_generation_context, name='report-generation-context'),
+    path('reports/download/<uuid:report_id>/', views.download_report, name='download-report'),
 ]

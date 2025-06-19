@@ -10,7 +10,6 @@ import json
 from django.core.exceptions import ValidationError
 
 
-
 class Organization(models.Model):
     """
     Representa uma organização ou empresa que utiliza o sistema.
@@ -39,7 +38,48 @@ class Organization(models.Model):
     
     def __str__(self):
         return self.name
+
+class GeneratedReport(models.Model):
+    REPORT_TYPE_CHOICES = [
+        ('client_summary', 'Resumo de Cliente(s)'),
+        ('profitability_analysis', 'Análise de Rentabilidade'),
+        ('task_performance', 'Performance de Tarefas'),
+        ('time_tracking_summary', 'Resumo de Registo de Tempos'),
+        ('custom_report', 'Relatório Personalizado'),
+    ]
+
+    REPORT_FORMAT_CHOICES = [
+        ('pdf', 'PDF'),
+        ('csv', 'CSV'),
+        ('xlsx', 'Excel (XLSX)'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255, verbose_name="Nome do Relatório")
+    report_type = models.CharField(max_length=50, choices=REPORT_TYPE_CHOICES, verbose_name="Tipo de Relatório")
+    report_format = models.CharField(max_length=10, choices=REPORT_FORMAT_CHOICES, default='pdf', verbose_name="Formato")
     
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="generated_reports", verbose_name="Organização")
+    generated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_reports_meta", verbose_name="Gerado por") # blank=True se o sistema puder gerar
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data de Geração")
+    parameters = models.JSONField(default=dict, blank=True, verbose_name="Parâmetros Usados")
+    
+    storage_url = models.URLField(max_length=1024, verbose_name="URL de Armazenamento (Supabase)")
+    file_size_kb = models.PositiveIntegerField(null=True, blank=True, verbose_name="Tamanho (KB)")
+    
+    description = models.TextField(blank=True, null=True, verbose_name="Descrição Curta")
+    
+    class Meta:
+        verbose_name = "Relatório Gerado"
+        verbose_name_plural = "Relatórios Gerados"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        org_name = self.organization.name if self.organization else "N/A"
+        return f"{self.name} ({self.get_report_type_display()}) - {org_name}"
+
+
 def generate_four_digit_id():
     """Generate a random 4-digit number (between 1000 and 9999)"""
     return random.randint(1000, 9999)
@@ -1171,6 +1211,7 @@ class WorkflowNotification(models.Model):
         ('approval_needed', 'Aprovação Necessária'),
         ('approval_completed', 'Aprovação Concluída'),
         ('task_completed', 'Tarefa Concluída'), 
+        ('task_assigned_to_you', 'Nova Tarefa Atribuída a Si'), # NOVO TIPO
         ('deadline_approaching', 'Prazo Próximo'),
         ('step_overdue', 'Passo Atrasado'),
         ('manual_reminder', 'Lembrete Manual'),
@@ -1381,7 +1422,8 @@ class NotificationSettings(models.Model):
     notify_workflow_assigned = models.BooleanField(default=True)
     notify_step_rejected = models.BooleanField(default=True)
     notify_manual_reminders = models.BooleanField(default=True)
-    
+    notify_task_assigned_to_you = models.BooleanField(default=True) # NOVO CAMPO
+
     # Configurações de frequência
     digest_frequency = models.CharField(
         max_length=20,
@@ -1437,6 +1479,7 @@ class NotificationSettings(models.Model):
             'step_rejected': self.notify_step_rejected,
             'manual_reminder': self.notify_manual_reminders,
             'manual_advance_needed': self.notify_manual_advance_needed,
+            'task_assigned_to_you': self.notify_task_assigned_to_you, # NOVO MAPPING
         }
         return type_mapping.get(notification_type, True)
     

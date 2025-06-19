@@ -46,6 +46,16 @@ REST_FRAMEWORK = {
     ],
 }
 
+if DEBUG:
+    # Permitir serving de media files em desenvolvimento
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+    
+    # Criar diretórios necessários
+    os.makedirs(MEDIA_ROOT, exist_ok=True)
+    os.makedirs(os.path.join(MEDIA_ROOT, 'reports'), exist_ok=True)
+    
+
 SIMPLE_JWT = {
     # How long the access token is valid for before requiring a refresh
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=120),
@@ -137,34 +147,42 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Sistema Fiscal <noreply@exemplo.com>')
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Configurações específicas para relatórios
+REPORTS_STORAGE_PATH = 'reports/'
+MAX_REPORT_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'handlers': {
-        'fiscal_file': {
+        'file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': 'logs/fiscal_system.log',
+            'filename': os.path.join(BASE_DIR, 'logs', 'reports.log'),
         },
-        'fiscal_audit': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': 'logs/fiscal_audit.log',
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
         },
     },
     'loggers': {
-        'fiscal': {
-            'handlers': ['fiscal_file'],
+        'api.services.report_generation_service': {
+            'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': True,
         },
-        'fiscal_audit': {
-            'handlers': ['fiscal_audit'],
-            'level': 'INFO',
-            'propagate': False,
-        },
     },
 }
+
+os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
+
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+
 
 CACHES = {
     'default': {
