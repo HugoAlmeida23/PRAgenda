@@ -8,7 +8,10 @@ from django.db.models import JSONField
 import random
 import json
 from django.core.exceptions import ValidationError
-
+from django.db.models import Manager # <--- Make sure this is imported
+import logging
+from django.db.models import OuterRef, Exists, Q
+from django.db.models.expressions import RawSQL
 
 class Organization(models.Model):
     """
@@ -84,6 +87,101 @@ def generate_four_digit_id():
     """Generate a random 4-digit number (between 1000 and 9999)"""
     return random.randint(1000, 9999)
 
+class ClientManager(Manager):
+    def for_user(self, user: User):
+        """
+        Returns a base queryset of clients the user is allowed to see.
+        """
+        if not user.is_authenticated:
+            return self.none()
+        if user.is_superuser:
+            return self.all()
+        try:
+            profile = user.profile
+            if not profile.organization:
+                return self.none()
+            
+            base_queryset = self.filter(organization=profile.organization)
+            
+            if profile.is_org_admin or profile.can_view_all_clients:
+                return base_queryset
+            else:
+                # Regular users see clients specifically assigned to them
+                return base_queryset.filter(id__in=profile.visible_clients.values_list('id', flat=True))
+        except Profile.DoesNotExist:
+            return self.none()
+
+class TimeEntryManager(Manager):
+    def for_user(self, user: User):
+        """
+        Returns a base queryset of time entries the user is allowed to see.
+        """
+        if not user.is_authenticated:
+            return self.none()
+        if user.is_superuser:
+            return self.all()
+        try:
+            profile = user.profile
+            if not profile.organization:
+                return self.none()
+            
+            # All entries must be within the user's organization
+            org_queryset = self.filter(client__organization=profile.organization)
+            
+            if profile.is_org_admin or profile.can_view_team_time:
+                return org_queryset
+            else:
+                # Regular users can only see their own time entries
+                return org_queryset.filter(user=user)
+        except Profile.DoesNotExist:
+            return self.none()
+        
+class TaskManager(Manager):
+    def for_user(self, user: User):
+        """
+        Returns a base queryset of tasks that the given user is allowed to see.
+        This encapsulates all core visibility and permission logic.
+        """
+        if not user.is_authenticated:
+            return self.none()
+
+        if user.is_superuser:
+            return self.all() # Superuser can see everything
+
+        try:
+            profile = user.profile
+            if not profile.organization:
+                return self.none() # User not in an org sees no tasks
+
+            # Admins or users with global view see all tasks in their organization
+            if profile.is_org_admin or profile.can_view_all_tasks:
+                return self.filter(client__organization=profile.organization)
+            
+            # Regular users see tasks they are involved in
+            user_id_str = str(user.id) # For consistent comparison with JSONField values
+
+            # Subquery to check if the logged-in user is assigned to any workflow step
+            is_workflow_assignee_subquery = Task.objects.filter(
+                pk=OuterRef('pk')
+            ).annotate(
+                is_wf_assigned=RawSQL(
+                    "EXISTS(SELECT 1 FROM jsonb_each_text(workflow_step_assignments) vals WHERE vals.value = %s)",
+                    (user_id_str,)
+                )
+            )
+            q_in_workflow = Q(Exists(is_workflow_assignee_subquery.filter(is_wf_assigned=True)))
+            
+            # Combine all involvement conditions for the logged-in user
+            q_user_is_involved = Q(assigned_to=user) | Q(collaborators=user) | q_in_workflow
+            
+            # Return tasks in the user's organization that they are involved in
+            return self.filter(
+                client__organization=profile.organization
+            ).filter(q_user_is_involved).distinct()
+
+        except Profile.DoesNotExist:
+            return self.none() # No profile, no tasks (unless superuser)
+        
 class Profile(models.Model):
     """
     Armazena os dados do user que está logged
@@ -93,7 +191,7 @@ class Profile(models.Model):
     
     invitation_code = models.CharField(
         max_length=4, 
-        unique=False,
+        unique=True, # <--- CHANGE THIS FROM False TO True
         verbose_name="Código de Convite",
         help_text="Código de 4 dígitos para adicionar este utilizador a uma organização"
     )
@@ -320,6 +418,9 @@ class Client(models.Model):
         verbose_name="Tags Fiscais do Cliente",
         help_text="Usado para identificar a que obrigações este cliente está sujeito. Ex: ['EMPRESA', 'IVA_TRIMESTRAL', 'REGIME_GERAL_IRC']"
     )
+    
+    objects = ClientManager() 
+    
     class Meta:
         verbose_name = "Cliente"
         verbose_name_plural = "Clientes"
@@ -826,6 +927,8 @@ class Task(models.Model):
         help_text="Identificador único para o período desta obrigação (ex: ANO-TRIMESTRE)"
     )
 
+    objects = TaskManager()
+    
     class Meta:
         verbose_name = "Tarefa"
         verbose_name_plural = "Tarefas"
@@ -1310,6 +1413,8 @@ class TimeEntry(models.Model):
         verbose_name="Passo do Workflow Concluído"
     )
     
+    objects = TimeEntryManager()
+    
     class Meta:
         verbose_name = "Registro de Tempo"
         verbose_name_plural = "Registros de Tempo"
@@ -1497,7 +1602,7 @@ class NotificationTemplate(models.Model):
     """
     Templates personalizáveis para diferentes tipos de notificação
     """
-    import logging
+    
 
     logger = logging.getLogger(__name__)
     organization = models.ForeignKey(

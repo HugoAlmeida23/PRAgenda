@@ -42,6 +42,7 @@ from .services.workflow_service import WorkflowService
 from .tasks import update_profitability_for_single_organization_task # Import the new Celery task
 from dateutil.relativedelta import relativedelta
 from django.db.models.expressions import RawSQL # Make sure this is imported
+from .permissions import IsOrgAdmin, CanManageClients, CanManageTimeEntry
 
 
 logger = logging.getLogger(__name__)
@@ -122,104 +123,67 @@ class GeneratedReportViewSet(viewsets.ReadOnlyModelViewSet): # ReadOnly por agor
 
 class FiscalObligationDefinitionViewSet(viewsets.ModelViewSet):
     serializer_class = FiscalObligationDefinitionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated] # Permissions will be checked in methods
 
     def get_queryset(self):
         user = self.request.user
-        # OPTIMIZATION: Use select_related to pre-fetch related models in a single query.
         base_queryset = FiscalObligationDefinition.objects.select_related(
             'organization', 'default_task_category', 'default_workflow'
         )
-        
         if user.is_superuser:
             return base_queryset.all()
-        
         try:
-            # Assuming a OneToOne relation from User to Profile is reliable
             profile = user.profile
             if profile.organization:
-                # Normal users see global definitions OR definitions for their own organization
                 return base_queryset.filter(
                     Q(organization__isnull=True) | Q(organization=profile.organization)
                 )
             else:
-                # User without an organization can only see global definitions
                 return base_queryset.filter(organization__isnull=True)
         except Profile.DoesNotExist:
-            # If a user somehow exists without a profile, they can only see global definitions
             return base_queryset.filter(organization__isnull=True)
 
-    def perform_create(self, serializer):
-        user = self.request.user
-        organization_id = self.request.data.get('organization')
-        
+    def _check_permission(self, request, instance=None):
+        """Helper to check permissions for write operations."""
+        user = request.user
         if user.is_superuser:
-            # Superuser can create global definitions or for any specific organization
-            if organization_id:
-                try:
-                    org = Organization.objects.get(id=organization_id)
-                    serializer.save(organization=org)
-                except Organization.DoesNotExist:
-                    raise serializers.ValidationError({"organization": "Organização não encontrada."})
-            else:
-                serializer.save(organization=None) # Creates a Global definition
-        else:
-            # Regular users must be org admins to create definitions
-            try:
-                profile = user.profile
-                if not profile.is_org_admin or not profile.organization:
-                    raise PermissionDenied("Apenas administradores de organização podem criar definições fiscais.")
-                
-                # Org admins can only create definitions for their own organization
-                if organization_id and str(profile.organization.id) != str(organization_id):
-                        raise PermissionDenied("Não pode criar definições para outra organização.")
-                
-                serializer.save(organization=profile.organization)
-            except Profile.DoesNotExist:
-                raise PermissionDenied("Perfil de usuário não encontrado. Não é possível criar a definição.")
+            return True
+        try:
+            profile = user.profile
+            if not profile.organization or not profile.is_org_admin:
+                raise PermissionDenied("Apenas administradores de organização podem gerenciar definições.")
+            
+            if instance: # This is an update/delete on an existing object
+                if instance.organization and instance.organization != profile.organization:
+                    raise PermissionDenied("Não pode modificar definições de outra organização.")
+                if instance.organization is None: # Global definition
+                    raise PermissionDenied("Apenas superusuários podem modificar definições globais.")
+            
+            # For create, we also need to check the org in the payload
+            if not instance and 'organization' in request.data:
+                org_id = request.data['organization']
+                if org_id and str(org_id) != str(profile.organization.id):
+                    raise PermissionDenied("Não pode criar definições para outra organização.")
+
+            return True
+        except Profile.DoesNotExist:
+            return False
+
+    def perform_create(self, serializer):
+        self._check_permission(self.request)
+        # If permission check passes, save with the user's organization
+        organization = self.request.user.profile.organization
+        serializer.save(organization=organization)
 
     def perform_update(self, serializer):
-        user = self.request.user
-        instance = serializer.instance
-
-        if user.is_superuser:
-            serializer.save()
-        else:
-            try:
-                profile = Profile.objects.get(user=user)
-                if not profile.is_org_admin or not profile.organization:
-                    raise PermissionDenied("Sem permissão para editar esta definição.")
-                if instance.organization and instance.organization != profile.organization:
-                    raise PermissionDenied("Não pode editar definições de outra organização.")
-                # Admins de org só podem editar as suas ou as globais se tiverem permissão (não implementado aqui)
-                if instance.organization is None and not user.is_superuser: # Admin de org tentando editar global
-                    raise PermissionDenied("Apenas superusuários podem editar definições globais.")
-                serializer.save()
-            except Profile.DoesNotExist:
-                raise PermissionDenied("Perfil de usuário não encontrado.")
+        self._check_permission(self.request, instance=serializer.instance)
+        serializer.save()
 
     def perform_destroy(self, instance):
-        user = self.request.user
-        if user.is_superuser:
-            instance.delete()
-        else:
-            try:
-                profile = Profile.objects.get(user=user)
-                if not profile.is_org_admin or not profile.organization:
-                    raise PermissionDenied("Sem permissão para excluir esta definição.")
-                if instance.organization and instance.organization != profile.organization:
-                    raise PermissionDenied("Não pode excluir definições de outra organização.")
-                if instance.organization is None and not user.is_superuser:
-                    raise PermissionDenied("Apenas superusuários podem excluir definições globais.")
-                
-                # Verificar se está em uso antes de excluir (opcional, mas bom)
-                if Task.objects.filter(source_fiscal_obligation=instance).exists():
-                    # Em vez de excluir, poderia desativar: instance.is_active = False; instance.save()
-                    raise PermissionDenied("Esta definição está em uso por tarefas e não pode ser excluída. Considere desativá-la.")
-
-                instance.delete()
-            except Profile.DoesNotExist:
-                raise PermissionDenied("Perfil de usuário não encontrado.")
+        self._check_permission(self.request, instance=instance)
+        if Task.objects.filter(source_fiscal_obligation=instance).exists():
+            raise ValidationError("Esta definição está em uso e não pode ser excluída. Considere desativá-la.")
+        instance.delete()
                 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
@@ -264,60 +228,46 @@ class AutoTimeTrackingViewSet(viewsets.ModelViewSet):
         
 class ClientViewSet(viewsets.ModelViewSet):
     serializer_class = ClientSerializer
-    permission_classes = [IsAuthenticated]
-   
+    permission_classes = [IsAuthenticated, CanManageClients]
+
     def get_queryset(self):
+        """
+        Uses the custom manager to get a secure base queryset and then
+        applies filters from the request.
+        """
         user = self.request.user
-        try:
-            profile = user.profile
+        base_queryset = Client.objects.for_user(user)
+        
+        # Apply optimizations
+        optimized_queryset = base_queryset.select_related('organization', 'account_manager')
+
+        # Apply filters from query parameters
+        if self.request.query_params.get('is_active', '').lower() == 'true':
+            optimized_queryset = optimized_queryset.filter(is_active=True)
             
-            # OPTIMIZATION: `select_related` for all ForeignKeys.
-            base_queryset = Client.objects.select_related(
-                'organization', 
-                'account_manager'
+        search_term = self.request.query_params.get('search')
+        if search_term:
+            optimized_queryset = optimized_queryset.filter(
+                Q(name__icontains=search_term) |
+                Q(nif__icontains=search_term) |
+                Q(email__icontains=search_term)
             )
-            
-            # A user must belong to an organization to see clients.
-            if not profile.organization:
-                return Client.objects.none()
-            
-            # Start by filtering for the user's organization.
-            queryset = base_queryset.filter(organization=profile.organization)
-            
-            # Apply additional filters from query parameters
-            is_active_param = self.request.query_params.get('is_active')
-            if is_active_param is not None:
-                is_active = is_active_param.lower() == 'true'
-                queryset = queryset.filter(is_active=is_active)
-            
-            # Apply permission-based filtering
-            if profile.is_org_admin or profile.can_view_all_clients:
-                return queryset
-            else:
-                # Users can see clients specifically assigned to them, even if not managing them.
-                return queryset.filter(id__in=profile.visible_clients.values_list('id', flat=True))
-                
-        except Profile.DoesNotExist:
-            return Client.objects.none()
-    
+
+        return optimized_queryset.order_by('name')
+
     def perform_create(self, serializer):
+        """
+        Assigns the client to the user's organization upon creation.
+        """
         try:
-            profile = Profile.objects.select_related('organization').get(user=self.request.user)
+            profile = self.request.user.profile
+            if not profile.organization:
+                raise ValidationError("Usuário não pertence a nenhuma organização.")
             
-            if not (profile.is_org_admin or profile.can_create_clients):
-                raise PermissionDenied("Você não tem permissão para criar clientes")
-                
-            if profile.organization:
-                serializer.save(organization=profile.organization)
-            else:
-                # This case might be redundant if user must have an org to have `can_create_clients`
-                raise PermissionDenied("Usuário não pertence a nenhuma organização para criar clientes.")
+            # The CanManageClients permission class already checked if the user can create.
+            serializer.save(organization=profile.organization)
         except Profile.DoesNotExist:
-            # Allow superuser to create if they don't have a profile, but without an org
-            if self.request.user.is_superuser:
-                serializer.save() # Superuser creates client without organization
-            else:
-                raise PermissionDenied("Perfil de usuário não encontrado")
+            raise PermissionDenied("Perfil de usuário não encontrado.")
 
     def update(self, request, *args, **kwargs):
         try:
@@ -400,246 +350,82 @@ class TaskViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
-        user_id_str = str(user.id) # For consistent string comparison with JSON values
-        logger.debug(f"[TaskViewSet] get_queryset for user: {user.username} (ID: {user_id_str})")
+        logger.debug(f"[TaskViewSet] get_queryset for user: {user.username}")
 
-        try:
-            profile = user.profile
-            if not profile.organization:
-                logger.debug(f"[TaskViewSet] User {user.username} has no organization. Returning empty queryset.")
-                return Task.objects.none()
+        # 1. Start with a secure base queryset using our new manager method.
+        # This queryset ONLY contains tasks the user is allowed to see.
+        base_queryset = Task.objects.for_user(user)
 
-            # 1. Start with base queryset and optimizations
-            queryset = Task.objects.select_related(
-                'client', 'client__organization', 'category', 
-                'assigned_to', # Primary assignee (User object)
-                'created_by', 
-                'workflow', 
-                'current_workflow_step', 'current_workflow_step__assign_to'
-            ).prefetch_related(
-                'collaborators', # ManyToManyField for collaborators (User objects)
-                Prefetch('workflow_notifications', queryset=WorkflowNotification.objects.order_by('-created_at')),
-                'approvals',
-                Prefetch('workflow__steps', queryset=WorkflowStep.objects.select_related('assign_to').order_by('order')),
-                'workflow_history',
-            ).annotate(
-                notifications_count=Count(
-                    'workflow_notifications', 
-                    filter=Q(workflow_notifications__is_read=False, workflow_notifications__is_archived=False)
-                ),
-                has_pending_notifications=Exists(
-                    WorkflowNotification.objects.filter(task=OuterRef('pk'), is_read=False, is_archived=False)
-                )
+        # 2. Apply optional filters from the request's query parameters.
+        # These filters are now applied ON TOP of the secure base set.
+        query_params = self.request.query_params
+
+        # --- Status filter ---
+        status_param = query_params.get('status')
+        if status_param:
+            status_values = [s.strip() for s in status_param.split(',') if s.strip()]
+            if status_values:
+                base_queryset = base_queryset.filter(status__in=status_values)
+        
+        # --- Client filter ---
+        client_id_param = query_params.get('client')
+        if client_id_param:
+            base_queryset = base_queryset.filter(client_id=client_id_param)
+
+        # --- Priority filter ---
+        priority_param = query_params.get('priority')
+        if priority_param and priority_param.isdigit():
+            base_queryset = base_queryset.filter(priority=int(priority_param))
+
+        # --- AssignedTo filter ---
+        assigned_to_id_param = query_params.get('assignedTo')
+        if assigned_to_id_param and assigned_to_id_param.isdigit():
+            # This now filters the user's visible tasks to only show those
+            # also assigned to the specified user.
+            base_queryset = base_queryset.filter(
+                 Q(assigned_to_id=assigned_to_id_param) | 
+                 Q(collaborators__id=assigned_to_id_param)
+                 # Note: Filtering by workflow step assignee here is complex and might be omitted for simplicity
+                 # unless it's a critical feature for the filter dropdown.
+            ).distinct()
+
+        # --- Category filter ---
+        category_id = query_params.get('category')
+        if category_id:
+            base_queryset = base_queryset.filter(category_id=category_id)
+
+        # --- Overdue filter ---
+        if query_params.get('overdue', '').lower() == 'true':
+            base_queryset = base_queryset.filter(
+                deadline__lt=timezone.now().date(),
+                status__in=['pending', 'in_progress']
             )
+        
+        # --- Search filter ---
+        search_term = query_params.get('search')
+        if search_term:
+            base_queryset = base_queryset.filter(
+                Q(title__icontains=search_term) |
+                Q(description__icontains=search_term) |
+                Q(client__name__icontains=search_term) |
+                Q(category__name__icontains=search_term)
+            ).distinct()
+        
+        # 3. Apply ordering.
+        ordering = query_params.get('ordering', 'priority') # Default to priority
+        valid_ordering_fields = [
+            'priority', '-priority', 'deadline', '-deadline', 
+            'title', '-title', 'client__name', '-client__name', 'status', '-status'
+        ]
+        if ordering in valid_ordering_fields:
+            base_queryset = base_queryset.order_by(ordering)
+        else:
+            base_queryset = base_queryset.order_by('priority', 'deadline') # Fallback ordering
 
-            # 2. Filter by organization FIRST
-            queryset = queryset.filter(client__organization=profile.organization)
-            logger.debug(f"[TaskViewSet] After org filter ({profile.organization.name}), current task count: {queryset.count()}")
-
-            # 3. Apply ALL query parameter filters (status, client_id_param, search, etc.)
-            query_params = self.request.query_params
-            
-            # --- Status filter ---
-            status_param = query_params.get('status')
-            if status_param:
-                status_values = [s.strip() for s in status_param.split(',') if s.strip()]
-                if status_values:
-                    queryset = queryset.filter(status__in=status_values)
-            
-            # --- Client filter ---
-            client_id_param_filter = query_params.get('client')
-            if client_id_param_filter:
-                queryset = queryset.filter(client_id=client_id_param_filter)
-
-            # --- Priority filter ---
-            priority_param = query_params.get('priority')
-            if priority_param:
-                try:
-                    priority_int = int(priority_param)
-                    queryset = queryset.filter(priority=priority_int)
-                except ValueError: pass # Ignore invalid priority
-            
-            # --- AssignedTo filter (for filtering the list by a specific assignee in the UI) ---
-            # This filter checks if the task is assigned to `assigned_to_id_param_filter` in ANY capacity
-            assigned_to_id_param_filter = query_params.get('assignedTo')
-            if assigned_to_id_param_filter:
-                # Subquery for workflow step assignment check against assigned_to_id_param_filter
-                is_workflow_assignee_for_specific_user_subquery = Task.objects.filter(
-                    pk=OuterRef('pk')
-                ).annotate(
-                    is_wf_assigned_to_specific_user=RawSQL(
-                        "EXISTS(SELECT 1 FROM jsonb_each_text(workflow_step_assignments) vals WHERE vals.value = %s)",
-                        (str(assigned_to_id_param_filter),) # Compare with the user ID from query param
-                    )
-                )
-                queryset = queryset.filter(
-                    Q(assigned_to_id=assigned_to_id_param_filter) |       # Primary assignee
-                    Q(collaborators__id=assigned_to_id_param_filter) |    # User is among collaborators
-                    Q(Exists(is_workflow_assignee_for_specific_user_subquery.filter(is_wf_assigned_to_specific_user=True))) # Workflow step
-                ).distinct()
-
-            # --- Category filter ---
-            category_id = query_params.get('category')
-            if category_id:
-                queryset = queryset.filter(category_id=category_id)
-
-            # --- Overdue filter ---
-            overdue_param = query_params.get('overdue')
-            if overdue_param and overdue_param.lower() == 'true':
-                queryset = queryset.filter(
-                    deadline__lt=timezone.now().date(),
-                    status__in=['pending', 'in_progress']
-                )
-            
-            # --- Due date filter ---
-            due_param = query_params.get('due')
-            if due_param:
-                today_date = timezone.now().date()
-                if due_param == 'today':
-                    queryset = queryset.filter(deadline__date=today_date)
-                elif due_param == 'this-week':
-                    week_start = today_date - timedelta(days=today_date.weekday())
-                    week_end = week_start + timedelta(days=6)
-                    queryset = queryset.filter(deadline__date__range=[week_start, week_end])
-
-            # --- Fiscal source filter ---
-            source_param = query_params.get('source')
-            if source_param == 'fiscal':
-                queryset = queryset.filter(source_fiscal_obligation__isnull=False)
-
-            # --- Workflow filters ---
-            has_workflow_param = query_params.get('has_workflow')
-            if has_workflow_param:
-                if has_workflow_param.lower() == 'true':
-                    queryset = queryset.filter(workflow__isnull=False)
-                elif has_workflow_param.lower() == 'false':
-                    queryset = queryset.filter(workflow__isnull=True)
-            
-            workflow_id_param = query_params.get('workflow_id')
-            if workflow_id_param:
-                queryset = queryset.filter(workflow_id=workflow_id_param)
-
-            current_step_id_param = query_params.get('current_workflow_step_id')
-            if current_step_id_param:
-                queryset = queryset.filter(current_workflow_step_id=current_step_id_param)
-
-            # --- Search filter ---
-            search_term = query_params.get('search')
-            if search_term:
-                queryset = queryset.filter(
-                    Q(title__icontains=search_term) |
-                    Q(description__icontains=search_term) |
-                    Q(client__name__icontains=search_term) |
-                    Q(assigned_to__username__icontains=search_term) |
-                    Q(collaborators__username__icontains=search_term) |
-                    Q(category__name__icontains=search_term)
-                ).distinct()
-            
-            logger.debug(f"[TaskViewSet] After all query_params filters, tasks count: {queryset.count()}")
-
-
-            # 4. Apply permission-based visibility for the LOGGED-IN user
-            if profile.is_org_admin or profile.can_view_all_tasks:
-                logger.debug(f"[TaskViewSet] User {user.username} is admin or can_view_all_tasks. Returning {queryset.count()} tasks (after param filters).")
-                # No further *visibility* filtering needed, queryset already has org and param filters
-            else:
-                # For regular users, they see tasks if:
-                # A) They are the primary assignee (`assigned_to`)
-                # OR
-                # B) They are one of the `collaborators`
-                # OR
-                # C) They are assigned to any step in `workflow_step_assignments`
-                
-                # IMPORTANT: The query parameters (like `assignedTo` for filtering by another user)
-                # have already been applied to `queryset`. Now we further filter this `queryset`
-                # to only include tasks the *logged-in user* is allowed to see.
-
-                q_assigned_to_logged_in_user = Q(assigned_to=user)
-                q_logged_in_user_is_collaborator = Q(collaborators=user) # Direct M2M check
-                
-                # Subquery to check if the logged-in user is assigned to any workflow step.
-                is_workflow_assignee_for_logged_in_user_subquery = Task.objects.filter(
-                    pk=OuterRef('pk') # Correlate with the outer Task query
-                ).annotate(
-                    is_wf_assigned_to_logged_in_user=RawSQL(
-                        "EXISTS(SELECT 1 FROM jsonb_each_text(workflow_step_assignments) vals WHERE vals.value = %s)",
-                        (user_id_str,) # Compare with the logged-in user's ID string
-                    )
-                )
-                q_logged_in_user_in_workflow = Q(Exists(is_workflow_assignee_for_logged_in_user_subquery.filter(is_wf_assigned_to_logged_in_user=True)))
-                
-                # Combine all involvement conditions for the logged-in user
-                q_user_is_involved = (
-                    q_assigned_to_logged_in_user | 
-                    q_logged_in_user_is_collaborator | 
-                    q_logged_in_user_in_workflow
-                )
-                
-                queryset = queryset.filter(q_user_is_involved)
-                
-                logger.debug(f"[TaskViewSet] Non-admin {user.username}: after involvement filter, task count: {queryset.count()}")
-
-            # 5. Apply ordering last
-            ordering_param = query_params.get('ordering')
-            if ordering_param:
-                valid_ordering_fields = [
-                    'title', '-title', 'deadline', '-deadline', 'priority', '-priority', 
-                    'client__name', '-client__name', 'assigned_to__username', '-assigned_to__username',
-                    'status', '-status', 'created_at', '-created_at', 'updated_at', '-updated_at'
-                ]
-                if ordering_param in valid_ordering_fields:
-                    queryset = queryset.order_by(ordering_param)
-                else:
-                    queryset = queryset.order_by('priority', 'deadline')
-            else:
-                queryset = queryset.order_by('priority', 'deadline')
-
-            final_queryset = queryset.distinct()
-            logger.debug(f"[TaskViewSet] Final distinct queryset count for user {user.username}: {final_queryset.count()}")
-            return final_queryset
-
-        except Profile.DoesNotExist:
-            logger.debug(f"[TaskViewSet] Profile.DoesNotExist for user {user.username}")
-            if user.is_superuser:
-                logger.debug("[TaskViewSet] Superuser (no profile). Applying query params to all tasks.")
-                # Superuser sees all tasks, but still respects query parameters if any.
-                # We need to re-apply query params to Task.objects.all() if queryset was reset.
-                # However, `queryset` at this point should be `Task.objects.select_related...`
-                # if the param filters were not applied due to no profile.
-                # A simpler approach for superuser without profile:
-                all_tasks_for_superuser = Task.objects.all().select_related( # Apply select_related for consistency
-                    'client', 'client__organization', 'category', 
-                    'assigned_to', 'created_by', 
-                    'workflow', 'current_workflow_step'
-                ).prefetch_related('collaborators') # Add prefetch_related too
-
-                # Re-apply query param filters for superuser
-                status_param = query_params.get('status')
-                if status_param:
-                    status_values = [s.strip() for s in status_param.split(',') if s.strip()]
-                    if status_values:
-                        all_tasks_for_superuser = all_tasks_for_superuser.filter(status__in=status_values)
-                # ... (re-apply ALL other query_params filters to `all_tasks_for_superuser` as done above for `queryset`) ...
-                # This is repetitive. Ideally, a helper function would apply these common filters.
-
-                # For now, let's assume the initial `queryset` (Task.objects.select_related...)
-                # is the base for superuser if profile doesn't exist and param filters were applied to it.
-                # The `queryset` variable before the permission block already has params applied.
-                ordering_param = query_params.get('ordering')
-                if ordering_param: # Re-apply ordering as it might have been lost
-                    valid_ordering_fields = [
-                        'title', '-title', 'deadline', '-deadline', 'priority', '-priority', 
-                        'client__name', '-client__name', 'assigned_to__username', '-assigned_to__username',
-                        'status', '-status', 'created_at', '-created_at', 'updated_at', '-updated_at'
-                    ]
-                    if ordering_param in valid_ordering_fields:
-                       return queryset.order_by(ordering_param).distinct() 
-                return queryset.order_by('priority', 'deadline').distinct()
-
-            return Task.objects.none()
-        except Exception as e:
-            logger.error(f"FATAL Error in TaskViewSet.get_queryset for user {user.username}: {e}", exc_info=True)
-            return Task.objects.none()
+        # 4. Return the final, optimized, and secure queryset.
+        return base_queryset.select_related(
+            'client', 'category', 'assigned_to', 'workflow', 'current_workflow_step'
+        ).prefetch_related('collaborators')
          
     def perform_create(self, serializer):
         user_making_request = self.request.user
@@ -1183,137 +969,70 @@ class CreateUserView(generics.CreateAPIView):
 
 class TimeEntryViewSet(viewsets.ModelViewSet):
     serializer_class = TimeEntrySerializer
-    permission_classes = [IsAuthenticated]
-    
+    permission_classes = [IsAuthenticated, CanManageTimeEntry]
+
     def get_queryset(self):
+        """
+        Uses the custom manager and then applies request filters.
+        """
         user = self.request.user
-        # Base queryset with select_related for efficiency
-        base_queryset = TimeEntry.objects.select_related(
+        base_queryset = TimeEntry.objects.for_user(user)
+
+        # Apply optimizations
+        optimized_queryset = base_queryset.select_related(
             'user', 'client', 'task', 'category', 'workflow_step'
         )
 
-        # --- Apply query parameter filters ---
+        # Apply query parameter filters
         query_params = self.request.query_params
-
         start_date_str = query_params.get('start_date')
+        if start_date_str:
+            optimized_queryset = optimized_queryset.filter(date__gte=start_date_str)
+
         end_date_str = query_params.get('end_date')
-        if start_date_str and end_date_str:
-            try:
-                # Ensure consistent date parsing
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-                base_queryset = base_queryset.filter(date__range=[start_date, end_date])
-            except ValueError:
-                logger.warning("Invalid date format for time entry filter. Use YYYY-MM-DD.")
-        elif start_date_str: # Only start_date
-             try:
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-                base_queryset = base_queryset.filter(date__gte=start_date)
-             except ValueError:
-                logger.warning("Invalid start_date format.")
-        elif end_date_str: # Only end_date
-             try:
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-                base_queryset = base_queryset.filter(date__lte=end_date)
-             except ValueError:
-                logger.warning("Invalid end_date format.")
-
-
+        if end_date_str:
+            optimized_queryset = optimized_queryset.filter(date__lte=end_date_str)
+            
         client_id = query_params.get('client')
         if client_id:
-            base_queryset = base_queryset.filter(client_id=client_id)
+            optimized_queryset = optimized_queryset.filter(client_id=client_id)
         
-        task_id = query_params.get('task') # If you add task filter
-        if task_id:
-            base_queryset = base_queryset.filter(task_id=task_id)
-        
-        # For admins to filter by user
-        user_id_param = query_params.get('user_id_param') # Or just 'user'
+        user_id_param = query_params.get('user_id_param')
         if user_id_param and (user.is_superuser or (hasattr(user, 'profile') and user.profile.is_org_admin)):
-            base_queryset = base_queryset.filter(user_id=user_id_param)
+            # This allows an admin to filter for a specific user's entries
+            # within the already organization-scoped queryset.
+            optimized_queryset = optimized_queryset.filter(user_id=user_id_param)
 
         search_term = query_params.get('search')
         if search_term:
-            base_queryset = base_queryset.filter(
-                Q(description__icontains=search_term) |
-                Q(task__title__icontains=search_term) |
-                Q(category__name__icontains=search_term) |
-                Q(client__name__icontains=search_term)
-            )
+            optimized_queryset = optimized_queryset.filter(description__icontains=search_term)
         
-        ordering = query_params.get('ordering', '-date') # Default ordering
-        # Add validation for ordering fields if necessary
-        valid_ordering_fields_time = ['date', '-date', 'minutes_spent', '-minutes_spent', 'client__name', '-client__name', 'task__title', '-task__title']
-        if ordering in valid_ordering_fields_time:
-             base_queryset = base_queryset.order_by(ordering)
-        else:
-             base_queryset = base_queryset.order_by('-date')
+        # Apply ordering
+        ordering = query_params.get('ordering', '-date')
+        valid_ordering = ['date', '-date', 'minutes_spent', '-minutes_spent']
+        if ordering in valid_ordering:
+            optimized_queryset = optimized_queryset.order_by(ordering)
 
+        return optimized_queryset
 
-        # --- Apply permission-based scoping ---
-        if user.is_superuser:
-            return base_queryset.distinct()
-
-        try:
-            profile = user.profile
-            if not profile.organization:
-                return TimeEntry.objects.none() # No entries if no organization
-
-            # Filter by user's organization (all time entries should belong to a client in the org)
-            org_queryset = base_queryset.filter(client__organization=profile.organization)
-
-            if profile.is_org_admin or profile.can_view_team_time:
-                return org_queryset.distinct()
-            elif profile.can_log_time: # Regular user sees their own entries primarily
-                # If they can also see time for visible clients (even if not their own entries):
-                # visible_client_ids = profile.visible_clients.values_list('id', flat=True)
-                # return org_queryset.filter(Q(user=user) | Q(client_id__in=visible_client_ids)).distinct()
-                return org_queryset.filter(user=user).distinct() # Simplest: only own entries
-            else: # No permission to view any time entries
-                return TimeEntry.objects.none()
-                
-        except Profile.DoesNotExist:
-            return TimeEntry.objects.none() # No profile, no entries (unless superuser handled above)
-        except Exception as e:
-            logger.error(f"Error in TimeEntryViewSet.get_queryset: {e}", exc_info=True)
-            return TimeEntry.objects.none()
-        
     def perform_create(self, serializer):
+        """
+        Ensures the user logging time has permission for the specified client/task.
+        """
         user = self.request.user
-        profile = Profile.objects.get(user=user)
+        profile = user.profile
 
-        if not profile.can_log_time:
+        if not (profile.can_log_time or profile.is_org_admin):
             raise PermissionDenied("Você não tem permissão para registrar tempo.")
-
-        validated_data = serializer.validated_data
-        client = validated_data.get('client')
-        task = validated_data.get('task')
-        workflow_step = validated_data.get('workflow_step')
-
-        if not (profile.is_org_admin or profile.can_view_all_clients or profile.visible_clients.filter(id=client.id).exists()):
-            if not task:
-                 raise PermissionDenied("Você não tem acesso a este cliente para registrar tempo sem uma tarefa associada.")
-
-        if task:
-            if task.client != client:
-                raise ValidationError({"task": "A tarefa selecionada não pertence ao cliente selecionado."})
-
-            is_task_assignee = task.assigned_to == user
-            is_workflow_step_assignee = str(user.id) in (str(v) for v in (task.workflow_step_assignments or {}).values())
-
-            if not (is_task_assignee or is_workflow_step_assignee or profile.is_org_admin):
-                raise PermissionDenied("Você não tem acesso a esta tarefa para registrar tempo.")
-
-            if workflow_step:
-                if task.workflow is None or workflow_step.workflow != task.workflow:
-                    raise ValidationError({"workflow_step": "Este passo não pertence ao workflow da tarefa."})
-
-                assigned_user_id_for_step = (task.workflow_step_assignments or {}).get(str(workflow_step.id))
-                
-                if not profile.is_org_admin and str(assigned_user_id_for_step) != str(user.id):
-                    raise PermissionDenied(f"Você não pode registrar tempo no passo '{workflow_step.name}', pois está atribuído a outro utilizador.")
+            
+        client = serializer.validated_data.get('client')
+        # Check if user can access this client
+        if not profile.can_access_client(client):
+            raise PermissionDenied("Você não tem acesso a este cliente para registrar tempo.")
 
         time_entry = serializer.save(user=user)
+        # The processing logic can be moved here from the serializer or called from a service
+        # For now, let's assume it's called via a signal or remains in the serializer's save.
         self._process_workflow_and_status_for_time_entry(time_entry)
 
     def _process_workflow_and_status_for_time_entry(self, time_entry: TimeEntry):
@@ -2042,12 +1761,18 @@ class WorkflowStepDetailViewSet(viewsets.ReadOnlyModelViewSet):
         
 class OrganizationViewSet(viewsets.ModelViewSet):
     serializer_class = OrganizationSerializer
-    permission_classes = [IsAuthenticated]
+    # Apply the permission classes. `IsAuthenticated` runs first. 
+    # For detail views (retrieve, update, destroy), `IsOrgAdmin` will run its `has_object_permission` check.
+    permission_classes = [IsAuthenticated, IsOrgAdmin]
     
     def get_queryset(self):
+        """
+        Returns the organization(s) the user is part of.
+        An admin sees their org, a superuser sees all. A user with no org sees none.
+        """
         user = self.request.user
-        # OPTIMIZATION: Annotate member and client counts directly in the database query.
-        # This prevents the serializer from making extra queries for each organization.
+        
+        # Annotate counts for efficiency in the serializer
         base_queryset = Organization.objects.annotate(
             member_count=Count('members', distinct=True),
             client_count=Count('clients', distinct=True)
@@ -2060,99 +1785,86 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             profile = user.profile
             if profile.organization:
                 return base_queryset.filter(id=profile.organization.id)
-            # If user has a profile but no organization, they see no organizations.
             return Organization.objects.none()
         except Profile.DoesNotExist:
-            # If user has no profile, they see no organizations.
             return Organization.objects.none()
-        
-    # apply_role_preset is a helper, not a view method. It needs to be defined elsewhere (e.g., Profile model or a service)
-    # For other actions (add_member, remove_member, etc.), ensure robust permission checks:
-    # - Requester must be part of the organization.
-    # - Requester must be an is_org_admin.
-    # - Target user/profile must be valid.
-    # - For remove_member, cannot remove the last admin.
 
     def perform_create(self, serializer):
+        """
+        Overrides default behavior to allow a user without an organization to create one
+        and become its first administrator.
+        """
         user = self.request.user
         
-        # Verificar se o usuário já pertence a uma organização
         try:
             profile = Profile.objects.get(user=user)
             if profile.organization:
-                raise PermissionDenied("Já pertence a uma organização. Não pode criar uma nova.")
+                raise PermissionDenied("Você já pertence a uma organização. Não pode criar uma nova.")
         except Profile.DoesNotExist:
-            # Se não tem perfil, criar um
-            profile = Profile.objects.create(
-                user=user,
-                role='Administrador',
-                access_level='Admin',
-                hourly_rate=Decimal('0.00'),
-                phone=''
-            )
+            # If the user somehow has no profile, create one.
+            profile = Profile.objects.create(user=user)
         
-        # Criar a organização
+        # Create the organization with the provided data
         organization = serializer.save()
         
-        # Definir o criador como administrador da organização
+        # Assign the new organization to the user's profile and make them an admin
         profile.organization = organization
         profile.is_org_admin = True
         profile.role = 'Administrador'
         
-        # Dar todas as permissões de administrador
-        profile.can_manage_clients = True
-        profile.can_view_all_clients = True
-        profile.can_create_clients = True
-        profile.can_edit_clients = True
-        profile.can_delete_clients = True
-        profile.can_change_client_status = True
-        
-        profile.can_assign_tasks = True
-        profile.can_create_tasks = True
-        profile.can_edit_all_tasks = True
-        profile.can_edit_assigned_tasks = True
-        profile.can_delete_tasks = True
-        profile.can_view_all_tasks = True
-        profile.can_approve_tasks = True
-        
-        profile.can_log_time = True
-        profile.can_edit_own_time = True
-        profile.can_edit_all_time = True
-        profile.can_view_team_time = True
-        
-        profile.can_view_client_fees = True
-        profile.can_edit_client_fees = True
-        profile.can_manage_expenses = True
-        profile.can_view_profitability = True
-        profile.can_view_team_profitability = True
-        profile.can_view_organization_profitability = True
-        
-        profile.can_view_analytics = True
-        profile.can_export_reports = True
-        profile.can_create_custom_reports = True
-        profile.can_schedule_reports = True
-        
-        profile.can_create_workflows = True
-        profile.can_edit_workflows = True
-        profile.can_assign_workflows = True
-        profile.can_manage_workflows = True
+        # Grant all permissions to the first admin
+        for field in profile._meta.fields:
+            if field.name.startswith('can_'):
+                setattr(profile, field.name, True)
         
         profile.save()
         
         logger.info(f"Organização '{organization.name}' criada por {user.username}. Usuário definido como administrador.")
 
+    def get_permissions(self):
+        """
+        Instantiate and return the list of permissions that this view requires.
+        Override to allow any authenticated user to `create` (if they have no org),
+        while other actions are protected by `IsOrgAdmin`.
+        """
+        if self.action == 'create':
+            # Anyone authenticated can attempt to create, the logic is in `perform_create`.
+            return [IsAuthenticated()]
+        # For all other actions (list, retrieve, update, destroy, custom actions),
+        # use the default permissions defined in `permission_classes`.
+        return super().get_permissions()
+
+    # NOTE: The 'update' and 'destroy' methods are now inherited from ModelViewSet.
+    # We no longer need to override them just for permission checks, because the
+    # `IsOrgAdmin` class handles it automatically via `has_object_permission`.
+
+    @action(detail=True, methods=['get'])
+    def members(self, request, pk=None):
+        """
+        Lists members of a specific organization.
+        The `IsOrgAdmin` check on `get_object()` ensures only admins of this org can access.
+        """
+        organization = self.get_object() # This triggers the `has_object_permission` check
+        members_profiles = Profile.objects.filter(organization=organization).select_related('user')
+        serializer = ProfileSerializer(members_profiles, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def clients(self, request, pk=None):
+        """
+        Lists clients of a specific organization.
+        """
+        organization = self.get_object() # Triggers permission check
+        clients_qs = Client.objects.filter(organization=organization).select_related('account_manager')
+        serializer = ClientSerializer(clients_qs, many=True, context={'request': request})
+        return Response(serializer.data)
+    
     @action(detail=True, methods=['post'])
     def add_member_by_code(self, request, pk=None):
-        organization = self.get_object() # The organization to add to
-        user_making_request = request.user
-
-        try:
-            requester_profile = Profile.objects.get(user=user_making_request)
-            if requester_profile.organization != organization or not requester_profile.is_org_admin:
-                raise PermissionDenied("Sem permissão para adicionar membros a esta organização.")
-        except Profile.DoesNotExist:
-            if not user_making_request.is_superuser : # Superuser might bypass profile check
-                 raise PermissionDenied("Perfil do solicitante não encontrado ou não pertence à organização.")
+        """
+        Adds a new member to the organization using an invitation code.
+        """
+        organization = self.get_object() # Triggers permission check
         
         invitation_code = request.data.get('invitation_code')
         if not invitation_code:
@@ -2166,119 +1878,51 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             
         # Assign organization and base role
         profile_to_add.organization = organization
-        profile_to_add.role = request.data.get('role', profile_to_add.role or 'Membro Padrão') # Keep existing if not provided
+        profile_to_add.role = request.data.get('role', 'Colaborador')
         
-        # Apply specific permissions from request or use a preset
-        role_preset = request.data.get('role_preset')
-        if role_preset:
-            # Assuming Profile model has an instance method for this
-            # This method needs to exist on the Profile model:
-            # profile_to_add.apply_role_preset(role_preset) 
-            # If it's a static method like in the original code:
-            # OrganizationViewSet.apply_role_preset(profile_to_add, role_preset) # Needs careful scoping
-            # For now, let's assume it's handled by setting fields directly or a Profile method.
-            # Manual setting for now:
-            if role_preset == "administrador": profile_to_add.is_org_admin = True 
-            # ... other presets ...
-        else: # Manual permission setting
-            profile_to_add.is_org_admin = request.data.get('is_org_admin', profile_to_add.is_org_admin)
-            # ... set all other can_... fields from request.data, falling back to existing profile_to_add values ...
-            # Example:
-            # profile_to_add.can_create_clients = request.data.get('can_create_clients', profile_to_add.can_create_clients)
-        
-        profile_to_add.hourly_rate = request.data.get('hourly_rate', profile_to_add.hourly_rate)
-        
+        # Apply permissions from request
+        profile_to_add.is_org_admin = request.data.get('is_admin', False)
+        # Add all other 'can_' flags from the request
+        for field in Profile._meta.fields:
+            if field.name.startswith('can_') and field.name in request.data:
+                setattr(profile_to_add, field.name, request.data[field.name])
+
         profile_to_add.save()
         
-        # Handle visible_clients (ensure clients belong to 'organization')
-        visible_client_ids = request.data.get('visible_clients', [])
-        if visible_client_ids and not profile_to_add.can_view_all_clients:
-            valid_clients = Client.objects.filter(id__in=visible_client_ids, organization=organization)
-            profile_to_add.visible_clients.set(valid_clients)
-        elif profile_to_add.can_view_all_clients: # If can view all, clear specific list
-            profile_to_add.visible_clients.clear()
+        # Note: Handling `visible_clients` is better done in `update_member` action
+        # after the user is fully part of the organization.
 
-        return Response(ProfileSerializer(profile_to_add).data, status=status.HTTP_200_OK)
-    
-    # OrganizationViewSet.apply_role_preset needs to be defined or moved.
-    # This is a simplified version of the original provided static method.
-    # It should ideally be a method on the Profile model.
-    @staticmethod # If kept here, but better on Profile model
-    def apply_role_preset(profile, role_preset_name):
-        # Reset some common permissions
-        profile.is_org_admin = False
-        profile.can_view_all_clients = False
-        # ... reset others ...
+        return Response(ProfileSerializer(profile_to_add, context={'request': request}).data, status=status.HTTP_200_OK)
 
-        if role_preset_name == "administrador":
-            profile.is_org_admin = True
-            profile.can_view_all_clients = True
-            # ... set all admin perms ...
-        # ... elif for other roles ...
-        # profile.save() should be called after this method if it modifies the profile
-
-
-    @action(detail=True, methods=['get'])
-    def members(self, request, pk=None):
-        organization = self.get_object()
-        # Permission: only members of this org or superuser can see members
-        user = request.user
-        if not user.is_superuser:
-            try:
-                profile = Profile.objects.get(user=user, organization=organization)
-            except Profile.DoesNotExist:
-                raise PermissionDenied("Acesso negado aos membros desta organização.")
-        
-        members_profiles = Profile.objects.filter(organization=organization).select_related('user')
-        serializer = ProfileSerializer(members_profiles, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['get'])
-    def clients(self, request, pk=None): # Renamed from 'clients_summary' to 'clients' to match common REST patterns
-        organization = self.get_object()
-        user = request.user
-        
-        # Permission: User must be part of this organization or superuser
-        if not user.is_superuser:
-            try:
-                profile = Profile.objects.get(user=user, organization=organization)
-            except Profile.DoesNotExist:
-                raise PermissionDenied("Acesso negado aos clientes desta organização.")
-        
-        clients_qs = Client.objects.filter(organization=organization).select_related('account_manager__profile')
-        # Further filtering based on profile.visible_clients could be added if needed here
-        serializer = ClientSerializer(clients_qs, many=True)
-        return Response(serializer.data)
-    
     @action(detail=True, methods=['post'])
     def remove_member(self, request, pk=None):
-        organization = self.get_object()
-        user_making_request = request.user
-        try:
-            requester_profile = Profile.objects.get(user=user_making_request)
-            if requester_profile.organization != organization or not requester_profile.is_org_admin:
-                raise PermissionDenied("Sem permissão para remover membros.")
-        except Profile.DoesNotExist:
-            if not user_making_request.is_superuser:
-                raise PermissionDenied("Perfil do solicitante não encontrado.")
+        """
+        Removes a member from the organization.
+        """
+        organization = self.get_object() # Triggers permission check
         
         user_id_to_remove = request.data.get('user_id')
         if not user_id_to_remove:
             return Response({"error": "ID do usuário é obrigatório"}, status=status.HTTP_400_BAD_REQUEST)
         
+        if str(request.user.id) == str(user_id_to_remove):
+            return Response({"error": "Não pode remover-se a si próprio."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             profile_to_remove = Profile.objects.get(user_id=user_id_to_remove, organization=organization)
             
+            # Prevent removing the last admin
             if profile_to_remove.is_org_admin:
                 admin_count = Profile.objects.filter(organization=organization, is_org_admin=True).count()
                 if admin_count <= 1:
                     return Response({"error": "Não é possível remover o único administrador."}, status=status.HTTP_400_BAD_REQUEST)
             
-            # Instead of deleting profile, just disassociate from org and reset permissions
+            # Disassociate from org and reset permissions
             profile_to_remove.organization = None
-            profile_to_remove.is_org_admin = False 
-            # Reset all can_... permissions to False or default values
-            # This should ideally be a method on Profile model: profile_to_remove.reset_organization_permissions()
+            for field in profile_to_remove._meta.fields:
+                if field.name.startswith('can_') or field.name == 'is_org_admin':
+                    setattr(profile_to_remove, field.name, False)
+            profile_to_remove.visible_clients.clear()
             profile_to_remove.save()
             
             return Response({"success": "Membro removido da organização."}, status=status.HTTP_200_OK)
@@ -2287,17 +1931,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def update_member(self, request, pk=None):
-        organization = self.get_object()
-        user_making_request = request.user
-        try:
-            requester_profile = Profile.objects.get(user=user_making_request)
-            if requester_profile.organization != organization or not requester_profile.is_org_admin:
-                raise PermissionDenied("Sem permissão para atualizar membros.")
-        except Profile.DoesNotExist:
-            if not user_making_request.is_superuser:
-                raise PermissionDenied("Perfil do solicitante não encontrado.")
+        """
+        Updates a member's role and permissions within the organization.
+        """
+        organization = self.get_object() # Triggers permission check
         
-        # FIX: Check both request.data and query params for user_id
         user_id_to_update = request.data.get('user_id') or request.query_params.get('user_id')
         if not user_id_to_update:
             return Response({"error": "ID do usuário é obrigatório"}, status=status.HTTP_400_BAD_REQUEST)
@@ -2305,15 +1943,9 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         try:
             profile_to_update = Profile.objects.get(user_id=user_id_to_update, organization=organization)
             
-            # Create a copy of request.data to modify
             update_data = request.data.copy()
+            if 'user_id' in update_data: del update_data['user_id']
             
-            # Remove user_id from the data since it's not a field we want to update
-            if 'user_id' in update_data:
-                del update_data['user_id']
-            
-            # Apply changes from request.data to profile_to_update
-            # Exclude many-to-many fields that need special handling
             m2m_fields = ['visible_clients']
             
             for field_name, field_value in update_data.items():
@@ -2322,70 +1954,21 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             
             profile_to_update.save()
             
-            # Handle visible_clients update if present
             if 'visible_clients' in request.data:
                 visible_client_ids = request.data.get('visible_clients', [])
                 if not profile_to_update.can_view_all_clients:
-                    if visible_client_ids:  # Only query if there are IDs to check
-                        valid_clients = Client.objects.filter(
-                            id__in=visible_client_ids, 
-                            organization=organization
-                        )
-                        profile_to_update.visible_clients.set(valid_clients)
-                    else:
-                        profile_to_update.visible_clients.clear()  # Empty list = clear all
+                    valid_clients = Client.objects.filter(id__in=visible_client_ids, organization=organization)
+                    profile_to_update.visible_clients.set(valid_clients)
                 else:
-                    profile_to_update.visible_clients.clear()  # Can view all = no specific clients needed
+                    profile_to_update.visible_clients.clear()
 
-            return Response(ProfileSerializer(profile_to_update).data, status=status.HTTP_200_OK)
+            return Response(ProfileSerializer(profile_to_update, context={'request': request}).data, status=status.HTTP_200_OK)
             
         except Profile.DoesNotExist:
             return Response({"error": "Perfil não encontrado nesta organização."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             logger.error(f"Error updating member: {str(e)}")
             return Response({"error": f"Erro ao atualizar membro: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    @action(detail=True, methods=['post'])
-    def manage_visible_clients(self, request, pk=None):
-        organization = self.get_object()
-        user_making_request = request.user
-        try:
-            requester_profile = Profile.objects.get(user=user_making_request)
-            if requester_profile.organization != organization or not requester_profile.is_org_admin:
-                raise PermissionDenied("Sem permissão para gerenciar clientes visíveis.")
-        except Profile.DoesNotExist:
-            if not user_making_request.is_superuser:
-                raise PermissionDenied("Perfil do solicitante não encontrado.")
-        
-        target_user_id = request.data.get('user_id') # User whose visible clients are being managed
-        client_ids = request.data.get('client_ids', []) # List of client IDs
-        action_type = request.data.get('action', 'set')  # 'add', 'remove', 'set'
-        
-        if not target_user_id:
-            return Response({"error": "ID do perfil do membro é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            target_profile = Profile.objects.get(user_id=target_user_id, organization=organization)
-        except Profile.DoesNotExist:
-            return Response({"error": "Perfil do membro não encontrado nesta organização."}, status=status.HTTP_404_NOT_FOUND)
-            
-        clients_to_manage = Client.objects.filter(organization=organization, id__in=client_ids)
-        if len(clients_to_manage) != len(set(client_ids)) and client_ids: # Check if all provided client_ids were found
-            return Response({"error": "Um ou mais IDs de cliente são inválidos ou não pertencem a esta organização."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        if target_profile.can_view_all_clients:
-             return Response({"error": "Este usuário já pode ver todos os clientes. Gestão de clientes visíveis não aplicável."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if action_type == 'add':
-            target_profile.visible_clients.add(*clients_to_manage)
-        elif action_type == 'remove':
-            target_profile.visible_clients.remove(*clients_to_manage)
-        elif action_type == 'set':
-            target_profile.visible_clients.set(clients_to_manage)
-        else:
-            return Response({"error": "Ação inválida. Use 'add', 'remove' ou 'set'."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        return Response(ProfileSerializer(target_profile).data, status=status.HTTP_200_OK)
 
 
 # dashboard_summary - No major changes needed for this step, but ensure it uses Profile permissions correctly.

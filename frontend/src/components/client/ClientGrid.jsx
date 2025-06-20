@@ -1,26 +1,54 @@
 // src/components/client/ClientGrid.jsx
 import React from 'react';
 import { motion } from 'framer-motion';
+import styled from 'styled-components';
 import ClientCard from './ClientCard';
 import { Users } from 'lucide-react';
 import { useClientStore } from '../../stores/useClientStore';
 
+// Styled Components
+const GridContainer = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+`;
+
+const EmptyStateContainer = styled.div`
+  padding: 3rem;
+  text-align: center;
+  color: ${({ theme }) => theme.textMuted};
+  
+  svg {
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+  
+  h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    color: ${({ theme }) => theme.text};
+  }
+  
+  p {
+    margin: 0;
+  }
+`;
+
 const ClientGrid = ({ clients, onToggleStatus, onDelete, permissions }) => {
-    // Get actions directly from the store instead of props
     const { openFormForEdit, openDetailsModal } = useClientStore();
 
     if (clients.length === 0) {
         return (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                <Users size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Nenhum cliente encontrado</h4>
-                <p style={{ margin: 0 }}>Tente ajustar sua pesquisa ou filtros.</p>
-            </div>
+            <EmptyStateContainer>
+                <Users size={48} />
+                <h4>Nenhum cliente encontrado</h4>
+                <p>Tente ajustar sua pesquisa ou filtros.</p>
+            </EmptyStateContainer>
         );
     }
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem' }}>
+        <GridContainer>
             {clients.map((client, index) => (
                 <motion.div
                     key={client.id}
@@ -30,16 +58,15 @@ const ClientGrid = ({ clients, onToggleStatus, onDelete, permissions }) => {
                 >
                     <ClientCard
                         client={client}
-                        // Pass the actions from the store to the card
                         onEdit={openFormForEdit}
-                        onToggleStatus={onToggleStatus} // These can still come from parent
-                        onDelete={onDelete}             // if they involve mutations.
+                        onToggleStatus={onToggleStatus}
+                        onDelete={onDelete}
                         permissions={permissions}
-                        onClick={() => openDetailsModal(client)} // Use store action
+                        onClick={() => openDetailsModal(client)}
                     />
                 </motion.div>
             ))}
-        </div>
+        </GridContainer>
     );
 };
 

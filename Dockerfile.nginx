@@ -1,0 +1,25 @@
+# ---- 1. Build Stage (builds the frontend) ----
+# This is the same as your old Dockerfile.frontend build stage
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY ./frontend/package.json ./frontend/package-lock.json* ./
+RUN npm install
+COPY ./frontend ./
+
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
+RUN npm run build
+
+# ---- 2. Serve Stage (the final Nginx image) ----
+FROM nginx:1.25-alpine
+
+# Copy the custom Nginx configuration file
+# We will copy it from the context during the build
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy the built static files from the 'builder' stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
