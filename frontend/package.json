@@ -29,6 +29,7 @@
     "react-select": "^5.10.0",
     "react-toastify": "^11.0.5",
     "recharts": "^2.15.0",
+    "styled-components": "^6.1.19",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.5"
   },
