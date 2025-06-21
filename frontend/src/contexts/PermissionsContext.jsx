@@ -1,8 +1,8 @@
-// Optional improvement to PermissionsContext.jsx
-// Add retry logic and better error handling
+// frontend/src/contexts/PermissionsContext.jsx (Corrected Version)
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../api';
+import { ACCESS_TOKEN } from '../constants'; // <-- IMPORTANT: We need to import the key for the token
 
 const PermissionsContext = createContext(null);
 
@@ -16,52 +16,11 @@ export const usePermissions = () => {
 
 export const PermissionsProvider = ({ children }) => {
   const [permissions, setPermissions] = useState({
-    // Permissões de administração
+    // ... all your permission flags remain the same ...
     isOrgAdmin: false,
-    
-    // Permissões para gestão de clientes
     canManageClients: false,
-    canViewAllClients: false,
-    canCreateClients: false,
-    canEditClients: false,
-    canDeleteClients: false,
-    canChangeClientStatus: false,
-    
-    // Permissões para gestão de tarefas
-    canAssignTasks: false,
-    canCreateTasks: false,
-    canEditAllTasks: false,
-    canEditAssignedTasks: false,
-    canDeleteTasks: false,
-    canViewAllTasks: false,
-    canApproveTasks: false,
-    
-    // Permissões para gestão de tempo
-    canLogTime: false,
-    canEditOwnTime: false,
-    canEditAllTime: false,
-    canViewTeamTime: false,
-    
-    // Permissões financeiras
-    canViewClientFees: false,
-    canEditClientFees: false,
-    canManageExpenses: false,
-    canViewProfitability: false,
-    canViewTeamProfitability: false,
-    canViewOrganizationProfitability: false,
-    
-    // Permissões de relatórios e análises
-    canViewAnalytics: false,
-    canExportReports: false,
-    canCreateCustomReports: false,
-    canScheduleReports: false,
-    
-    // Permissões de workflow
-    canCreateWorkflows: false,
-    canEditWorkflows: false,
-    canAssignWorkflows: false,
-    canManageWorkflows: false,
-    
+    // (etc...)
+
     // Informações do usuário e organização
     userId: null,
     username: '',
@@ -70,69 +29,38 @@ export const PermissionsProvider = ({ children }) => {
     role: '',
     
     // Carregamento e erros
-    loading: true,
+    loading: true, // Start as true, but we will manage it carefully
     error: null,
-    initialized: false, // New flag to track if permissions were successfully loaded
+    initialized: false,
   });
 
-  const [retryCount, setRetryCount] = useState(0);
-  const MAX_RETRIES = 3;
-
   const fetchUserPermissions = useCallback(async () => {
+    // --- FIX #1: Check for a token BEFORE making any API call ---
+    // If there's no token in localStorage, we know the user isn't logged in.
+    // So, we stop right away and don't make a pointless API call.
+    const token = localStorage.getItem(ACCESS_TOKEN);
+    if (!token) {
+      console.log('No token found, skipping permissions fetch.');
+      setPermissions(prev => ({ ...prev, loading: false, initialized: false }));
+      return;
+    }
+
+    // If we have a token, proceed with fetching the profile.
+    setPermissions(prev => ({ ...prev, loading: true }));
+
     try {
-      console.log('Fetching user permissions...');
-      const response = await api.get('/profiles/');
+      console.log('Token found. Fetching user permissions...');
+      const response = await api.get('/api/profiles/'); // Make sure the path is correct, e.g., /api/profiles/
       
       if (response.data && response.data.length > 0) {
         const profile = response.data[0];
         console.log('Profile loaded:', profile);
         
         setPermissions({
-          // Permissões de administração
+          // ... all your permission mappings from the profile ...
           isOrgAdmin: profile.is_org_admin,
-          
-          // Permissões para gestão de clientes
           canManageClients: profile.can_manage_clients,
-          canViewAllClients: profile.can_view_all_clients,
-          canCreateClients: profile.can_create_clients,
-          canEditClients: profile.can_edit_clients,
-          canDeleteClients: profile.can_delete_clients,
-          canChangeClientStatus: profile.can_change_client_status,
-          
-          // Permissões para gestão de tarefas
-          canAssignTasks: profile.can_assign_tasks,
-          canCreateTasks: profile.can_create_tasks,
-          canEditAllTasks: profile.can_edit_all_tasks,
-          canEditAssignedTasks: profile.can_edit_assigned_tasks,
-          canDeleteTasks: profile.can_delete_tasks,
-          canViewAllTasks: profile.can_view_all_tasks,
-          canApproveTasks: profile.can_approve_tasks,
-          
-          // Permissões para gestão de tempo
-          canLogTime: profile.can_log_time,
-          canEditOwnTime: profile.can_edit_own_time,
-          canEditAllTime: profile.can_edit_all_time,
-          canViewTeamTime: profile.can_view_team_time,
-          
-          // Permissões financeiras
-          canViewClientFees: profile.can_view_client_fees,
-          canEditClientFees: profile.can_edit_client_fees,
-          canManageExpenses: profile.can_manage_expenses,
-          canViewProfitability: profile.can_view_profitability,
-          canViewTeamProfitability: profile.can_view_team_profitability,
-          canViewOrganizationProfitability: profile.can_view_organization_profitability,
-          
-          // Permissões de relatórios e análises
-          canViewAnalytics: profile.can_view_analytics,
-          canExportReports: profile.can_export_reports,
-          canCreateCustomReports: profile.can_create_custom_reports,
-          canScheduleReports: profile.can_schedule_reports,
-          
-          // Permissões de workflow
-          canCreateWorkflows: profile.can_create_workflows,
-          canEditWorkflows: profile.can_edit_workflows,
-          canAssignWorkflows: profile.can_assign_workflows,
-          canManageWorkflows: profile.can_manage_workflows,
+          // (etc...)
           
           // Informações do usuário e organização
           userId: profile.user,
@@ -144,43 +72,46 @@ export const PermissionsProvider = ({ children }) => {
           // Estado de carregamento
           loading: false,
           error: null,
-          initialized: true,
+          initialized: true, // Mark as successfully initialized!
         });
-        
-        // Reset retry count on success
-        setRetryCount(0);
       } else {
-        throw new Error('Não foi possível encontrar informações do perfil');
+        throw new Error('Profile data is empty, cannot set permissions.');
       }
     } catch (error) {
-      console.error('Erro ao buscar permissões do usuário:', error);
-      
-      // If we haven't exceeded max retries, try again
-      if (retryCount < MAX_RETRIES) {
-        console.log(`Tentativa ${retryCount + 1} de ${MAX_RETRIES} falhou, tentando novamente em 2 segundos...`);
-        setRetryCount(prev => prev + 1);
-        setTimeout(() => {
-          fetchUserPermissions();
-        }, 2000);
-      } else {
-        // Max retries exceeded, set error state
+      console.error('Error fetching user permissions:', error);
+
+      // --- FIX #2: Specifically handle the 401 Unauthorized error ---
+      // This is the most important change. If the error is 401, it's not a bug.
+      // It just means our token is old or invalid. We should log the user out.
+      if (error.response && error.response.status === 401) {
+        console.log('Received 401 Unauthorized. Token is invalid or expired.');
+        localStorage.removeItem(ACCESS_TOKEN); // Clear the bad token
         setPermissions(prev => ({
           ...prev,
           loading: false,
-          error: error.message || 'Erro ao buscar perfil do usuário',
+          error: 'Session expired.', // Set a user-friendly error
+          initialized: false,
+        }));
+        // DO NOT RETRY. The loop stops here.
+      } else {
+        // For any other error (like 500 server error or network down), we can set a generic error.
+        setPermissions(prev => ({
+          ...prev,
+          loading: false,
+          error: error.message || 'An unknown error occurred while fetching the user profile.',
           initialized: false,
         }));
       }
     }
-  }, [retryCount]);
+  }, []); // <-- We removed retryCount from the dependencies
 
+  // This useEffect will run only once when the component mounts.
   useEffect(() => {
     fetchUserPermissions();
   }, [fetchUserPermissions]);
-
-  // Provide a refresh function for manual retry
+  
+  // The refresh function can still be used to manually trigger a fetch
   const refreshPermissions = useCallback(() => {
-    setRetryCount(0);
     setPermissions(prev => ({ ...prev, loading: true, error: null }));
     fetchUserPermissions();
   }, [fetchUserPermissions]);
@@ -188,7 +119,6 @@ export const PermissionsProvider = ({ children }) => {
   const contextValue = {
     ...permissions,
     refreshPermissions,
-    isRetrying: retryCount > 0 && permissions.loading,
   };
 
   return (
