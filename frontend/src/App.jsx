@@ -1,7 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 // --- Context Providers ---
@@ -11,6 +10,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 // --- Components & Layouts ---
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from './components/Layout/Layout';
+import GlobalNotifications from './components/GlobalNotifications'; // <-- IMPORT THE NEW COMPONENT
 
 // --- Page Imports ---
 import Login from "./pages/Login";
@@ -105,7 +105,7 @@ function App() {
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
-          <ToastContainer theme="dark" position="bottom-right" />
+                    <GlobalNotifications />
         </ThemeProvider>
       </PermissionsProvider>
     </QueryClientProvider>

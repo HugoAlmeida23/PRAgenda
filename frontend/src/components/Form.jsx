@@ -1,12 +1,13 @@
+// frontend/src/components/Form.jsx (Corrected)
+
 import React, { useState } from "react";
 import api from "../api";
 import { useNavigate } from "react-router-dom";
 import { ACCESS_TOKEN, REFRESH_TOKEN } from "../constants";
 import logo from "../assets/simplelogo.png";
 import "../styles/ModernForm.css";
-import { toast } from "react-toastify";  // Import toast
-import "react-toastify/dist/ReactToastify.css"; // Import toast styles
-
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const ModernForm = ({ route, method }) => {
   const [username, setUsername] = useState("");
@@ -16,10 +17,6 @@ const ModernForm = ({ route, method }) => {
 
   const name = method === "login" ? "Login" : "Register";
 
-  // Function to display success notification
-  const notifySuccess = (message) => toast.success(message);
-
-  // Function to display error notification
   const notifyError = (message) => toast.error(message);
 
   const handleSubmit = async (e) => {
@@ -28,20 +25,29 @@ const ModernForm = ({ route, method }) => {
 
     try {
       const res = await api.post(route, { username, password });
+      
       if (method === "login") {
-	const accessToken = Array.isArray(res.data.access) ? res.data.access[0] : res.data.access;
-	localStorage.setItem(ACCESS_TOKEN, accessToken);
-	const refreshToken = Array.isArray(res.data.access) ? res.data.access[0] : res.data.access;
-        localStorage.setItem(REFRESH_TOKEN, refreshToken);
-        navigate("/");
+        // --- CORRECTLY STORE BOTH TOKENS ---
+        // Your backend returns 'access' and 'refresh' keys
+        localStorage.setItem(ACCESS_TOKEN, res.data.access);
+        localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
+        
+        // --- THE KEY FIX: Force a full page reload ---
+        // This ensures the PermissionsProvider remounts and reads the new token.
+        window.location.href = "/";
+
       } else {
+        // After registration, navigate to login so they can sign in.
         navigate("/login");
+        showSuccessNotification("Registration Done!","Registration successful! Please log in.");
       }
     } catch (error) {
       if (error.response && error.response.data) {
-        notifyError("Autenticação falhou. Tente novamente.");
+        // Try to find a more specific error message from the backend
+        const errorDetail = error.response.data.detail || "Authentication failed. Please check your credentials and try again.";
+        notifyError(errorDetail);
       } else {
-        notifyError("Autenticação falhou. Tente novamente.");
+        notifyError("An unexpected error occurred. Please try again.");
       }
     } finally {
       setLoading(false);

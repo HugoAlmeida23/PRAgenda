@@ -96,7 +96,7 @@ const NotificationSettingsPage = () => {
                 ...oldData,
                 [variables.settingName]: variables.value
             }));
-            toast.success('Configuração atualizada!');
+            showSuccessNotification('Feito!','Configuração atualizada!');
         },
         onError: (err, variables) => {
             toast.error('Falha ao atualizar. Tente novamente.');

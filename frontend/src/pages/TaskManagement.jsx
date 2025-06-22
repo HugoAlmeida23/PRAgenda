@@ -1,4 +1,3 @@
-// src/pages/TaskManagement.jsx
 import React, { useMemo, useCallback, useEffect } from "react";
 import api from "../api";
 import { motion, AnimatePresence } from "framer-motion";
@@ -71,28 +70,27 @@ const ErrorView = ({ message, onRetry }) => (
   </div>
 );
 
-const fetchTasksOnly = async (userId, permissions, taskFilters, taskSearchTerm, taskSortConfig) => {
-  const taskParams = new URLSearchParams();
+const fetchTasksOnly = async (taskFilters, taskSearchTerm, taskSortConfig) => {
+  const params = new URLSearchParams();
   
-  if (taskFilters.status) taskParams.append('status', taskFilters.status);
-  if (taskFilters.client) taskParams.append('client', taskFilters.client);
-  if (taskFilters.priority) taskParams.append('priority', taskFilters.priority);
-  if (taskFilters.assignedTo) taskParams.append('assignedTo', taskFilters.assignedTo);
-  if (taskFilters.category) taskParams.append('category', taskFilters.category);
-  if (taskFilters.overdue === 'true' || taskFilters.overdue === true) taskParams.append('overdue', 'true');
-  if (taskFilters.due) taskParams.append('due', taskFilters.due);
+  if (taskFilters.status) params.append('status', taskFilters.status);
+  if (taskFilters.client) params.append('client', taskFilters.client);
+  if (taskFilters.priority) params.append('priority', taskFilters.priority);
+  if (taskFilters.assignedTo) params.append('assignedTo', taskFilters.assignedTo);
+  if (taskFilters.category) params.append('category', taskFilters.category);
+  if (taskFilters.overdue === 'true' || taskFilters.overdue === true) params.append('overdue', 'true');
+  if (taskFilters.due) params.append('due', taskFilters.due);
 
-  if (taskSearchTerm) taskParams.append('search', taskSearchTerm);
+  if (taskSearchTerm) params.append('search', taskSearchTerm);
   
   if (taskSortConfig.key) {
-    taskParams.append('ordering', `${taskSortConfig.direction === 'desc' ? '-' : ''}${taskSortConfig.key}`);
+    params.append('ordering', `${taskSortConfig.direction === 'desc' ? '-' : ''}${taskSortConfig.key}`);
   }
 
-  const tasksEndpoint = `/tasks/`;
+  const tasksEndpoint = `/tasks/?${params.toString()}`;
   const tasksRes = await api.get(tasksEndpoint);
   return tasksRes.data.results || tasksRes.data || [];
 };
-
 
 const TaskManagement = () => {
   const permissions = usePermissions();
@@ -102,13 +100,23 @@ const TaskManagement = () => {
     formData, selectedTask, showForm, showNaturalLanguageForm, naturalLanguageInput,
     searchTerm, sortConfig, filters,
     selectedTaskForWorkflowView, stepAssignmentsForForm, selectedWorkflowForForm,
-    openFormForNew, closeForm, toggleNaturalLanguageForm,
+    openFormForNew, openFormForEdit, closeForm, toggleNaturalLanguageForm,
     setSortConfig: setSortConfigStore,
     openWorkflowView, closeWorkflowView,
     setIsLoadingWorkflowStepsForForm, setWorkflowStepsForForm, initializeStepAssignmentsForForm,
     setShowWorkflowConfigInForm, notifications, removeNotification,
     showSuccessNotification, showErrorNotification, showWarningNotification
   } = useTaskStore();
+    
+    // --- ROBUST PERMISSION CHECK ---
+    const canViewPage = useMemo(() => {
+        if (!permissions.initialized) return false;
+        return (
+            permissions.isOrgAdmin ||
+            permissions.canViewAllTasks ||
+            permissions.canEditAssignedTasks
+        );
+    }, [permissions.initialized, permissions.isOrgAdmin, permissions.canViewAllTasks, permissions.canEditAssignedTasks]);
 
   const { data: clients = [], isLoading: isLoadingClients, isError: isErrorClients, error: errorClients } = useQuery({
     queryKey: ['clientsForTaskDropdowns'],
@@ -118,29 +126,23 @@ const TaskManagement = () => {
   });
 
   const { data: users = [], isLoading: isLoadingUsers, isError: isErrorUsers, error: errorUsers } = useQuery({
-  queryKey: ['organizationMembersForTaskDropdowns'],
-  queryFn: async () => {
-    try {
-      // Primeiro, obter o perfil do usuário atual para saber a organização
-      const profileResponse = await api.get("/profiles/");
-      const userProfile = profileResponse.data.results?.[0] || profileResponse.data[0];
-      
-      if (!userProfile?.organization) {
-        console.warn('User has no organization');
-        return [];
+    queryKey: ['organizationMembersForTaskDropdowns'],
+    queryFn: async () => {
+      try {
+        if (!permissions.organization) {
+          console.warn('User has no organization, cannot fetch members.');
+          return [];
+        }
+        const membersResponse = await api.get(`/organizations/${permissions.organization}/members/`);
+        return membersResponse.data.results || membersResponse.data || [];
+      } catch (error) {
+        console.error('Error fetching organization members:', error);
+        throw error;
       }
-      
-      // Depois, obter todos os membros da organização
-      const membersResponse = await api.get(`/organizations/${userProfile.organization}/members/`);
-      return membersResponse.data.results || membersResponse.data || [];
-    } catch (error) {
-      console.error('Error fetching organization members:', error);
-      throw error;
-    }
-  },
-  staleTime: 10 * 60 * 1000,
-  enabled: !!permissions.initialized,
-});
+    },
+    staleTime: 10 * 60 * 1000,
+    enabled: !!permissions.organization,
+  });
 
   const { data: categories = [], isLoading: isLoadingCategories, isError: isErrorCategories, error: errorCategories } = useQuery({
     queryKey: ['categoriesForTaskDropdowns'],
@@ -155,7 +157,7 @@ const TaskManagement = () => {
     staleTime: 5 * 60 * 1000,
     enabled: !!permissions.initialized,
   });
-
+  
   const { 
     data: tasks = [],
     isLoading: isLoadingTasksFirstTime,
@@ -164,10 +166,10 @@ const TaskManagement = () => {
     error: errorTasks, 
     refetch: refetchTasks 
   } = useQuery({
-    queryKey: ['tasks', permissions.userId, filters, searchTerm, sortConfig],
-    queryFn: () => fetchTasksOnly(permissions.userId, permissions, filters, searchTerm, sortConfig),
+    queryKey: ['tasks', filters, searchTerm, sortConfig],
+    queryFn: () => fetchTasksOnly(filters, searchTerm, sortConfig),
     staleTime: 30 * 1000,
-    enabled: !!permissions.initialized && (permissions.isOrgAdmin || permissions.canViewAllTasks || permissions.canViewAssignedTasks),
+    enabled: canViewPage, // This query depends on the permission check
     keepPreviousData: true,
   });
 
@@ -192,7 +194,7 @@ const TaskManagement = () => {
   });
 
   const updateTaskStatusMutation = useMutation({
-    mutationFn: ({ id, status }) => api.patch(`/tasks/${id}/update_status/`, { status }),
+    mutationFn: ({ id, status }) => api.patch(`/tasks/${id}/`, { status }),
     onSuccess: (response, variables) => {
       const statusLabel = STATUS_OPTIONS.find(s => s.value === variables.status)?.label || variables.status;
       showSuccessNotification("Status Alterado", `Tarefa marcada como ${statusLabel.toLowerCase()}.`);
@@ -248,46 +250,14 @@ const TaskManagement = () => {
         showErrorNotification("Erro de Processamento IA", `Falha ao processar o texto: ${err.message}`);
     }
   });
-
-   const tasksForDisplay = useMemo(() => {
-    // If user is an admin, show all tasks that came from the server
-    if (permissions.isOrgAdmin || permissions.canViewAllTasks) { // Added canViewAllTasks
-      return tasks;
-    }
-    
-    // For non-admins, apply stricter UI-level filtering
-    return tasks.filter(task => {
-        // Condition 1: Task is directly assigned to the current user
-        if (task.assigned_to === permissions.userId) {
-            return true;
-        }
-
-        // Condition 2: User is a collaborator
-        if (task.collaborators && task.collaborators.some(c => (c.id || c) === permissions.userId)) { // Check c.id or c
-            return true;
-        }
-
-        // Condition 3: A workflow step in this task is assigned to the current user
-        if (task.workflow_step_assignments && typeof task.workflow_step_assignments === 'object') {
-            // Object.values gets all user IDs assigned to steps
-            const assignedUserIdsInWorkflow = Object.values(task.workflow_step_assignments);
-            // Ensure comparison is consistent (e.g., both strings or both numbers)
-            if (assignedUserIdsInWorkflow.map(String).includes(String(permissions.userId))) {
-                return true;
-            }
-        }
-
-        return false;
-    });
-  }, [tasks, permissions.isOrgAdmin, permissions.canViewAllTasks, permissions.userId]);
   
   const handleSort = useCallback((key) => { setSortConfigStore(key); }, [setSortConfigStore]);
 
-  const fetchWorkflowStepsCallback = useCallback(async (workflowId, autoShowConfig = true) => {
+  const fetchWorkflowStepsCallback = useCallback(async (workflowId) => {
     if (!workflowId) {
         setWorkflowStepsForForm([]);
         initializeStepAssignmentsForForm([], {});
-        if (autoShowConfig) setShowWorkflowConfigInForm(false);
+        setShowWorkflowConfigInForm(false);
         return [];
     }
     try {
@@ -298,16 +268,16 @@ const TaskManagement = () => {
         
         setWorkflowStepsForForm(steps);
         const assignmentsToInit = selectedTask && selectedTask.workflow === workflowId 
-                                  ? selectedTask.current_workflow_assignments || {}
+                                  ? selectedTask.workflow_step_assignments || {}
                                   : {};
         initializeStepAssignmentsForForm(steps, assignmentsToInit);
 
-        if (autoShowConfig) setShowWorkflowConfigInForm(true);
+        setShowWorkflowConfigInForm(true);
         return steps;
     } catch (error) {
         console.error("Error fetching workflow steps:", error);
         showErrorNotification("Erro de Workflow", "Falha ao carregar passos do workflow");
-        if (autoShowConfig) setShowWorkflowConfigInForm(false);
+        setShowWorkflowConfigInForm(false);
         return [];
     } finally {
         setIsLoadingWorkflowStepsForForm(false);
@@ -321,45 +291,26 @@ const TaskManagement = () => {
       selectedTask
     ]);
 
-   const handleSubmitMainForm = useCallback(() => {
-    const finalFormData = {
-        ...formData,
-        client: formData.client || null,
-        category: formData.category || null,
-        assigned_to: formData.assigned_to || null,
-        priority: formData.priority ? parseInt(formData.priority) : 3,
-        estimated_time_minutes: formData.estimated_time_minutes ? parseInt(formData.estimated_time_minutes) : null,
-        workflow: selectedWorkflowForForm || null,
-    };
-
-    if (finalFormData.workflow && Object.keys(stepAssignmentsForForm).length > 0) {
-        finalFormData.workflow_step_assignments = stepAssignmentsForForm;
-    } else {
-        delete finalFormData.workflow_step_assignments;
-    }
-
+   const handleSubmitMainForm = useCallback((formDataToSubmit) => {
     if (selectedTask) {
       if (!permissions.isOrgAdmin && !permissions.canEditAllTasks && !(permissions.canEditAssignedTasks && selectedTask.assigned_to === permissions.userId)) {
         showWarningNotification("Acesso Negado", "Sem permissão para editar esta tarefa"); return;
       }
-      updateTaskMutation.mutate({ id: selectedTask.id, updatedData: finalFormData });
+      updateTaskMutation.mutate({ id: selectedTask.id, updatedData: formDataToSubmit });
     } else {
       if (!permissions.isOrgAdmin && !permissions.canCreateTasks) {
         showWarningNotification("Acesso Restrito", "Sem permissão para criar tarefas"); return;
       }
-      createTaskMutation.mutate(finalFormData);
+      createTaskMutation.mutate(formDataToSubmit);
     }
   }, [formData, selectedTask, createTaskMutation, updateTaskMutation, permissions, showWarningNotification, selectedWorkflowForForm, stepAssignmentsForForm]);
 
-  const handleSubmitNlpForm = useCallback(() => {
-    if (!naturalLanguageInput.trim()) {
+  const handleSubmitNlpForm = useCallback((nlpData) => {
+    if (!nlpData.natural_language_text.trim()) {
       showWarningNotification("Campo Obrigatório", "Insira texto para a IA processar"); return;
     }
-    createNlpTaskMutation.mutate({ 
-        natural_language_text: naturalLanguageInput,
-        default_client_id: formData.client || null
-    });
-  }, [naturalLanguageInput, createNlpTaskMutation, showWarningNotification, formData.client]);
+    createNlpTaskMutation.mutate(nlpData);
+  }, [createNlpTaskMutation, showWarningNotification]);
 
   const confirmDeleteTask = useCallback((taskId) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
@@ -410,63 +361,42 @@ const TaskManagement = () => {
         </motion.div>
     );
   };
+
   const NotificationsContainer = () => (
     <div style={{ position: 'fixed', bottom: '1rem', right: '1rem', zIndex: 99999, pointerEvents: 'none' }}>
         <AnimatePresence mode="popLayout">{notifications.map(n => <div key={n.id} style={{ pointerEvents: 'auto' }}><NotificationItem notification={n} onRemove={removeNotification} /></div>)}</AnimatePresence>
     </div>
   );
 
-  const isEssentialDataLoading = 
-    permissions.loading || 
-    isLoadingClients || 
-    isLoadingUsers || 
-    isLoadingCategories || 
-    isLoadingWorkflows;
+  const isLoadingEssentialData = isLoadingClients || isLoadingUsers || isLoadingCategories || isLoadingWorkflows;
 
-  const pageLevelError = 
-    (isErrorClients && !clients.length) ||
-    (isErrorUsers && !users.length) ||
-    (isErrorCategories && !categories.length) ||
-    (isErrorWorkflows && !workflows.length);
-  
-  const combinedEssentialErrorMessage = errorClients?.message || errorUsers?.message || errorCategories?.message || errorWorkflows?.message || "Falha ao carregar dados essenciais para filtros.";
-
-  if (isEssentialDataLoading) {
+  // --- NEW, ROBUST GUARD CLAUSES ---
+  if (permissions.loading) {
     return (
-      <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-        <BackgroundElements />
-        <motion.div animate={{ rotate: 360, scale: [1,1.1,1] }} transition={{ rotate: { duration: 2, repeat: Infinity, ease: "linear" }, scale: { duration: 1, repeat: Infinity } }}>
-          <Brain size={48} style={{ color: 'rgb(147,51,234)' }} />
-        </motion.div>
-        <p style={{ marginLeft: '1rem', fontSize: '1rem' }}>Carregando gestão de tarefas...</p>
-      </div>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'white' }}>
+            <BackgroundElements />
+            <Loader2 size={48} className="animate-spin" style={{ color: 'rgb(147, 51, 234)' }} />
+        </div>
     );
   }
 
-  if (pageLevelError) {
-    return (
-      <ErrorView message={combinedEssentialErrorMessage} onRetry={() => {
-          queryClient.invalidateQueries({ queryKey: ['clientsForTaskDropdowns'] });
-          queryClient.invalidateQueries({ queryKey: ['profilesForTaskDropdowns'] });
-          queryClient.invalidateQueries({ queryKey: ['categoriesForTaskDropdowns'] });
-          queryClient.invalidateQueries({ queryKey: ['workflowsForTaskDropdowns'] });
-          queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      }}/>
-    );
+  if (!canViewPage) {
+      return (
+          <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+              <BackgroundElements />
+              <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ ...glassStyle, padding: '2rem', textAlign: 'center', maxWidth: '500px', color: 'white' }}>
+                  <AlertCircle size={48} style={{ color: 'rgb(251, 191, 36)', marginBottom: '1rem' }} />
+                  <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>Acesso Restrito</h2>
+                  <p style={{ margin: 0, color: 'rgba(255, 255, 255, 0.8)' }}>
+                      Sem permissões para visualizar tarefas.
+                  </p>
+              </motion.div>
+          </div>
+      );
   }
-  
-  const canViewAnyTask = permissions.canEditAssignedTasks;
-  if (!permissions.loading && !canViewAnyTask) {
-     return (
-      <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-        <BackgroundElements />
-        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ ...glassStyle, padding: '2rem', textAlign: 'center', maxWidth: '500px', color: 'white' }}>
-          <AlertCircle size={48} style={{ color: 'rgb(251,191,36)', marginBottom: '1rem' }} />
-          <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>Acesso Restrito</h2>
-          <p style={{ margin: '0 0 1rem 0', color: 'rgba(255,255,255,0.8)' }}>Sem permissões para visualizar tarefas.</p>
-        </motion.div>
-      </div>
-    );
+
+  if (isErrorTasks && tasks.length === 0) {
+    return <ErrorView message={errorTasks?.message || "Falha ao carregar tarefas."} onRetry={refetchTasks} />;
   }
 
   return (
@@ -489,24 +419,29 @@ const TaskManagement = () => {
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
             {(permissions.isOrgAdmin || permissions.canCreateTasks) && (
               <>
-                <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={showForm ? closeForm : openFormForNew}
+                <motion.button whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.95 }} onClick={showForm ? closeForm : () => openFormForNew()}
                     style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(59,130,246,${showForm ? 0.6:0.3})`, background: `rgba(59,130,246,${showForm ? 0.3:0.2})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                    <Plus size={18} /> {showForm ? 'Cancelar Tarefa' : 'Nova Tarefa'}
+                    <Plus size={18} /> {showForm ? 'Fechar Formulário' : 'Nova Tarefa'}
                 </motion.button>
               </>
             )}
           </div>
         </motion.div>
 
-        <TaskForm
-            clients={clients} users={users} categories={categories} workflows={workflows}
-            onMainSubmit={handleSubmitMainForm} onNlpSubmit={handleSubmitNlpForm}
-            isSaving={createTaskMutation.isPending || updateTaskMutation.isPending}
-            isNlpProcessing={createNlpTaskMutation.isPending}
-            fetchWorkflowStepsCallback={fetchWorkflowStepsCallback}
-        />
+        <AnimatePresence>
+            {showForm && (
+                <TaskForm
+                    clients={clients} users={users} categories={categories} workflows={workflows}
+                    onMainSubmit={handleSubmitMainForm}
+                    onNlpSubmit={handleSubmitNlpForm}
+                    isSaving={createTaskMutation.isPending || updateTaskMutation.isPending}
+                    isNlpProcessing={createNlpTaskMutation.isPending}
+                    fetchWorkflowStepsCallback={fetchWorkflowStepsCallback}
+                />
+            )}
+        </AnimatePresence>
         
-        <TaskStats tasks={tasksForDisplay} isOverdue={isOverdue} />
+        <TaskStats tasks={tasks} isOverdue={isOverdue} />
         <TaskFilters clients={clients} users={users} categories={categories} />
 
         <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden', position: 'relative' }}>
@@ -515,7 +450,7 @@ const TaskManagement = () => {
                     <div style={{ padding: '0.5rem', backgroundColor: 'rgba(52,211,153,0.2)', borderRadius: '12px' }}><Activity style={{ color: 'rgb(52,211,153)' }} size={20} /></div>
                     <div>
                         <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Lista de Tarefas</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{tasksForDisplay.length} tarefas encontradas</p>
+                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191,219,254)' }}>{tasks.length} tarefas encontradas</p>
                     </div>
                 </div>
             </div>
@@ -546,12 +481,13 @@ const TaskManagement = () => {
                                 Atualizando lista...
                             </div>
                         )}
-                        {(tasksForDisplay.length > 0 || (isFetchingTasks && tasks.length > 0)) && ( 
+                        {(tasks.length > 0 || (isFetchingTasks && tasks.length > 0)) && ( 
                             <TaskTable
-                                tasks={tasksForDisplay}
+                                tasks={tasks}
                                 onSort={handleSort}
                                 onUpdateStatus={handleUpdateStatus}
                                 onDelete={confirmDeleteTask}
+                                onLogTime={() => {}}
                                 formatDate={formatDate}
                                 isOverdue={isOverdue}
                                 getPriorityLabelAndColor={getPriorityLabelAndColor}
@@ -560,7 +496,7 @@ const TaskManagement = () => {
                                 clientsData={clients}
                             />
                         )}
-                        {tasksForDisplay.length === 0 && !isFetchingTasks && (
+                        {tasks.length === 0 && !isFetchingTasks && (
                             <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
                                 <SearchIcon size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
                                 <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>Nenhuma tarefa encontrada</h4>

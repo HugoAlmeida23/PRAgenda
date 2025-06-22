@@ -35,9 +35,6 @@ export const PermissionsProvider = ({ children }) => {
   });
 
   const fetchUserPermissions = useCallback(async () => {
-    // --- FIX #1: Check for a token BEFORE making any API call ---
-    // If there's no token in localStorage, we know the user isn't logged in.
-    // So, we stop right away and don't make a pointless API call.
     const token = localStorage.getItem(ACCESS_TOKEN);
     if (!token) {
       console.log('No token found, skipping permissions fetch.');

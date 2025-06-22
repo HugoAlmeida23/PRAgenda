@@ -1,5 +1,4 @@
 import React, { useState, useCallback } from "react";
-import { toast, ToastContainer } from "react-toastify";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building,
@@ -23,6 +22,8 @@ import MemberPermissionsForm from "../components/MemberPermissionsForm";
 import { motion, AnimatePresence } from "framer-motion";
 import BackgroundElements from "../components/HeroSection/BackgroundElements";
 import { usePermissions } from "../contexts/PermissionsContext";
+import { useTaskStore } from "../stores/useTaskStore";
+
 
 // Estilos glass
 const glassStyle = {
@@ -141,7 +142,7 @@ const fetchUsers = async () => {
 const OrganizationManagement = () => {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
-  
+  const { showSuccessNotification, showErrorNotification } = useTaskStore();
   const [memberCreationStep, setMemberCreationStep] = useState(null);
   const [newMemberDataFromInvitation, setNewMemberDataFromInvitation] = useState(null);
   const [editingMember, setEditingMember] = useState(null);
@@ -196,7 +197,7 @@ const OrganizationManagement = () => {
   const manageVisibleClientsMutation = useMutation({
     mutationFn: (data) => api.post(`/organizations/${organization.id}/manage_visible_clients/`, data),
     onSuccess: () => {
-      toast.success("Clientes visíveis atualizados com sucesso");
+      showSuccessNotification("Clientes Atualizados", "Clientes visíveis atualizados com sucesso");
       queryClient.invalidateQueries({ queryKey: ['organizationMembers', organization?.id] });
     }
   });
@@ -204,21 +205,21 @@ const OrganizationManagement = () => {
   const createOrganizationMutation = useMutation({
     mutationFn: (data) => api.post("/organizations/", data),
     onSuccess: () => {
-      toast.success("Organização criada com sucesso");
+      showSuccessNotification("Organização Criada", "Organização criada com sucesso");
       setShowOrganizationForm(false);
       resetOrganizationForm();
       queryClient.invalidateQueries({ queryKey: ['userOrganization'] });
     },
     onError: (error) => {
       console.error("Erro ao criar organização:", error.response?.data || error.message);
-      toast.error("Falha ao criar organização");
+      showErrorNotification("Erro", "Falha ao criar organização");
     }
   });
 
   const updateOrganizationMutation = useMutation({
     mutationFn: (data) => api.put(`/organizations/${organization.id}/`, data),
     onSuccess: () => {
-      toast.success("Organização atualizada com sucesso");
+      showSuccessNotification("Organização Atualizada","Organização atualizada com sucesso");
       setShowOrganizationForm(false);
       setEditingOrganization(false);
       resetOrganizationForm();
@@ -226,33 +227,33 @@ const OrganizationManagement = () => {
     },
     onError: (error) => {
       console.error("Erro ao atualizar organização:", error.response?.data || error.message);
-      toast.error("Falha ao atualizar organização");
+      showErrorNotification("Erro","Falha ao atualizar organização");
     }
   });
 
   const updateMemberMutation = useMutation({
     mutationFn: (data) => api.post(`/organizations/${organization.id}/update_member/`, data),
     onSuccess: () => {
-      toast.success("Permissões de membro atualizadas com sucesso");
+      showSuccessNotification("Permissões atualizadas", "Permissões de membro atualizadas com sucesso");
       setEditingMember(null);
       setMemberCreationStep(null);
       queryClient.invalidateQueries({ queryKey: ['organizationMembers', organization?.id] });
     },
     onError: (error) => {
       console.error("Erro ao atualizar permissões do membro:", error.response?.data || error.message);
-      toast.error("Falha ao atualizar permissões");
+      showErrorNotification("Erro","Falha ao atualizar permissões");
     }
   });
 
   const removeMemberMutation = useMutation({
     mutationFn: (userId) => api.post(`/organizations/${organization.id}/remove_member/`, { user_id: userId }),
     onSuccess: () => {
-      toast.success("Membro removido com sucesso");
+      showSuccessNotification("Membro Removido", "Membro removido com sucesso");
       queryClient.invalidateQueries({ queryKey: ['organizationMembers', organization?.id] });
     },
     onError: (error) => {
       console.error("Erro ao remover membro:", error.response?.data || error.message);
-      toast.error("Falha ao remover membro");
+      showErrorNotification("Erro","Falha ao remover membro");
     }
   });
 
@@ -289,7 +290,7 @@ const OrganizationManagement = () => {
       return newMemberProfile;
     },
     onSuccess: () => {
-      toast.success("Novo membro adicionado e permissões configuradas!");
+      showSuccessNotification("Membro Adicionado", "Novo membro adicionado e permissões configuradas!");
       setMemberCreationStep(null); 
       setNewMemberDataFromInvitation(null);
       queryClient.invalidateQueries({ queryKey: ['organizationMembers', organization?.id] });
@@ -306,7 +307,7 @@ const OrganizationManagement = () => {
         else if (Array.isArray(errors) && errors.length > 0) errorMessage = errors.join(", ");
         else if (typeof errors === 'object') errorMessage = Object.values(errors).flat().join(", ");
       }
-      toast.error(errorMessage);
+      showErrorNotification("Erro",errorMessage);
     }
   });
 
@@ -432,8 +433,6 @@ const OrganizationManagement = () => {
   return (
     <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
       <BackgroundElements businessStatus="optimal" />      
-      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 9999 }} />
-
       <motion.div initial="hidden" animate="visible" variants={containerVariants} style={{ position: 'relative', zIndex: 10, padding: '2rem', paddingTop: '1rem' }}>
         <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>

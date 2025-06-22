@@ -1,6 +1,10 @@
 /* src/components/Layout/Layout.css */
 
 /* --- :root Variables (Updated to match Dashboard) --- */
+html {
+  zoom: 0.8; /* Scales everything to 80% of its original size */
+}
+
 :root {
   --primary-color: #6d28d9;
   --primary-color-light: rgba(109, 40, 217, 0.1);

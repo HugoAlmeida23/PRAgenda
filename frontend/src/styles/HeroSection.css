@@ -11,6 +11,10 @@
   isolation: isolate !important;
 }
 
+html {
+  zoom: 0.8; /* Scales everything to 80% of its original size */
+}
+
 /* Prevent Home.css interference */
 .hero-command-center,
 .hero-command-center * {

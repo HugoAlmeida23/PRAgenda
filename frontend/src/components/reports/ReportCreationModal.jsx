@@ -69,7 +69,7 @@ const ReportCreationModal = () => {
             return response.data;
         },
         onSuccess: (data) => {
-            toast.success('Relatório gerado com sucesso!');
+            showSuccessNotificationccess('Feito!','Relatório gerado com sucesso!');
             queryClient.invalidateQueries(['generatedReports']);
             setIsGenerating(false);
             setStep(3);

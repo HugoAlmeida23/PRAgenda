@@ -8,6 +8,10 @@ html, body, #root, #__next, * {
   font-family: 'Poppins', sans-serif;
 }
 
+html {
+  zoom: 0.8; /* Scales everything to 80% of its original size */
+}
+
 .client-management-header {
   display: flex;
   justify-content: space-between;
