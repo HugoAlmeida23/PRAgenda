@@ -456,7 +456,7 @@ const TaskManagement = () => {
   }
   
   const canViewAnyTask = permissions.canEditAssignedTasks;
-  if (!permissions.loading && !canViewAnyTask && !isEssentialDataLoading && !pageLevelError) {
+  if (!permissions.loading && !canViewAnyTask) {
      return (
       <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
         <BackgroundElements />

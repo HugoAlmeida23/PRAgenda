@@ -29,8 +29,10 @@ const ModernForm = ({ route, method }) => {
     try {
       const res = await api.post(route, { username, password });
       if (method === "login") {
-        localStorage.setItem(ACCESS_TOKEN, res.data.access);
-        localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
+	const accessToken = Array.isArray(res.data.access) ? res.data.access[0] : res.data.access;
+	localStorage.setItem(ACCESS_TOKEN, accessToken);
+	const refreshToken = Array.isArray(res.data.access) ? res.data.access[0] : res.data.access;
+        localStorage.setItem(REFRESH_TOKEN, refreshToken);
         navigate("/");
       } else {
         navigate("/login");

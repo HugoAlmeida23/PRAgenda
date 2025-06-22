@@ -50,7 +50,7 @@ export const PermissionsProvider = ({ children }) => {
 
     try {
       console.log('Token found. Fetching user permissions...');
-      const response = await api.get('/api/profiles/'); // Make sure the path is correct, e.g., /api/profiles/
+      const response = await api.get('/profiles/');
       
       if (response.data && response.data.length > 0) {
         const profile = response.data[0];

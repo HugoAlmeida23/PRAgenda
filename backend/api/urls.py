@@ -3,6 +3,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 router = DefaultRouter()
 router.register(r'profiles', views.ProfileViewSet, basename='profile')
@@ -30,6 +31,8 @@ router.register(r'fiscal-system-settings', views.FiscalSystemSettingsViewSet, ba
 router.register(r'generated-reports', views.GeneratedReportViewSet, basename='generated-report') # NOVA LINHA
 
 urlpatterns = [
+    path("token/", TokenObtainPairView.as_view(), name="get_token"),
+    path("token/refresh/", TokenRefreshView.as_view(), name="refresh"),
     # Autenticação
     path("register/", views.CreateUserView.as_view(), name="register"),
     
