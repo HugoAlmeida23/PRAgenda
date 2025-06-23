@@ -10,7 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../api';
 import { toast } from 'react-toastify';
 import { useReportStore } from '../../stores/useReportStore';
-
+import { useTaskStore } from '../../stores/useTaskStore';
 const glassStyle = {
     background: 'rgba(30, 41, 59, 0.95)',
     backdropFilter: 'blur(20px)',
@@ -51,7 +51,8 @@ const ReportCreationModal = () => {
     const [step, setStep] = useState(1); // 1: Tipo, 2: Configuração, 3: Geração
     const [selectedFormat, setSelectedFormat] = useState('pdf');
     const [isGenerating, setIsGenerating] = useState(false);
-
+    const { showSuccessNotification, showErrorNotification } = useTaskStore();
+    
     // Buscar contexto para formulários
     const { data: context, isLoading: contextLoading } = useQuery({
         queryKey: ['reportGenerationContext'],
@@ -69,7 +70,7 @@ const ReportCreationModal = () => {
             return response.data;
         },
         onSuccess: (data) => {
-            showSuccessNotificationccess('Feito!','Relatório gerado com sucesso!');
+            showSuccessNotification('Feito!','Relatório gerado com sucesso!');
             queryClient.invalidateQueries(['generatedReports']);
             setIsGenerating(false);
             setStep(3);

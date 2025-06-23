@@ -8,13 +8,14 @@ import logo from "../assets/simplelogo.png";
 import "../styles/ModernForm.css";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useTaskStore } from "../stores/useTaskStore";
 
 const ModernForm = ({ route, method }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
+  const { showSuccessNotification, showErrorNotification } = useTaskStore();
   const name = method === "login" ? "Login" : "Register";
 
   const notifyError = (message) => toast.error(message);

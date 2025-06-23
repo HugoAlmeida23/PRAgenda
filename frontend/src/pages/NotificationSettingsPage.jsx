@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 import BackgroundElements from '../components/HeroSection/BackgroundElements';
-
+import { useTaskStore } from '../stores/useTaskStore';
 const glassStyle = {
     background: 'rgba(255, 255, 255, 0.05)',
     backdropFilter: 'blur(12px)',
@@ -82,6 +82,7 @@ const SettingRow = ({ label, description, isEnabled, onToggle, isUpdating }) => 
 
 const NotificationSettingsPage = () => {
     const queryClient = useQueryClient();
+    const { showSuccessNotification, showErrorNotification } = useTaskStore();
 
     const { data: settings, isLoading, isError, error } = useQuery({
         queryKey: ['notificationSettings'],
