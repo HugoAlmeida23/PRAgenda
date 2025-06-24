@@ -8,7 +8,7 @@ import {
     Play, Pause, Clock, CheckSquare, AlertTriangle, Users
 } from 'lucide-react';
 
-// --- Styled Components ---
+// --- Styled Components (No changes) ---
 const PanelContainer = styled(motion.div)`
   background: ${({ theme }) => theme.aiInsights.bg};
   backdrop-filter: blur(12px);
@@ -165,7 +165,6 @@ const LoadingContainer = styled.div`
 // --- Main Component ---
 const AIInsightsPanel = ({ insights = [], dashboardData }) => {
     const [currentInsight, setCurrentInsight] = useState(0);
-    const [isAutoRotating, setIsAutoRotating] = useState(true);
     const [isPaused, setIsPaused] = useState(false);
     const navigate = useNavigate();
 
@@ -184,12 +183,18 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
         if (insight?.action) navigate(insight.action);
     };
 
-    // Animation Variants - THIS IS THE FIX
-    const containerVariants = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
+    // REFACTOR: Simplified animation variants for a faster, cleaner feel.
+    const containerVariants = { 
+        hidden: { opacity: 0, y: 15 }, 
+        visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } 
+    };
+    
+    // REFACTOR: Replaced the complex spring-based slide animation with a simple, clean cross-fade.
+    // This feels faster, less "wobbly", and is more performant.
     const insightVariants = {
-        enter: { x: 300, opacity: 0, scale: 0.9 },
-        center: { x: 0, opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 30 } },
-        exit: { x: -300, opacity: 0, scale: 0.9, transition: { duration: 0.2 } }
+        enter: { opacity: 0 },
+        center: { opacity: 1, transition: { duration: 0.3, ease: 'easeIn' } },
+        exit: { opacity: 0, transition: { duration: 0.2, ease: 'easeOut' } }
     };
     
     const getImpactBadge = (impact) => {
@@ -218,7 +223,7 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
         <PanelContainer variants={containerVariants} initial="hidden" animate="visible">
             <Header>
                 <HeaderLeft>
-                    <IconContainer animate={{ rotate: [0, 5, -5, 0], scale: [1, 1.05, 1] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}>
+                    <IconContainer>
                         <Brain style={{ color: 'rgb(196, 181, 253)' }} size={24} />
                     </IconContainer>
                     <div>
@@ -244,13 +249,13 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
                     <ProgressBar>
                         <motion.div style={{ background: 'linear-gradient(to right, rgb(96, 165, 250), rgb(147, 51, 234))', height: '4px', borderRadius: '4px' }}
                             initial={{ width: "0%" }} animate={{ width: "100%" }}
-                            transition={{ duration: 5, ease: "linear", repeat: Infinity }} key={currentInsight} />
+                            transition={{ duration: 5, ease: "linear" }} key={currentInsight} />
                     </ProgressBar>
                 </ProgressBarContainer>
             )}
 
             <InsightContainer>
-                <AnimatePresence mode="wait">
+                <AnimatePresence mode="wait" initial={false}>
                     <InsightCard key={currentInsight} variants={insightVariants} initial="enter" animate="center" exit="exit">
                         {currentInsightData && (
                             <>
@@ -273,7 +278,7 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
                                     <InsightMessage>{currentInsightData.message}</InsightMessage>
                                 </div>
                                 {currentInsightData.action && (
-                                    <ActionButton whileHover={{ scale: 1.02, x: 5 }} whileTap={{ scale: 0.98 }} onClick={() => insightAction(currentInsightData)}>
+                                    <ActionButton whileHover={{ scale: 1.02, x: 2, transition:{duration: 0.2} }} whileTap={{ scale: 0.98 }} onClick={() => insightAction(currentInsightData)}>
                                         <span>Tomar Ação</span>
                                         <ArrowRight size={14} />
                                     </ActionButton>

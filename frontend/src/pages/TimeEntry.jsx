@@ -20,57 +20,57 @@ import TimeEntryNLPConfirmation from "../components/timeentry/TimeEntryNLPConfir
 
 // Styles and Variants
 const glassStyle = {
-  background: 'rgba(255, 255, 255, 0.1)',
-  backdropFilter: 'blur(12px)',
-  border: '1px solid rgba(255, 255, 255, 0.15)',
-  borderRadius: '16px'
+    background: 'rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '16px'
 };
 
 const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.1 } }
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.1 } }
 };
 
 const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 150, damping: 20 } }
+    hidden: { y: 20, opacity: 0 },
+    visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 150, damping: 20 } }
 };
 
 // Error View Component
 const ErrorView = ({ message, onRetry }) => (
-  <div style={{ position: 'relative', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem', textAlign: 'center', color: 'white' }}>
-    <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ ...glassStyle, padding: '2rem', maxWidth: '500px' }}>
-      <AlertTriangle size={48} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
-      <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>Ocorreu um erro!</h2>
-      <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>{message || 'Falha ao carregar dados.'}</p>
-      {onRetry && (
-        <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={onRetry}
-          style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(59, 130, 246, 0.3)', background: 'rgba(59, 130, 246, 0.2)', color: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500', marginTop: '1rem' }}>
-          <RotateCcw size={18} /> Tentar novamente
-        </motion.button>
-      )}
-    </motion.div>
-  </div>
+    <div style={{ position: 'relative', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem', textAlign: 'center', color: 'white' }}>
+        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ ...glassStyle, padding: '2rem', maxWidth: '500px' }}>
+            <AlertTriangle size={48} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
+            <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '600' }}>Ocorreu um erro!</h2>
+            <p style={{ margin: '0 0 1rem 0', color: 'rgba(255, 255, 255, 0.8)' }}>{message || 'Falha ao carregar dados.'}</p>
+            {onRetry && (
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={onRetry}
+                    style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(59, 130, 246, 0.3)', background: 'rgba(59, 130, 246, 0.2)', color: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500', marginTop: '1rem' }}>
+                    <RotateCcw size={18} /> Tentar novamente
+                </motion.button>
+            )}
+        </motion.div>
+    </div>
 );
 
 // Fetching functions
 const fetchTimeEntriesOnly = async (userId, timeEntryFiltersFromStore) => {
-  const params = new URLSearchParams();
-  
-  if (timeEntryFiltersFromStore.startDate) params.append('start_date', timeEntryFiltersFromStore.startDate);
-  if (timeEntryFiltersFromStore.endDate) params.append('end_date', timeEntryFiltersFromStore.endDate);
-  if (timeEntryFiltersFromStore.client) params.append('client', timeEntryFiltersFromStore.client);
-  if (timeEntryFiltersFromStore.searchQuery) params.append('search', timeEntryFiltersFromStore.searchQuery);
+    const params = new URLSearchParams();
 
-  if (timeEntryFiltersFromStore.sortField && timeEntryFiltersFromStore.sortDirection) {
-    params.append('ordering', `${timeEntryFiltersFromStore.sortDirection === 'desc' ? '-' : ''}${timeEntryFiltersFromStore.sortField}`);
-  } else {
-    params.append('ordering', '-date');
-  }
+    if (timeEntryFiltersFromStore.startDate) params.append('start_date', timeEntryFiltersFromStore.startDate);
+    if (timeEntryFiltersFromStore.endDate) params.append('end_date', timeEntryFiltersFromStore.endDate);
+    if (timeEntryFiltersFromStore.client) params.append('client', timeEntryFiltersFromStore.client);
+    if (timeEntryFiltersFromStore.searchQuery) params.append('search', timeEntryFiltersFromStore.searchQuery);
 
-  const endpoint = `/time-entries/?${params.toString()}`;
-  const response = await api.get(endpoint);
-  return response.data.results || response.data || [];
+    if (timeEntryFiltersFromStore.sortField && timeEntryFiltersFromStore.sortDirection) {
+        params.append('ordering', `${timeEntryFiltersFromStore.sortDirection === 'desc' ? '-' : ''}${timeEntryFiltersFromStore.sortField}`);
+    } else {
+        params.append('ordering', '-date');
+    }
+
+    const endpoint = `/time-entries/?${params.toString()}`;
+    const response = await api.get(endpoint);
+    return response.data.results || response.data || [];
 };
 
 // NEW fetching function for the form context
@@ -91,34 +91,51 @@ const TimeEntry = () => {
         filters,
         lastSavedEntryFeedback, setLastSavedEntryFeedback, clearLastSavedEntryFeedback,
     } = useTimeEntryStore();
-    
+
     // NEW: Single query for all form context data
-    const { 
-        data: formContextMenu, 
-        isLoading: isLoadingFormContext, 
-        isError: isErrorFormContext, 
-        error: formContextError 
+    const {
+        data: formContextMenu,
+        isLoading: isLoadingFormContext,
+        isError: isErrorFormContext,
+        error: formContextError
     } = useQuery({
         queryKey: ['timeEntryFormContext'],
         queryFn: fetchTimeEntryFormContext,
         staleTime: 5 * 60 * 1000,
         enabled: !!permissions.initialized && showTimeEntryForm, // Only fetch when form is open
     });
-    
+
     // Memoize the data from the context query to prevent re-renders
-    const clientsForDropdown = useMemo(() => formContextMenu?.clients || [], [formContextMenu]);
-    const tasksForDropdown = useMemo(() => formContextMenu?.tasks || [], [formContextMenu]);
-    const categoriesForDropdown = useMemo(() => formContextMenu?.categories || [], [formContextMenu]);
+    const { data: clientsForDropdown = [] } = useQuery({
+        queryKey: ['clientsForDropdowns'],
+        // Não precisa de queryFn se for garantido que o Layout já carregou,
+        // mas é boa prática incluir para o caso de a página ser acedida diretamente.
+        queryFn: () => api.get("/clients/?is_active=true").then(res => res.data.results || res.data),
+        staleTime: 15 * 60 * 1000
+    });
+    const { data: categoriesForDropdown = [] } = useQuery({
+        queryKey: ['categoriesForDropdowns'],
+        queryFn: () => api.get("/task-categories/").then(res => res.data.results || res.data),
+        staleTime: Infinity
+    });
+
+    // 3. Obter tarefas. Esta query é específica para o contexto do utilizador e pode não ser
+    // a mesma que a do TaskManagement, então mantemos a sua própria query.
+    const { data: tasksForDropdown = [] } = useQuery({
+        queryKey: ['tasksForTimeEntryDropdown'],
+        queryFn: () => api.get("/tasks/?status=pending,in_progress").then(res => res.data.results || res.data),
+        staleTime: 2 * 60 * 1000 // Tarefas mudam mais, então o staleTime é menor
+    });
 
 
     // Query for the list of Time Entries (remains the same)
-    const { 
-        data: timeEntries = [], 
+    const {
+        data: timeEntries = [],
         isLoading: isLoadingEntriesFirstTime,
         isFetching: isFetchingEntries,
-        isError: isErrorEntries, 
-        error: entriesError, 
-        refetch: refetchTimeEntries 
+        isError: isErrorEntries,
+        error: entriesError,
+        refetch: refetchTimeEntries
     } = useQuery({
         queryKey: ['timeEntries', permissions.userId, filters],
         queryFn: () => fetchTimeEntriesOnly(permissions.userId, filters),
@@ -126,7 +143,7 @@ const TimeEntry = () => {
         enabled: !!permissions.initialized && (permissions.isOrgAdmin || permissions.canLogTime || permissions.canViewTeamTime),
         keepPreviousData: true,
     });
-    
+
     const deleteTimeEntryMutation = useMutation({
         mutationFn: async (entryId) => {
             await api.delete(`/time-entries/${entryId}/`);
@@ -198,7 +215,7 @@ const TimeEntry = () => {
             } else {
                 const requiredFields = ['client', 'description', 'minutes_spent', 'date'];
                 const missingFields = requiredFields.filter(field => !manualFormData[field]);
-                
+
                 if (missingFields.length > 0) {
                     toast.error(`Campos obrigatórios em falta: ${missingFields.join(', ')}`);
                     return;
@@ -229,7 +246,7 @@ const TimeEntry = () => {
             toast.error('Erro inesperado ao submeter formulário.');
         }
     }, [isNaturalLanguageMode, naturalLanguageInput, manualFormData, createNlpTimeEntryMutation, createTimeEntryMutation]);
-    
+
     const handleConfirmNLPCreate = useCallback(() => {
         if (!nlpExtractedEntries) return;
         const nlpPayload = {
@@ -264,23 +281,23 @@ const TimeEntry = () => {
         }
     }, [deleteTimeEntryMutation]);
 
-    const formatMinutesForDisplay = (minutes) => minutes != null ? `${Math.floor(minutes/60)}h ${minutes%60}m` : "0h 0m";
-    
+    const formatMinutesForDisplay = (minutes) => minutes != null ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : "0h 0m";
+
     // Loading and Error States
     if (permissions.loading) {
-        return ( 
-            <div style={{display:'flex', justifyContent:'center', alignItems:'center', height:'100vh', background:'rgba(0,0,0,0.1)'}}>
-                <Loader2 size={48} className="animate-spin" style={{color:'rgb(59, 130, 246)'}} />
-            </div> 
+        return (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'rgba(0,0,0,0.1)' }}>
+                <Loader2 size={48} className="animate-spin" style={{ color: 'rgb(59, 130, 246)' }} />
+            </div>
         );
     }
-    
+
     if (isErrorFormContext) {
-        return <ErrorView message={formContextError?.message || "Falha ao carregar dados para o formulário."} onRetry={() => queryClient.invalidateQueries(['timeEntryFormContext'])}/>;
+        return <ErrorView message={formContextError?.message || "Falha ao carregar dados para o formulário."} onRetry={() => queryClient.invalidateQueries(['timeEntryFormContext'])} />;
     }
-    
+
     if (!permissions.isOrgAdmin && !permissions.canLogTime && !permissions.canViewTeamTime) {
-        return ( <ErrorView message="Acesso restrito à página de registo de tempos." /> );
+        return (<ErrorView message="Acesso restrito à página de registo de tempos." />);
     }
 
     const generateExcelReport = async () => {
@@ -290,49 +307,49 @@ const TimeEntry = () => {
     return (
         <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
             <BackgroundElements />
-            <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 99999 }}/>
+            <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} style={{ zIndex: 99999 }} />
 
             <motion.div initial="hidden" animate="visible" variants={containerVariants} style={{ position: 'relative', zIndex: 10, padding: '2rem', paddingTop: '1rem' }}>
                 <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div style={{display:'flex', alignItems:'center', gap:'1rem'}}>
-                        <div style={{padding:'0.75rem', background:'rgba(59,130,246,0.2)', borderRadius:'12px', border:'1px solid rgba(59,130,246,0.3)'}}>
-                             <Clock size={28} style={{color: 'rgb(59,130,246)'}}/>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{ padding: '0.75rem', background: 'rgba(59,130,246,0.2)', borderRadius: '12px', border: '1px solid rgba(59,130,246,0.3)' }}>
+                            <Clock size={28} style={{ color: 'rgb(59,130,246)' }} />
                         </div>
                         <div>
-                            <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0 0 0.5rem 0',color: 'rgb(255, 255, 255)' }}>Registo de Tempos</h1>
+                            <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: '0 0 0.5rem 0', color: 'rgb(255, 255, 255)' }}>Registo de Tempos</h1>
                             <p style={{ fontSize: '1rem', color: 'rgba(191,219,254,1)', margin: 0 }}>Adicione e gira os seus registos de tempo.</p>
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                         {(permissions.isOrgAdmin || permissions.canLogTime) && (
+                        {(permissions.isOrgAdmin || permissions.canLogTime) && (
                             <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={toggleTimeEntryForm}
                                 style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: `1px solid rgba(59,130,246, ${showTimeEntryForm ? 0.6 : 0.3})`, background: `rgba(59,130,246, ${showTimeEntryForm ? 0.3 : 0.2})`, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                {showTimeEntryForm ? <X size={18}/> : <Plus size={18}/>} {showTimeEntryForm ? 'Cancelar Entrada' : 'Nova Entrada'}
+                                {showTimeEntryForm ? <X size={18} /> : <Plus size={18} />} {showTimeEntryForm ? 'Cancelar Entrada' : 'Nova Entrada'}
                             </motion.button>
-                         )}
+                        )}
                         <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={generateExcelReport} disabled={isLoadingEntriesFirstTime || timeEntries.length === 0 || isFetchingEntries}
                             style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.2)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: (isLoadingEntriesFirstTime || timeEntries.length === 0 || isFetchingEntries) ? 0.7 : 1 }}>
-                            <Download size={18}/> Exportar
+                            <Download size={18} /> Exportar
                         </motion.button>
                     </div>
                 </motion.div>
 
                 <AnimatePresence>
                     {showTimeEntryForm && (permissions.isOrgAdmin || permissions.canLogTime) && (
-                         <TimeEntryCombinedForm
-                            clients={clientsForDropdown} 
-                            tasks={tasksForDropdown} 
+                        <TimeEntryCombinedForm
+                            clients={clientsForDropdown}
+                            tasks={tasksForDropdown}
                             categories={categoriesForDropdown}
                             onFormSubmit={handleFormSubmit}
-                            isSubmitting={createTimeEntryMutation.isPending || createNlpTimeEntryMutation.isPending}
+                            isSubmitting={createTimeEntryMutation.isPending || createNlpTimeEntryMutation.isPending || isLoadingFormContext}
                             permissions={permissions}
                         />
                     )}
                 </AnimatePresence>
 
                 <TimeEntryListFilters clientsData={clientsForDropdown} />
-                
-                <div style={{position: 'relative'}}>
+
+                <div style={{ position: 'relative' }}>
                     {(() => {
                         if (isLoadingEntriesFirstTime && timeEntries.length === 0 && !isErrorEntries) {
                             return (
@@ -342,13 +359,13 @@ const TimeEntry = () => {
                                 </div>
                             );
                         }
-                        if (isErrorEntries && timeEntries.length === 0) { 
+                        if (isErrorEntries && timeEntries.length === 0) {
                             return <ErrorView message={entriesError?.message || "Falha ao carregar registos."} onRetry={refetchTimeEntries} />;
                         }
                         return (
                             <>
                                 {isFetchingEntries && timeEntries.length > 0 && (
-                                     <div style={{
+                                    <div style={{
                                         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
                                         padding: '0.75rem 1rem', background: 'rgba(0,0,0,0.6)', borderRadius: '8px',
                                         display: 'flex', alignItems: 'center', gap: '0.5rem', zIndex: 5,
@@ -367,11 +384,11 @@ const TimeEntry = () => {
                                     isLoading={isFetchingEntries && timeEntries.length === 0}
                                 />
                             </>
-                         );
+                        );
                     })()}
                 </div>
-                 <AnimatePresence>
-                    {nlpExtractedEntries && ( 
+                <AnimatePresence>
+                    {nlpExtractedEntries && (
                         <TimeEntryNLPConfirmation
                             onConfirm={handleConfirmNLPCreate}
                             isProcessingNLP={createNlpTimeEntryMutation.isPending}

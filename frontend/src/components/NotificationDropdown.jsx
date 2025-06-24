@@ -10,52 +10,55 @@ import {
 } from 'lucide-react';
 import api from '../api'; // Your api instance
 
-const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it should be imported
+const NotificationDropdown = ({ onNavigate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient(); // Get query client instance
 
-  // --- BEST PRACTICE: Use React Query for polling ---
-  const { data: unreadData, isLoading: isLoadingUnread } = useQuery({
-    queryKey: ['unreadNotificationCount'], // A unique key for this query
+  // --- Contador de notificações não lidas ---
+  // Este já estava a funcionar corretamente com polling em segundo plano.
+  const { data: unreadData } = useQuery({
+    queryKey: ['unreadNotificationCount'],
     queryFn: async () => {
       const response = await api.get('/workflow-notifications/unread_count/');
       return response.data;
     },
-    // This replaces setInterval!
-    refetchInterval: 30000, // Refetch every 30 seconds
-    refetchOnWindowFocus: true, // Also refetch when the user comes back to the tab
-    staleTime: 15000, // Consider data fresh for 15 seconds
+    refetchInterval: 30000, // Continua a atualizar o contador a cada 30s
+    refetchOnWindowFocus: true,
+    staleTime: 15000,
   });
   
-  // The actual count, derived from the query data
   const unreadCount = unreadData?.unread_count || 0;
 
-  // --- Fetch the list of notifications only when the dropdown is open ---
+  // --- LISTA DE NOTIFICAÇÕES (LÓGICA ALTERADA) ---
+  // A consulta agora corre em segundo plano, independentemente do dropdown estar aberto.
   const { data: notifications = [], isLoading: isLoadingList } = useQuery({
-    queryKey: ['notificationList'], // Unique key for the list
+    queryKey: ['notificationList'],
     queryFn: async () => {
       const response = await api.get('/workflow-notifications/', {
         params: { limit: 7, is_archived: false }
       });
       return response.data.results || response.data || [];
     },
-    enabled: isOpen, // <-- This is the key! The query only runs when isOpen is true.
-    staleTime: 5000,
+    // <-- ALTERAÇÃO PRINCIPAL: `enabled` foi removido (ou é `true` por defeito).
+    // A consulta agora corre assim que o componente é montado.
+    refetchInterval: 120000, // Atualiza a lista em segundo plano a cada 2 minutos.
+    refetchOnWindowFocus: true, // Atualiza quando o utilizador volta ao separador.
+    staleTime: 60000, // Considera os dados "frescos" por 1 minuto para evitar re-fetches desnecessários.
   });
 
-  // --- Mutations (no change needed here) ---
+  // Mutações para interagir com as notificações
   const markAsReadMutation = useMutation({
     mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/mark_as_read/`),
     onSuccess: () => {
-      // Invalidate both queries to get fresh data
+      // Invalida ambas as queries para obter dados frescos imediatamente após a ação.
       queryClient.invalidateQueries({ queryKey: ['notificationList'] });
       queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
     },
   });
 
-  // Effect for closing dropdown when clicking outside
+  // Efeito para fechar o dropdown ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -70,12 +73,11 @@ const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it shoul
     };
   }, [isOpen]);
 
-  // Handler to mark as read and navigate
   const markAsReadAndNavigate = (notification) => {
     if (!notification.is_read) {
       markAsReadMutation.mutate(notification.id);
     }
-
+    // Lógica de navegação
     if (notification.notification_type === 'report_generated' && notification.metadata?.report_id) {
       navigate(`/reports?highlight=${notification.metadata.report_id}`);
     } else if (notification.task) {
@@ -86,8 +88,6 @@ const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it shoul
     setIsOpen(false);
   };
   
-  // (The rest of your component's functions like getNotificationIcon, timeSince, handleViewAll remain the same)
-  // ...
   const getNotificationIcon = (type, priority) => {
     const iconMap = {
       step_ready: PlayCircle,
@@ -134,7 +134,6 @@ const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it shoul
     onNavigate('/notifications');
   };
 
-  // The return JSX remains largely the same, just use `isLoadingList` instead of your old `isLoading`
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
       <motion.button
@@ -201,7 +200,7 @@ const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it shoul
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '600', color: 'white' }}>Notificações</h3>
                 <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>
-                  {isLoadingUnread ? 'A verificar...' : (unreadCount > 0 ? `${unreadCount} não lida${unreadCount > 1 ? 's' : ''}` : 'Todas lidas')}
+                  {unreadCount > 0 ? `${unreadCount} não lida${unreadCount > 1 ? 's' : ''}` : 'Todas lidas'}
                 </p>
               </div>
               <motion.button onClick={handleViewAll} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
@@ -211,7 +210,7 @@ const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it shoul
             </div>
             
             <div style={{ flexGrow: 1, maxHeight: 'calc(500px - 100px)', overflowY: 'auto' }} className="custom-scrollbar-dropdown">
-              {isLoadingList ? (
+              {isLoadingList && notifications.length === 0 ? (
                 <div style={{ padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', color: 'rgba(255, 255, 255, 0.6)' }}>
                   <Loader2 size={24} className="animate-spin" />
                   <span>A carregar...</span>
@@ -229,7 +228,6 @@ const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it shoul
                     onClick={() => markAsReadAndNavigate(notification)}
                     style={{ padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', cursor: 'pointer', position: 'relative', background: notification.is_read ? 'transparent' : 'rgba(59, 130, 246, 0.05)' }}
                   >
-                    {/* ... (rest of the notification rendering logic) ... */}
                     <div style={{ display: 'flex', gap: '0.75rem' }}>
                       <div style={{ marginTop: '0.25rem', flexShrink: 0 }}>{getNotificationIcon(notification.notification_type, notification.priority)}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -254,7 +252,28 @@ const NotificationDropdown = ({ onNavigate }) => { // Removed api prop, it shoul
           </motion.div>
         )}
       </AnimatePresence>
-      <style jsx global>{`...`}</style>
+      <style jsx global>{`
+        .custom-scrollbar-dropdown::-webkit-scrollbar {
+          width: 5px;
+        }
+        .custom-scrollbar-dropdown::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.05);
+        }
+        .custom-scrollbar-dropdown::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 3px;
+        }
+        .custom-scrollbar-dropdown::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.3);
+        }
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

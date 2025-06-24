@@ -1970,8 +1970,6 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             logger.error(f"Error updating member: {str(e)}")
             return Response({"error": f"Erro ao atualizar membro: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-# dashboard_summary - No major changes needed for this step, but ensure it uses Profile permissions correctly.
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_summary(request):
@@ -1979,89 +1977,83 @@ def dashboard_summary(request):
     try:
         profile = Profile.objects.select_related('organization').get(user=user)
         org_id = profile.organization_id if profile.organization else None
-        
-        response_data = {
-            'permissions': ProfileSerializer(profile).data, # Send all profile permissions
-            'active_clients': 0, 'active_tasks': 0, 'overdue_tasks': 0, 'today_tasks': 0,
-            'completed_tasks_week': 0, 'time_tracked_today': 0, 'time_tracked_week': 0,
-        }
+
+        if not org_id:
+            return Response({'error': 'Utilizador não associado a uma organização.'}, status=400)
 
         today = timezone.now().date()
         seven_days_ago = today - timedelta(days=7)
 
-        clients_qs = Client.objects.none()
-        tasks_qs = Task.objects.none()
-        time_entries_qs = TimeEntry.objects.none()
+        # --- Base Querysets de acordo com as permissões ---
+        # Tarefas que o utilizador pode ver
+        tasks_qs = Task.objects.for_user(user)
 
-        if org_id:
-            if profile.is_org_admin or profile.can_view_all_clients:
-                clients_qs = Client.objects.filter(organization_id=org_id, is_active=True)
-            else:
-                clients_qs = profile.visible_clients.filter(is_active=True, organization_id=org_id)
-            response_data['active_clients'] = clients_qs.count()
+        # Entradas de tempo que o utilizador pode ver
+        time_entries_qs = TimeEntry.objects.for_user(user)
 
-            org_tasks_base = Task.objects.filter(client__organization_id=org_id)
-            if profile.is_org_admin or profile.can_view_all_tasks:
-                tasks_qs = org_tasks_base
-            else:
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
-                tasks_qs = org_tasks_base.filter(Q(client_id__in=visible_client_ids) | Q(assigned_to=user)).distinct()
-            
-            response_data['active_tasks'] = tasks_qs.filter(~Q(status__in=['completed', 'cancelled'])).count()
-            response_data['overdue_tasks'] = tasks_qs.filter(deadline__lt=today, status__in=['pending', 'in_progress']).count()
-            response_data['today_tasks'] = tasks_qs.filter(deadline=today, status__in=['pending', 'in_progress']).count()
-            response_data['completed_tasks_week'] = tasks_qs.filter(status='completed', completed_at__gte=seven_days_ago).count()
-
-            org_time_base = TimeEntry.objects.filter(client__organization_id=org_id)
-            if profile.is_org_admin or profile.can_view_team_time:
-                time_entries_qs = org_time_base
-            else:
-                visible_client_ids = profile.visible_clients.values_list('id', flat=True)
-                time_entries_qs = org_time_base.filter(Q(user=user) | Q(client_id__in=visible_client_ids)).distinct()
-            
-            response_data['time_tracked_today'] = time_entries_qs.filter(date=today).aggregate(total=Sum('minutes_spent'))['total'] or 0
-            response_data['time_tracked_week'] = time_entries_qs.filter(date__gte=seven_days_ago).aggregate(total=Sum('minutes_spent'))['total'] or 0
-
-            # Profitability summary (simplified for brevity, use ClientProfitability model)
-            if profile.is_org_admin or profile.can_view_organization_profitability:
-                profit_stats = ClientProfitability.objects.filter(client__organization_id=org_id, year=today.year, month=today.month).aggregate(
-                    unprofitable_count=Count('id', filter=Q(is_profitable=False)),
-                    avg_margin=Avg('profit_margin')
-                )
-                response_data['unprofitable_clients'] = profit_stats.get('unprofitable_count',0)
-                response_data['average_profit_margin'] = profit_stats.get('avg_margin',0)
-
-            # Workflow Stats
-            if profile.is_org_admin or profile.can_manage_workflows or profile.can_view_all_tasks : # Broader perm to see general workflow stats
-                # Assuming workflows are not org-specific, or need a filter if they are
-                response_data['active_workflows'] = WorkflowDefinition.objects.filter(is_active=True).count()
-                response_data['tasks_with_workflows'] = tasks_qs.exclude(workflow__isnull=True).count()
-            
-            if profile.is_org_admin or profile.can_approve_tasks:
-                # Tasks needing approval: current step requires approval AND no existing 'approved=True' approval for that step
-                response_data['tasks_needing_approval'] = tasks_qs.filter(
-                    current_workflow_step__requires_approval=True
-                ).exclude(
-                    approvals__workflow_step=F('current_workflow_step'), # F object to compare fields
-                    approvals__approved=True
-                ).distinct().count()
+        # 1. Stats de Tarefas
+        task_stats = tasks_qs.aggregate(
+            active_tasks=Count('id', filter=Q(status__in=['pending', 'in_progress'])),
+            overdue_tasks=Count('id', filter=Q(deadline__lt=today, status__in=['pending', 'in_progress'])),
+            today_tasks=Count('id', filter=Q(deadline=today, status__in=['pending', 'in_progress'])),
+            completed_tasks_week=Count('id', filter=Q(status='completed', completed_at__date__gte=seven_days_ago))
+        )
         
+        # 2. Stats de Tempo
+        time_stats = time_entries_qs.aggregate(
+            time_tracked_today=Sum('minutes_spent', filter=Q(date=today)),
+            time_tracked_week=Sum('minutes_spent', filter=Q(date__gte=seven_days_ago))
+        )
+
+        # 3. Stats de Clientes (Baseado nos clientes visíveis)
+        clients_qs = Client.objects.for_user(user)
+        client_stats = clients_qs.aggregate(
+            active_clients=Count('id', filter=Q(is_active=True))
+        )
+        
+        # --- Compilar Resposta ---
+        response_data = {
+            'permissions': ProfileSerializer(profile).data,
+            'active_tasks': task_stats.get('active_tasks', 0) or 0,
+            'overdue_tasks': task_stats.get('overdue_tasks', 0) or 0,
+            'today_tasks': task_stats.get('today_tasks', 0) or 0,
+            'completed_tasks_week': task_stats.get('completed_tasks_week', 0) or 0,
+            'time_tracked_today': time_stats.get('time_tracked_today', 0) or 0,
+            'time_tracked_week': time_stats.get('time_tracked_week', 0) or 0,
+            'active_clients': client_stats.get('active_clients', 0) or 0,
+        }
+
+        # 4. Stats de Rentabilidade e Workflow (só para admins, podem ser mais lentos)
+        if profile.is_org_admin or profile.can_view_organization_profitability:
+            profit_stats = ClientProfitability.objects.filter(
+                client__organization_id=org_id, 
+                year=today.year, 
+                month=today.month
+            ).aggregate(
+                unprofitable_count=Count('id', filter=Q(is_profitable=False)),
+                avg_margin=Avg('profit_margin')
+            )
+            response_data['unprofitable_clients'] = profit_stats.get('unprofitable_count', 0) or 0
+            response_data['average_profit_margin'] = profit_stats.get('avg_margin', 0) or 0
+
+        if profile.is_org_admin or profile.can_view_all_tasks:
+            response_data['tasks_needing_approval'] = tasks_qs.filter(
+                current_workflow_step__requires_approval=True
+            ).exclude(
+                approvals__workflow_step=F('current_workflow_step'),
+                approvals__approved=True
+            ).distinct().count()
+
         return Response(response_data)
         
     except Profile.DoesNotExist:
-        # For users without profiles (e.g. superuser before profile creation, or if profiles are optional)
         if user.is_superuser:
-            # Provide some global stats for superuser if no profile exists
-            return Response({
-                'message': 'Superuser dashboard summary (global stats).',
-                'active_clients': Client.objects.filter(is_active=True).count(),
-                'active_tasks': Task.objects.filter(~Q(status__in=['completed', 'cancelled'])).count(),
-                 # ... other global stats ...
-            })
+            return Response({'message': 'Superuser dashboard not implemented yet.'})
         return Response({'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
-
-# ... (outros imports e ViewSets que já existem no seu views.py) ...
-
+    except Exception as e:
+        logger.error(f"Erro no dashboard_summary: {e}", exc_info=True)
+        return Response({'error': 'Erro interno ao carregar o sumário do dashboard.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 class WorkflowNotificationViewSet(viewsets.ModelViewSet):
     serializer_class = WorkflowNotificationSerializer
     permission_classes = [IsAuthenticated]
@@ -3947,68 +3939,6 @@ def query_ai_advisor(request):
         traceback.print_exc()
         return Response({"error": "Erro interno ao consultar o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def time_entry_context(request):
-    """
-    Fornece o contexto necessário para o formulário de Registo de Tempo,
-    filtrado pelas permissões do utilizador.
-    """
-    user = request.user
-    try:
-        profile = Profile.objects.get(user=user)
-        if not profile.organization:
-            return Response({"error": "Utilizador não está numa organização."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # 1. Obter todas as tarefas ativas da organização
-        org_tasks = Task.objects.filter(
-            client__organization=profile.organization,
-            status__in=['pending', 'in_progress']
-        ).select_related('client', 'category')
-
-        # 2. Filtrar as tarefas relevantes para o utilizador
-        user_id = user.id
-        relevant_task_ids = set()
-
-        # Tarefas diretamente atribuídas
-        assigned_tasks = org_tasks.filter(assigned_to_id=user_id)
-        relevant_task_ids.update(list(assigned_tasks.values_list('id', flat=True)))
-
-        # Tarefas com passos de workflow atribuídos ao utilizador
-        workflow_tasks = org_tasks.filter(workflow__isnull=False).exclude(workflow_step_assignments={})
-        for task in workflow_tasks:
-            if str(user_id) in (str(v) for v in task.workflow_step_assignments.values()):
-                relevant_task_ids.add(task.id)
-
-        # 3. Obter os objetos Task completos
-        relevant_tasks_qs = Task.objects.filter(id__in=list(relevant_task_ids)).select_related('client', 'category')
-        
-        # 4. Obter os clientes únicos a partir das tarefas relevantes
-        relevant_client_ids = relevant_tasks_qs.values_list('client_id', flat=True).distinct()
-        relevant_clients_qs = Client.objects.filter(id__in=relevant_client_ids, is_active=True).order_by('name')
-        
-        # 5. Obter todas as categorias (geralmente não são restritas por permissão)
-        categories_qs = TaskCategory.objects.all().order_by('name')
-        
-        # 6. Serializar os dados para a resposta
-        client_serializer = ClientSerializer(relevant_clients_qs, many=True)
-        task_serializer = TaskSerializer(relevant_tasks_qs, many=True, context={'request': request})
-        category_serializer = TaskCategorySerializer(categories_qs, many=True)
-        
-        return Response({
-            "clients": client_serializer.data,
-            "tasks": task_serializer.data,
-            "categories": category_serializer.data
-        })
-        
-    except Profile.DoesNotExist:
-        return Response({"error": "Perfil não encontrado."}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erro ao construir contexto de registo de tempo: {e}", exc_info=True)
-        return Response({"error": "Erro interno ao buscar contexto."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-# Adicionar ao final do views.py existente
-
 from .services.report_generation_service import ReportGenerationService
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -4348,3 +4278,46 @@ def download_report(request, report_id):
         return Response({
             'error': f'Erro interno: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def time_entry_context(request):
+    """
+    Fornece o contexto necessário para o formulário de Registo de Tempo,
+    filtrado pelas permissões do utilizador.
+    """
+    user = request.user
+    try:
+        profile = Profile.objects.get(user=user)
+        if not profile.organization:
+            return Response({"error": "Utilizador não está numa organização."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Obter todas as tarefas ativas da organização que o user pode ver
+        # Use o TaskManager para obter a base de tarefas seguras para o usuário
+        user_tasks_qs = Task.objects.for_user(user).filter(
+            status__in=['pending', 'in_progress']
+        ).select_related('client', 'category', 'current_workflow_step')
+
+        # 2. Obter os clientes únicos a partir das tarefas relevantes E dos clientes visíveis
+        # Isto garante que o utilizador pode registar tempo para um cliente mesmo que não tenha tarefas ativas para ele
+        visible_clients_qs = Client.objects.for_user(user).filter(is_active=True)
+        
+        # 3. Obter todas as categorias (geralmente não são restritas por permissão)
+        categories_qs = TaskCategory.objects.all().order_by('name')
+        
+        # 4. Serializar os dados para a resposta
+        client_serializer = ClientSerializer(visible_clients_qs, many=True)
+        task_serializer = TaskSerializer(user_tasks_qs, many=True, context={'request': request})
+        category_serializer = TaskCategorySerializer(categories_qs, many=True)
+        
+        return Response({
+            "clients": client_serializer.data,
+            "tasks": task_serializer.data,
+            "categories": category_serializer.data
+        })
+        
+    except Profile.DoesNotExist:
+        return Response({"error": "Perfil não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erro ao construir contexto de registo de tempo: {e}", exc_info=True)
+        return Response({"error": "Erro interno ao buscar contexto."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

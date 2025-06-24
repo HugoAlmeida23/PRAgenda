@@ -6,7 +6,7 @@ import styled from 'styled-components';
 import { ArrowUpRight, Zap, Sparkles } from 'lucide-react';
 import { Clock, CheckSquare, AlertTriangle, Users, Mic } from 'lucide-react';
 
-// --- Styled Components ---
+// --- Styled Components (No changes) ---
 const PanelContainer = styled(motion.div)`
   background: ${({ theme }) => theme.quickActions.bg};
   backdrop-filter: blur(12px);
@@ -128,18 +128,16 @@ const ShineEffect = styled(motion.div)`
 const QuickActionsGrid = ({ actions = [], dashboardData }) => {
     const [hoveredAction, setHoveredAction] = useState(null);
 
-    // Animation Variants - THIS IS THE FIX
+    // REFACTOR: Faster stagger and simpler child animation for a snappier grid appearance.
     const containerVariants = {
         hidden: { opacity: 0 },
-        visible: { opacity: 1, transition: { staggerChildren: 0.1, delayChildren: 0.2 } }
+        visible: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.1 } }
     };
+    
+    // REFACTOR: Replaced spring with a simple, fast easeOut transition.
     const actionVariants = {
-        hidden: { y: 20, opacity: 0, scale: 0.9 },
-        visible: { y: 0, opacity: 1, scale: 1, transition: { type: "spring", stiffness: 200, damping: 20 } }
-    };
-    const hoverVariants = {
-        hover: { scale: 1.05, y: -5, transition: { type: "spring", stiffness: 300, damping: 20 } },
-        tap: { scale: 0.95 }
+        hidden: { y: 15, opacity: 0 },
+        visible: { y: 0, opacity: 1, transition: { duration: 0.3, ease: 'easeOut' } }
     };
 
     const handleActionClick = (action) => {
@@ -157,11 +155,12 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
                 onHoverStart={() => setHoveredAction(action.type)}
                 onHoverEnd={() => setHoveredAction(null)}
             >
-                <ActionCard variants={hoverVariants} whileHover="hover" whileTap="tap">
+                {/* REFACTOR: Changed hover to a direct prop for simplicity and responsiveness. */}
+                <ActionCard whileHover={{ scale: 1.03, y: -4, transition: { duration: 0.2, ease: "easeOut" } }} whileTap={{ scale: 0.97 }}>
                     <div style={{ position: 'absolute', inset: 0, backgroundColor: action.color || 'rgba(255,255,255,0.1)', opacity: hoveredAction === action.type ? 0.15 : 0, borderRadius: '12px', transition: 'opacity 0.3s' }} />
                     <ActionContent>
                         <ActionTop>
-                            <ActionIconContainer color={action.color} animate={{ rotate: hoveredAction === action.type ? [0, 5, -5, 0] : 0 }} transition={{ duration: 0.3 }}>
+                            <ActionIconContainer color={action.color}>
                                 {ActionIconComponent && <ActionIconComponent style={{ color: 'white' }} size={16} />}
                             </ActionIconContainer>
                             <motion.div initial={{ opacity: 0, scale: 0 }} animate={{ opacity: hoveredAction === action.type ? 1 : 0, scale: hoveredAction === action.type ? 1 : 0 }} transition={{ duration: 0.2 }}>
@@ -194,7 +193,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
         <PanelContainer variants={containerVariants} initial="hidden" animate="visible">
             <Header>
                 <HeaderLeft>
-                    <IconContainer animate={{ scale: [1, 1.1, 1], rotate: [0, 180, 360] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
+                    <IconContainer>
                         <Zap style={{ color: 'rgb(251, 191, 36)' }} size={20} />
                     </IconContainer>
                     <div>
@@ -202,9 +201,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
                         <Subtitle>Baseadas no seu contexto</Subtitle>
                     </div>
                 </HeaderLeft>
-                <motion.div animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
-                    <Sparkles style={{ color: 'rgb(196, 181, 253)' }} size={16} />
-                </motion.div>
+                <Sparkles style={{ color: 'rgb(196, 181, 253)' }} size={16} />
             </Header>
 
             <ActionsGridContainer>

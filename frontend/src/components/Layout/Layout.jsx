@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query'; // Import useQuery
 import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
   LogOut, User as UserIcon, Briefcase, ChevronDown, 
-  Archive as ArchiveIcon, BarChart3, Settings2, Bot, Sun, Moon, GitBranch, List, FileText, // Added FileText for Reports
-  BellRing // Added BellRing for Notification Settings
-} from 'lucide-react'; // List for Workflows, 
+  Archive as ArchiveIcon, BarChart3, Settings2, Bot, Sun, Moon, GitBranch, List, FileText,
+  BellRing
+} from 'lucide-react';
 import { Outlet } from 'react-router-dom';
 import api from '../../api';
 import BackgroundElements from '../HeroSection/BackgroundElements';
@@ -14,7 +15,31 @@ import NotificationDropdown from '../NotificationDropdown';
 import './Layout.css';
 import { useTheme } from '../../contexts/ThemeContext';
 
-const NavDropdown = ({ group, currentPath, onNavigate, theme }) => { // Added theme prop
+// --- QUERIES PARA PRE-FETCHING ---
+// Estas queries irão correr assim que o Layout for montado (após login)
+// e os dados ficarão em cache para outras partes da aplicação usarem.
+
+const usePrefetchData = () => {
+  // Pré-carrega clientes. staleTime longo porque não mudam frequentemente.
+  useQuery({
+    queryKey: ['clientsForDropdowns'],
+    queryFn: () => api.get("/clients/?is_active=true").then(res => res.data.results || res.data),
+    staleTime: 15 * 60 * 1000, // 15 minutos
+  });
+
+  // Pré-carrega categorias. staleTime infinito porque mudam muito raramente.
+  useQuery({
+    queryKey: ['categoriesForDropdowns'],
+    queryFn: () => api.get("/task-categories/").then(res => res.data.results || res.data),
+    staleTime: Infinity,
+  });
+};
+
+
+// Componentes de Navegação (NavDropdown, NavItem, ProfileDropdown) não foram alterados...
+// ... (código dos sub-componentes permanece o mesmo) ...
+
+const NavDropdown = ({ group, currentPath, onNavigate, theme }) => {
     const [isOpen, setIsOpen] = useState(false);
     const isActive = group.items.some(item => item.path === currentPath);
   
@@ -77,7 +102,7 @@ const NavDropdown = ({ group, currentPath, onNavigate, theme }) => { // Added th
     );
 };
 
-const NavItem = ({ item, currentPath, onNavigate, theme }) => { // Added theme prop
+const NavItem = ({ item, currentPath, onNavigate, theme }) => {
     const isActive = currentPath === item.path;
     
     return (
@@ -169,11 +194,15 @@ const ProfileDropdown = ({ userProfile, onNavigate, theme }) => { // Added theme
     );
 };
 
-const Layout = () => { // Removed children prop as Outlet is used
+
+const Layout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [userProfile, setUserProfile] = useState(null);
   const { theme, toggleTheme } = useTheme();
+
+  // --- CHAMADA AO HOOK DE PRE-FETCHING ---
+  usePrefetchData();
 
   const dashboardItem = {
     name: 'Dashboard',
@@ -187,22 +216,22 @@ const Layout = () => { // Removed children prop as Outlet is used
     path: "/ai-advisor"
   };
 
-  const workflowItem = { // Renamed from workflow to workflowItem
+  const workflowItem = {
     name: "Workflows", 
-    icon: <GitBranch size={16} />, // Changed icon to GitBranch
+    icon: <GitBranch size={16} />,
     path: "/workflow-management"
   };
 
-  const reportsItem = { // Renamed from relatorios to reportsItem
+  const reportsItem = {
     name: "Relatórios", 
-    icon: <FileText size={16} />, // Changed icon to FileText
+    icon: <FileText size={16} />,
     path: "/reports"
   };
 
   const navGroups = [
     {
         name: 'Operacional',
-        icon: <Settings2 size={16} />, // Example: Using Settings2 for Operacional
+        icon: <Settings2 size={16} />,
         items: [
             { path: "/tasks", icon: <CheckSquare size={16} />, label: "Tarefas" },
             { path: "/clients", icon: <Users size={16} />, label: "Clientes" },
@@ -214,8 +243,8 @@ const Layout = () => { // Removed children prop as Outlet is used
         icon: <ArchiveIcon size={16} />,
         items: [
           { path: "/fiscal-dashboard", icon: <BarChart3 size={16} />, label: "Dashboard Fiscal" },
-          { path: "/fiscal-definitions", icon: <Settings size={16} />, label: "Definições Fiscais" }, // Renamed for clarity
-          { path: "/fiscal-settings", icon: <Settings2 size={16} />, label: "Config. Sistema Fiscal" }, // Renamed for clarity
+          { path: "/fiscal-definitions", icon: <Settings size={16} />, label: "Definições Fiscais" },
+          { path: "/fiscal-settings", icon: <Settings2 size={16} />, label: "Config. Sistema Fiscal" },
         ]
     },
     {
@@ -234,21 +263,14 @@ const Layout = () => { // Removed children prop as Outlet is used
         if (response.data && response.data.length > 0) {
           setUserProfile(response.data[0]);
         } else {
-          // Handle case where profile might not exist yet for a new user
-          // For now, we'll just log it. A robust app might redirect to a profile setup page.
           console.warn("User profile not found. User might need to complete setup.");
         }
       } catch (error) {
         console.error("Failed to load user profile:", error);
-        if (error.response?.status === 401) {
-          // If unauthorized, redirect to login. This is crucial for protected routes.
-          // Consider if this logic should solely reside in ProtectedRoute or also here as a fallback.
-          // navigate('/login'); 
-        }
       }
     };
     loadUserProfile();
-  }, [location.key]); // Re-fetch on location change if profile data might change with navigation
+  }, [location.key]);
 
   const handleNavigation = (path) => {
     navigate(path);
@@ -257,7 +279,7 @@ const Layout = () => { // Removed children prop as Outlet is used
   const headerStyle = useMemo(() => ({
     position: 'sticky', 
     top: 0, 
-    zIndex: 1001, // Ensure it's above BackgroundElements but below modals
+    zIndex: 1001,
     background: theme === 'light' ? 'rgba(249, 250, 251, 0.85)' : 'rgba(17, 24, 39, 0.85)',
     backdropFilter: 'blur(16px)',
     borderBottom: theme === 'light' ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.1)',
@@ -271,10 +293,10 @@ const Layout = () => { // Removed children prop as Outlet is used
 
   return (
     <div style={{ minHeight: '100vh', position: 'relative', fontFamily: 'Inter, sans-serif', 
-                  background: theme === 'light' ? 'rgb(243, 244, 246)' : 'rgb(15, 23, 42)', // Main page background
+                  background: theme === 'light' ? 'rgb(243, 244, 246)' : 'rgb(15, 23, 42)',
                   transition: 'background 0.3s ease'
                }}>
-      <BackgroundElements /> {/* This should have zIndex: -1 or 0 */}
+      <BackgroundElements />
 
       <motion.header
         initial={{ y: -80, opacity: 0 }}
@@ -292,13 +314,13 @@ const Layout = () => { // Removed children prop as Outlet is used
           }}>
             <div style={{
               width: '32px', height: '32px', borderRadius: '8px', 
-              background: 'linear-gradient(135deg, rgb(147, 51, 234), rgb(129, 44, 207))', // Adjusted gradient
+              background: 'linear-gradient(135deg, rgb(147, 51, 234), rgb(129, 44, 207))',
               display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700',
               color: 'white', boxShadow: '0 2px 8px rgba(147, 51, 234, 0.3)'
             }}>
               T
             </div>
-            <span style={{fontWeight: '600', fontSize: '1.1rem'}}>TarefAI</span> {/* Slightly larger */}
+            <span style={{fontWeight: '600', fontSize: '1.1rem'}}>TarefAI</span>
           </Link>
           
           <div style={{ height: '24px', width: '1px', background: theme === 'light' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)' }} />
@@ -314,18 +336,18 @@ const Layout = () => { // Removed children prop as Outlet is used
           </nav>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}> {/* Increased gap */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
           <div style={{width: '250px'}}> {/* Placeholder for AISearchBar */} </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <NotificationDropdown onNavigate={handleNavigation} api={api} />
+            <NotificationDropdown onNavigate={handleNavigation} />
             <motion.button
               onClick={toggleTheme}
               style={{
                 background: 'transparent', border: 'none', cursor: 'pointer',
                 padding: '0.5rem', borderRadius: '50%', display: 'flex',
                 alignItems: 'center', justifyContent: 'center',
-                color: theme === 'light' ? '#4b5563' : '#9ca3af' // Adjusted icon color
+                color: theme === 'light' ? '#4b5563' : '#9ca3af'
               }}
               whileHover={{ scale: 1.1, background: theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)' }}
               whileTap={{ scale: 0.9 }}
@@ -347,18 +369,18 @@ const Layout = () => { // Removed children prop as Outlet is used
       </motion.header>
 
       <motion.main
-        key={location.pathname} // Ensure re-animation on route change
+        key={location.pathname}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.1 }}
         style={{ 
           position: 'relative', 
           zIndex: 1, 
-          minHeight: 'calc(100vh - 73px)', // Adjust based on actual header height
-          padding: '2rem' // Consistent padding
+          minHeight: 'calc(100vh - 73px)',
+          padding: '2rem'
         }}
       >
-        <Outlet /> {/* Where child routes will render */}
+        <Outlet />
       </motion.main>
     </div>
   );

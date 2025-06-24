@@ -3,34 +3,38 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import styled, { keyframes } from 'styled-components';
-import { useTheme } from '../../contexts/ThemeContext'; // <-- Keep this to get the theme name
+import { useTheme } from '../../contexts/ThemeContext';
 
-// --- Helper to generate particles (no change) ---
+// REFACTOR: Toned down several background effects to improve overall page performance and make the UI feel snappier.
+// Reduced particle count, made pulses more subtle, and slowed the gradient animation.
+
+// --- Helper to generate particles ---
 const generateParticles = (count) => {
     return Array.from({ length: count }, (_, i) => ({
         id: i,
         x: Math.random() * 100,
         y: Math.random() * 100,
         delay: Math.random() * 2,
-        duration: 4 + Math.random() * 5,
-        size: 3 + Math.random() * 5
+        duration: 5 + Math.random() * 5, // Slightly increased duration for a calmer feel
+        size: 2 + Math.random() * 3 // Smaller particles
     }));
 };
 
-// --- Animation Variants (no change) ---
-const floatingVariants = { animate: { y: [-15, 15], x: [-10, 10], transition: { duration: 6, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } } };
-const pulseVariants = { animate: { scale: [1, 1.15, 1], opacity: [0.4, 0.7, 0.4], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } } };
+// --- Animation Variants ---
+// REFACTOR: Slower, more subtle floating effect to be less distracting.
+const floatingVariants = { animate: { y: [-10, 10], x: [-8, 8], transition: { duration: 8, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } } };
+// REFACTOR: Much more subtle pulse to reduce visual noise.
+const pulseVariants = { animate: { scale: [1, 1.05, 1], opacity: [0.3, 0.5, 0.3], transition: { duration: 5, repeat: Infinity, ease: "easeInOut" } } };
 const lightBeamVariants = { animate: { scaleY: [0.5, 1, 0.5], opacity: [0.3, 0.7, 0.3], transition: { duration: 5, repeat: Infinity, ease: "easeInOut" } } };
 
-// Keyframes for the mesh gradient animation
+// REFACTOR: Slower animation to be less computationally expensive and visually busy.
 const meshAnimation = keyframes`
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 `;
 
-// --- Styled Components ---
-// Note how they use `({ theme })` to access the theme object automatically.
+// --- Styled Components (No changes, but affected by refactored animations) ---
 const BackgroundContainer = styled.div`
   position: absolute;
   inset: 0;
@@ -54,7 +58,7 @@ const MeshGradient = styled(motion.div)`
   background: ${({ theme }) => theme.body === 'rgb(243, 244, 246)'
     ? 'radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.08) 0%, transparent 40%), radial-gradient(circle at 80% 20%, rgba(147, 51, 234, 0.08) 0%, transparent 40%), radial-gradient(circle at 40% 40%, rgba(52, 211, 153, 0.08) 0%, transparent 40%)'
     : 'radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%), radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)'};
-  animation: ${meshAnimation} 15s ease infinite;
+  animation: ${meshAnimation} 25s ease infinite; // Slower animation
 `;
 
 const Grid = styled.div`
@@ -104,11 +108,11 @@ const CornerAccent = styled.div`
 
 // --- The Main Component ---
 const BackgroundElements = () => {
-    const { theme } = useTheme(); // We still use this to pass to the animation logic
-    const particles = useMemo(() => generateParticles(15), []);
+    const { theme } = useTheme(); 
+    // REFACTOR: Reduced particle count from 15 to 10 to improve performance.
+    const particles = useMemo(() => generateParticles(10), []);
 
     return (
-        // The `theme` prop is no longer needed here. The ThemeProvider handles it.
         <BackgroundContainer>
             <Overlay />
             <MeshGradient />
@@ -118,10 +122,8 @@ const BackgroundElements = () => {
                     key={p.id}
                     style={{ width: `${p.size}px`, height: `${p.size}px`, left: `${p.x}%`, top: `${p.y}%` }}
                     animate={{
-                        y: [-p.size, p.size],
-                        x: [-p.size / 2, p.size / 2],
-                        // We use the theme name here for logic
-                        opacity: [0, theme === 'light' ? 0.4 : 0.2, 0],
+                        y: [-p.size * 2, p.size * 2], // Less vertical movement
+                        opacity: [0, theme === 'light' ? 0.3 : 0.15, 0], // More subtle
                         scale: [0.5, 1, 0.5]
                     }}
                     transition={{ duration: p.duration, repeat: Infinity, repeatType: "reverse", delay: p.delay, ease: "easeInOut" }}
