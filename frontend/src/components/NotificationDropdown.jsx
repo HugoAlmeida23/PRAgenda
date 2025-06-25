@@ -17,7 +17,6 @@ const NotificationDropdown = ({ onNavigate }) => {
   const queryClient = useQueryClient(); // Get query client instance
 
   // --- Contador de notificações não lidas ---
-  // Este já estava a funcionar corretamente com polling em segundo plano.
   const { data: unreadData } = useQuery({
     queryKey: ['unreadNotificationCount'],
     queryFn: async () => {
@@ -31,28 +30,26 @@ const NotificationDropdown = ({ onNavigate }) => {
   
   const unreadCount = unreadData?.unread_count || 0;
 
-  // --- LISTA DE NOTIFICAÇÕES (LÓGICA ALTERADA) ---
-  // A consulta agora corre em segundo plano, independentemente do dropdown estar aberto.
+  // --- LISTA DE NOTIFICAÇÕES ---
   const { data: notifications = [], isLoading: isLoadingList } = useQuery({
     queryKey: ['notificationList'],
     queryFn: async () => {
+      // Only fetch if the dropdown is open to save resources
+      if (!isOpen) return [];
       const response = await api.get('/workflow-notifications/', {
         params: { limit: 7, is_archived: false }
       });
       return response.data.results || response.data || [];
     },
-    // <-- ALTERAÇÃO PRINCIPAL: `enabled` foi removido (ou é `true` por defeito).
-    // A consulta agora corre assim que o componente é montado.
-    refetchInterval: 120000, // Atualiza a lista em segundo plano a cada 2 minutos.
-    refetchOnWindowFocus: true, // Atualiza quando o utilizador volta ao separador.
-    staleTime: 60000, // Considera os dados "frescos" por 1 minuto para evitar re-fetches desnecessários.
+    enabled: isOpen, // This is the key change to control fetching
+    refetchOnWindowFocus: true,
+    staleTime: 60000,
   });
 
   // Mutações para interagir com as notificações
   const markAsReadMutation = useMutation({
     mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/mark_as_read/`),
     onSuccess: () => {
-      // Invalida ambas as queries para obter dados frescos imediatamente após a ação.
       queryClient.invalidateQueries({ queryKey: ['notificationList'] });
       queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
     },
@@ -77,7 +74,6 @@ const NotificationDropdown = ({ onNavigate }) => {
     if (!notification.is_read) {
       markAsReadMutation.mutate(notification.id);
     }
-    // Lógica de navegação
     if (notification.notification_type === 'report_generated' && notification.metadata?.report_id) {
       navigate(`/reports?highlight=${notification.metadata.report_id}`);
     } else if (notification.task) {
@@ -159,6 +155,7 @@ const NotificationDropdown = ({ onNavigate }) => {
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
+            transition={{ duration: 0.2 }}
             style={{
               position: 'absolute',
               top: '-2px',
@@ -184,10 +181,10 @@ const NotificationDropdown = ({ onNavigate }) => {
       <AnimatePresence>
         {isOpen && (
            <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            initial={{ opacity: 0, y: 5, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
+            exit={{ opacity: 0, y: 5, scale: 0.95 }}
+            transition={{ duration: 0.15, ease: "easeOut" }} // --- FAST ANIMATION ---
             style={{
               position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem',
               width: '400px', maxHeight: '500px', background: 'rgba(20, 20, 30, 0.95)',

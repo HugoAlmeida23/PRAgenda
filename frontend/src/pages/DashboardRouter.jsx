@@ -1,8 +1,8 @@
 // src/pages/DashboardRouter.jsx
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
@@ -22,20 +22,17 @@ import { useTheme } from '../contexts/ThemeContext';
 import api from '../api';
 import LoadingIndicator from '../components/LoadingIndicator';
 
-
-// --- Animation Variants (REFACTORED for speed and smoothness) ---
+// --- Fast Animation Variants ---
 const containerVariants = {
     hidden: { opacity: 0 },
-    // REFACTOR: Faster stagger for a quicker page load feel.
-    visible: { opacity: 1, transition: { staggerChildren: 0.07 } }
+    visible: { opacity: 1, transition: { staggerChildren: 0.05, delay: 0.1 } } // Fast stagger
 };
 const itemVariants = {
-    // REFACTOR: Reduced y-axis movement and duration for a snappier entrance.
-    hidden: { opacity: 0, y: 15 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } }
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.2, ease: 'easeOut' } } // Fast easeOut
 };
 
-// --- Helper Functions (No changes) ---
+// --- Helper Functions (Unchanged) ---
 const formatMinutes = (minutes) => {
     if (typeof minutes !== 'number' || isNaN(minutes)) return '0h 0m';
     const hours = Math.floor(minutes / 60);
@@ -48,7 +45,7 @@ const formatDate = (dateString, options = { day: '2-digit', month: 'short' }) =>
 };
 
 // =================================================================================
-//  THEME-AWARE SUB-COMPONENTS
+//  THEME-AWARE SUB-COMPONENTS (WITH FAST ANIMATIONS)
 // =================================================================================
 
 const StatCard = ({ title, value, unit = '', icon: Icon, color, linkTo, isLoading }) => {
@@ -56,13 +53,11 @@ const StatCard = ({ title, value, unit = '', icon: Icon, color, linkTo, isLoadin
     const cardStyle = useMemo(() => ({
         textAlign: 'center', padding: '1.5rem', background: theme === 'light' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(255, 255, 255, 0.1)',
         backdropFilter: 'blur(12px)', borderRadius: '16px', border: `1px solid ${theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255, 255, 255, 0.15)'}`,
-        color: theme === 'light' ? '#1f2937' : 'white', textDecoration: 'none', display: 'block', transition: 'all 0.3s ease',
+        color: theme === 'light' ? '#1f2937' : 'white', textDecoration: 'none', display: 'block',
     }), [theme]);
     
-    // REFACTOR: Simplified hover effect. Animating box-shadow can be slow. 
-    // Sticking to transforms (scale, y) is much more performant.
     const cardContent = (
-        <motion.div style={cardStyle} variants={itemVariants} whileHover={{ scale: 1.03, y: -5, transition: { duration: 0.2, ease: 'easeOut' } }}>
+        <motion.div style={cardStyle} variants={itemVariants} whileHover={{ y: -4, transition: { duration: 0.15, ease: 'easeOut' } }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
                 <div style={{ padding: '0.75rem', backgroundColor: `rgba(${color.replace('rgb(','').replace(')','')}, 0.2)`, borderRadius: '12px', marginRight: '1rem' }}><Icon size={24} style={{ color }} /></div>
                 <h3 style={{ margin: 0, fontSize: '0.9rem', color: theme === 'light' ? '#4b5563' : 'rgba(255,255,255,0.8)', textAlign: 'left', flexGrow: 1 }}>{title}</h3>
@@ -73,7 +68,6 @@ const StatCard = ({ title, value, unit = '', icon: Icon, color, linkTo, isLoadin
     return linkTo ? <Link to={linkTo} style={{ textDecoration: 'none' }}>{cardContent}</Link> : cardContent;
 };
 
-// ... (rest of the file is unchanged, as its animations depend on the refactored variants above)
 const MyDaySection = ({ upcomingTasks = [], recentTimeEntries = [], isLoading }) => {
     const { theme } = useTheme();
     const sectionStyle = useMemo(() => ({
@@ -145,39 +139,34 @@ const FiscalSnapshotSection = ({ fiscalStats, upcomingFiscalDeadlines, permissio
     )
 };
 
-// ... (rest of file is identical)
 
 // =================================================================================
-//  NOVAS FUNÇÕES DE FETCH INDEPENDENTES
+//  FETCHING FUNCTIONS (UNCHANGED)
 // =================================================================================
 
 const fetchDashboardSummary = async () => {
     const res = await api.get('/dashboard-summary/');
     return res.data;
 };
-
 const fetchRecentTasks = async () => {
     const res = await api.get('/tasks/?limit=5&ordering=-created_at');
     return res.data.results || res.data;
 };
-
 const fetchRecentTimeEntries = async () => {
     const res = await api.get('/time-entries/?limit=5&ordering=-date');
     return res.data.results || res.data;
 };
-
 const fetchFiscalStats = async () => {
     const res = await api.get('/fiscal/stats/');
     return res.data;
 };
-
 const fetchUpcomingFiscalDeadlines = async () => {
     const res = await api.get('/fiscal/upcoming-deadlines/?days=7&limit=5');
     return res.data.results || res.data;
 };
 
 // =================================================================================
-//  MAIN DASHBOARD COMPONENT (REFATORADO)
+//  MAIN DASHBOARD COMPONENT (WITH FAST ANIMATIONS)
 // =================================================================================
 
 const DashboardRouter = () => {
@@ -185,12 +174,11 @@ const DashboardRouter = () => {
     const permissions = usePermissions();
     const queryClient = useQueryClient();
 
-    // --- QUERIES INDEPENDENTES ---
     const { data: summary, isLoading: isLoadingSummary, isError: isErrorSummary, error: errorSummary } = useQuery({
         queryKey: ['dashboardSummary'],
         queryFn: fetchDashboardSummary,
         enabled: permissions.initialized,
-        staleTime: 1 * 60 * 1000, // 1 minuto
+        staleTime: 1 * 60 * 1000,
     });
 
     const { data: recentTasks, isLoading: isLoadingTasks } = useQuery({
@@ -207,7 +195,6 @@ const DashboardRouter = () => {
         staleTime: 5 * 60 * 1000,
     });
 
-    // Queries que só correm para admins/utilizadores com permissão
     const { data: fiscalStats, isLoading: isLoadingFiscalStats } = useQuery({
         queryKey: ['dashboardFiscalStats'],
         queryFn: fetchFiscalStats,
@@ -236,7 +223,6 @@ const DashboardRouter = () => {
         return actions;
     }, [permissions]);
 
-    // --- GUARD CLAUSES ---
     if (permissions.loading) {
         return <LoadingIndicator />;
     }
@@ -248,14 +234,13 @@ const DashboardRouter = () => {
                 <h2 style={{ fontSize: '1.5rem',marginBottom:'2rem', color: theme === 'light' ? '#111827' : 'white' }}>
                     {errorSummary?.response?.data?.error || "Ocorreu um erro ao carregar o dashboard."}
                 </h2>
-                <button onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] })} style={{ padding: '0.75rem 1.5rem', cursor: 'pointer', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', color: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <motion.button onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] })} whileHover={{scale: 1.05}} whileTap={{scale: 0.95}} style={{ padding: '0.75rem 1.5rem', cursor: 'pointer', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', color: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <RefreshCw size={16} /> Tentar Novamente
-                </button>
+                </motion.button>
             </div>
         );
     }
     
-    // --- MAIN RENDER ---
     return (
         <div style={{ minHeight: '100vh', position: 'relative' }}>
             <BackgroundElements />
@@ -270,12 +255,12 @@ const DashboardRouter = () => {
                     <QuickActionsGrid actions={quickActions} />
                 </div>
 
-                <motion.div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
                     <StatCard title="Tempo Hoje" value={formatMinutes(summary?.time_tracked_today)} icon={Clock} color="rgb(52, 211, 153)" linkTo="/timeentry" isLoading={isLoadingSummary} />
                     <StatCard title="Tarefas Ativas" value={summary?.active_tasks} icon={Activity} color="rgb(59, 130, 246)" linkTo="/tasks" isLoading={isLoadingSummary} />
                     <StatCard title="Tarefas Atrasadas" value={summary?.overdue_tasks} icon={AlertTriangle} color="rgb(239, 68, 68)" linkTo="/tasks?overdue=true" isLoading={isLoadingSummary} />
                     {(permissions.isOrgAdmin || permissions.canViewProfitability) && <StatCard title="Rentabilidade Média" value={parseFloat(summary?.average_profit_margin || 0).toFixed(1)} unit="%" icon={DollarSign} color="rgb(147, 51, 234)" linkTo="/clientprofitability" isLoading={isLoadingSummary} />}
-                </motion.div>
+                </div>
 
                 <MyDaySection upcomingTasks={recentTasks || []} recentTimeEntries={recentTimeEntries || []} isLoading={isLoadingTasks || isLoadingTimeEntries} />
                 

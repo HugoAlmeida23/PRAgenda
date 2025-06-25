@@ -35,7 +35,6 @@ body {
   margin: 0;
   background: var(--background-color);
   color: var(--text-color);
-  height: 100vh;
 }
 
 /* --- Main App Layout Container --- */
@@ -46,36 +45,6 @@ body {
   overflow: hidden;
   background: var(--background-color);
   position: relative;
-}
-
-/* Add animated background elements */
-.app-layout::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: 
-    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
-    radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.3) 0%, transparent 50%);
-  animation: backgroundShift 15s ease-in-out infinite alternate;
-  pointer-events: none;
-  z-index: 0;
-}
-
-@keyframes backgroundShift {
-  0% {
-    background: 
-      radial-gradient(circle at 20% 80%, rgb(19, 41, 77) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgb(18, 7, 29) 0%, transparent 50%);
-  }
-  100% {
-    background: 
-      radial-gradient(circle at 80% 20%, rgb(19, 41, 77) 0%, transparent 50%),
-      radial-gradient(circle at 20% 80%, rgb(18, 7, 29) 0%, transparent 50%);
-  }
 }
 
 /* --- Top Header --- */
@@ -472,21 +441,6 @@ body {
   overflow: hidden;
 }
 
-.sidebar .nav-item a::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  background: linear-gradient(90deg, rgba(255,255,255,0.2), transparent);
-  transition: width 0.3s ease;
-}
-
-.sidebar .nav-item a:hover::before {
-  width: 100%;
-}
-
 .sidebar .nav-item a:hover {
   background: var(--hover-color);
   color: var(--text-color);
@@ -663,36 +617,6 @@ body {
   }
 }
 
-/* --- Enhanced Animations --- */
-@keyframes pulse {
-  0%, 100% { 
-    opacity: 1; 
-    transform: scale(1); 
-  }
-  50% { 
-    opacity: 0.8; 
-    transform: scale(1.05); 
-  }
-}
-
-@keyframes float {
-  0%, 100% { 
-    transform: translateY(0px); 
-  }
-  50% { 
-    transform: translateY(-10px); 
-  }
-}
-
-.brand img {
-  animation: float 6s ease-in-out infinite;
-}
-
-/* Loading state for profile */
-.user-profile.loading .avatar-circle {
-  animation: pulse 2s ease-in-out infinite;
-}
-
 /* Focus styles for accessibility */
 .sidebar-toggle:focus,
 .action-button:focus,
@@ -720,10 +644,4 @@ body {
     0 8px 32px rgba(0, 0, 0, 0.1),
     0 2px 8px rgba(0, 0, 0, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-/* Enhanced notification badge */
-.notification-badge {
-  animation: pulse 2s ease-in-out infinite;
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
 }

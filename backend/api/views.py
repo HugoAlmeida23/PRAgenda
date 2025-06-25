@@ -12,7 +12,7 @@ from rest_framework.response import Response
 from django.db.models import Q, Prefetch, F, Count, Sum, Avg, Exists, OuterRef, Subquery
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-
+from django.core.cache import cache
 from .models import (Organization, Client, TaskCategory, Task, TimeEntry, Expense, 
                     ClientProfitability, Profile, AutoTimeTracking, WorkflowStep,
                     WorkflowDefinition, TaskApproval, WorkflowNotification,NotificationTemplate, 
@@ -43,7 +43,7 @@ from .tasks import update_profitability_for_single_organization_task # Import th
 from dateutil.relativedelta import relativedelta
 from django.db.models.expressions import RawSQL # Make sure this is imported
 from .permissions import IsOrgAdmin, CanManageClients, CanManageTimeEntry
-
+from .tasks import generate_report_task # <-- Import the new task
 
 logger = logging.getLogger(__name__)
 
@@ -1761,8 +1761,6 @@ class WorkflowStepDetailViewSet(viewsets.ReadOnlyModelViewSet):
         
 class OrganizationViewSet(viewsets.ModelViewSet):
     serializer_class = OrganizationSerializer
-    # Apply the permission classes. `IsAuthenticated` runs first. 
-    # For detail views (retrieve, update, destroy), `IsOrgAdmin` will run its `has_object_permission` check.
     permission_classes = [IsAuthenticated, IsOrgAdmin]
     
     def get_queryset(self):
@@ -1973,86 +1971,96 @@ class OrganizationViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_summary(request):
-    user = request.user
-    try:
-        profile = Profile.objects.select_related('organization').get(user=user)
-        org_id = profile.organization_id if profile.organization else None
-
-        if not org_id:
-            return Response({'error': 'Utilizador não associado a uma organização.'}, status=400)
-
-        today = timezone.now().date()
-        seven_days_ago = today - timedelta(days=7)
-
-        # --- Base Querysets de acordo com as permissões ---
-        # Tarefas que o utilizador pode ver
-        tasks_qs = Task.objects.for_user(user)
-
-        # Entradas de tempo que o utilizador pode ver
-        time_entries_qs = TimeEntry.objects.for_user(user)
-
-        # 1. Stats de Tarefas
-        task_stats = tasks_qs.aggregate(
-            active_tasks=Count('id', filter=Q(status__in=['pending', 'in_progress'])),
-            overdue_tasks=Count('id', filter=Q(deadline__lt=today, status__in=['pending', 'in_progress'])),
-            today_tasks=Count('id', filter=Q(deadline=today, status__in=['pending', 'in_progress'])),
-            completed_tasks_week=Count('id', filter=Q(status='completed', completed_at__date__gte=seven_days_ago))
-        )
+        user = request.user
         
-        # 2. Stats de Tempo
-        time_stats = time_entries_qs.aggregate(
-            time_tracked_today=Sum('minutes_spent', filter=Q(date=today)),
-            time_tracked_week=Sum('minutes_spent', filter=Q(date__gte=seven_days_ago))
-        )
-
-        # 3. Stats de Clientes (Baseado nos clientes visíveis)
-        clients_qs = Client.objects.for_user(user)
-        client_stats = clients_qs.aggregate(
-            active_clients=Count('id', filter=Q(is_active=True))
-        )
+        # Create a unique cache key for this specific user's dashboard
+        cache_key = f'dashboard_summary_{user.id}'
         
-        # --- Compilar Resposta ---
-        response_data = {
-            'permissions': ProfileSerializer(profile).data,
-            'active_tasks': task_stats.get('active_tasks', 0) or 0,
-            'overdue_tasks': task_stats.get('overdue_tasks', 0) or 0,
-            'today_tasks': task_stats.get('today_tasks', 0) or 0,
-            'completed_tasks_week': task_stats.get('completed_tasks_week', 0) or 0,
-            'time_tracked_today': time_stats.get('time_tracked_today', 0) or 0,
-            'time_tracked_week': time_stats.get('time_tracked_week', 0) or 0,
-            'active_clients': client_stats.get('active_clients', 0) or 0,
-        }
+        # 1. Try to get data from the cache
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            logger.info(f"Serving dashboard summary for user {user.username} from CACHE.")
+            return Response(cached_data)
 
-        # 4. Stats de Rentabilidade e Workflow (só para admins, podem ser mais lentos)
-        if profile.is_org_admin or profile.can_view_organization_profitability:
-            profit_stats = ClientProfitability.objects.filter(
-                client__organization_id=org_id, 
-                year=today.year, 
-                month=today.month
-            ).aggregate(
-                unprofitable_count=Count('id', filter=Q(is_profitable=False)),
-                avg_margin=Avg('profit_margin')
+        logger.info(f"Cache miss for dashboard summary for user {user.username}. Computing now.")
+        
+        try:
+            profile = Profile.objects.select_related('organization').get(user=user)
+            org_id = profile.organization_id if profile.organization else None
+
+            if not org_id:
+                return Response({'error': 'Utilizador não associado a uma organização.'}, status=400)
+
+            today = timezone.now().date()
+            seven_days_ago = today - timedelta(days=7)
+
+            tasks_qs = Task.objects.for_user(user)
+            time_entries_qs = TimeEntry.objects.for_user(user)
+
+            task_stats = tasks_qs.aggregate(
+                active_tasks=Count('id', filter=Q(status__in=['pending', 'in_progress'])),
+                overdue_tasks=Count('id', filter=Q(deadline__lt=today, status__in=['pending', 'in_progress'])),
+                today_tasks=Count('id', filter=Q(deadline=today, status__in=['pending', 'in_progress'])),
+                completed_tasks_week=Count('id', filter=Q(status='completed', completed_at__date__gte=seven_days_ago))
             )
-            response_data['unprofitable_clients'] = profit_stats.get('unprofitable_count', 0) or 0
-            response_data['average_profit_margin'] = profit_stats.get('avg_margin', 0) or 0
+            
+            time_stats = time_entries_qs.aggregate(
+                time_tracked_today=Sum('minutes_spent', filter=Q(date=today)),
+                time_tracked_week=Sum('minutes_spent', filter=Q(date__gte=seven_days_ago))
+            )
+            
+            clients_qs = Client.objects.for_user(user)
+            client_stats = clients_qs.aggregate(
+                active_clients=Count('id', filter=Q(is_active=True))
+            )
+            
+            response_data = {
+                'permissions': ProfileSerializer(profile).data,
+                'active_tasks': task_stats.get('active_tasks', 0) or 0,
+                'overdue_tasks': task_stats.get('overdue_tasks', 0) or 0,
+                'today_tasks': task_stats.get('today_tasks', 0) or 0,
+                'completed_tasks_week': task_stats.get('completed_tasks_week', 0) or 0,
+                'time_tracked_today': time_stats.get('time_tracked_today', 0) or 0,
+                'time_tracked_week': time_stats.get('time_tracked_week', 0) or 0,
+                'active_clients': client_stats.get('active_clients', 0) or 0,
+            }
 
-        if profile.is_org_admin or profile.can_view_all_tasks:
-            response_data['tasks_needing_approval'] = tasks_qs.filter(
-                current_workflow_step__requires_approval=True
-            ).exclude(
-                approvals__workflow_step=F('current_workflow_step'),
-                approvals__approved=True
-            ).distinct().count()
+            if profile.is_org_admin or profile.can_view_organization_profitability:
+                # ... (your existing profitability logic)
+                profit_stats = ClientProfitability.objects.filter(
+                    client__organization_id=org_id, 
+                    year=today.year, 
+                    month=today.month
+                ).aggregate(
+                    unprofitable_count=Count('id', filter=Q(is_profitable=False)),
+                    avg_margin=Avg('profit_margin')
+                )
+                response_data['unprofitable_clients'] = profit_stats.get('unprofitable_count', 0) or 0
+                response_data['average_profit_margin'] = profit_stats.get('avg_margin', 0) or 0
 
-        return Response(response_data)
-        
-    except Profile.DoesNotExist:
-        if user.is_superuser:
-            return Response({'message': 'Superuser dashboard not implemented yet.'})
-        return Response({'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error(f"Erro no dashboard_summary: {e}", exc_info=True)
-        return Response({'error': 'Erro interno ao carregar o sumário do dashboard.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if profile.is_org_admin or profile.can_view_all_tasks:
+                # ... (your existing approval logic)
+                response_data['tasks_needing_approval'] = tasks_qs.filter(
+                    current_workflow_step__requires_approval=True
+                ).exclude(
+                    approvals__workflow_step=F('current_workflow_step'),
+                    approvals__approved=True
+                ).distinct().count()
+
+            # 2. Store the computed data in the cache before returning it.
+            #    Timeout is in seconds. 300 seconds = 5 minutes.
+            cache.set(cache_key, response_data, timeout=300)
+            
+            return Response(response_data)
+            
+        except Profile.DoesNotExist:
+            # ... (your existing exception handling)
+            if user.is_superuser:
+                return Response({'message': 'Superuser dashboard not implemented yet.'})
+            return Response({'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Erro no dashboard_summary: {e}", exc_info=True)
+            return Response({'error': 'Erro interno ao carregar o sumário do dashboard.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
     
 class WorkflowNotificationViewSet(viewsets.ModelViewSet):
     serializer_class = WorkflowNotificationSerializer
@@ -2371,8 +2379,8 @@ class WorkflowStepDetailViewSet(viewsets.ReadOnlyModelViewSet):
 # --- Certifique-se que o resto do seu views.py está correto e completo. ---
 # --- O código abaixo são os novos endpoints de verificação, caso precise deles aqui novamente. ---
 
-@api_view(['POST']) 
-@permission_classes([IsAuthenticated]) 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def check_deadlines_and_notify_view(request):
     try:
         profile = Profile.objects.select_related('organization').get(user=request.user)
@@ -3945,187 +3953,62 @@ from django.core.files.storage import default_storage
 import uuid
 import os
 
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def generate_report(request):
     """
-    Endpoint para gerar relatórios personalizados.
+    Endpoint to INITIATE a report generation.
+    This creates a report record and dispatches a Celery task to do the work.
     """
     try:
-        profile = Profile.objects.select_related('organization').get(user=request.user) # Added select_related
+        profile = Profile.objects.select_related('organization').get(user=request.user)
         
         if not (profile.is_org_admin or profile.can_export_reports or profile.can_create_custom_reports):
-            return Response(
-                {'error': 'Sem permissão para gerar relatórios'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return Response({'error': 'Sem permissão para gerar relatórios'}, status=status.HTTP_403_FORBIDDEN)
         
         organization = profile.organization
         if not organization:
-            return Response(
-                {'error': 'Utilizador não está associado a uma organização'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': 'Utilizador não está associado a uma organização'}, status=status.HTTP_400_BAD_REQUEST)
 
         report_type = request.data.get('report_type')
         report_format = request.data.get('format', 'pdf')
         report_name = request.data.get('name', f'Relatório {report_type}')
+        params = request.data.get('parameters', {})
         
         if not report_type:
             return Response({'error': 'Tipo de relatório é obrigatório'}, status=status.HTTP_400_BAD_REQUEST)
         
-        if report_format not in ['pdf', 'csv', 'xlsx']:
-            return Response({'error': 'Formato deve ser pdf, csv ou xlsx'}, status=status.HTTP_400_BAD_REQUEST)
+        # --- Create the initial report record with PENDING status ---
+        generated_report = GeneratedReport.objects.create(
+            name=report_name,
+            report_type=report_type,
+            report_format=report_format,
+            organization=organization,
+            generated_by=request.user,
+            parameters=params,
+            description=params.get('description', f'Relatório {report_type} gerado em {timezone.now().strftime("%d/%m/%Y")}'),
+            status='PENDING' # Initial status
+        )
         
-        params = request.data.get('parameters', {})
+        # --- Dispatch the Celery task ---
+        generate_report_task.delay(generated_report.id)
         
-        date_from_str = params.get('date_from')
-        date_to_str = params.get('date_to')
-        
-        date_from = None
-        if date_from_str:
-            try:
-                naive_date_from = datetime.strptime(date_from_str, '%Y-%m-%d')
-                date_from = timezone.make_aware(naive_date_from, timezone.get_default_timezone())
-            except ValueError:
-                return Response({'error': f"Formato inválido para date_from: {date_from_str}. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        logger.info(f"Dispatched report generation task for report {generated_report.id} by user {request.user.username}")
 
-        date_to = None
-        if date_to_str:
-            try:
-                naive_date_to = datetime.strptime(date_to_str, '%Y-%m-%d')
-                aware_date_to_start_of_day = timezone.make_aware(naive_date_to, timezone.get_default_timezone())
-                date_to = aware_date_to_start_of_day.replace(hour=23, minute=59, second=59, microsecond=999999)
-            except ValueError:
-                return Response({'error': f"Formato inválido para date_to: {date_to_str}. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        # --- Return an immediate response to the user ---
+        serializer = GeneratedReportSerializer(generated_report)
+        return Response({
+            'success': True,
+            'message': 'A geração do seu relatório foi iniciada. Será notificado quando estiver concluído.',
+            'report': serializer.data
+        }, status=status.HTTP_202_ACCEPTED) # 202 Accepted is the correct code for async operations
 
-        try:
-            file_buffer = None
-            content_type = None
-
-            if report_type == 'client_summary':
-                file_buffer, content_type = ReportGenerationService.generate_client_summary_report(
-                    organization=organization, client_ids=params.get('client_ids'),
-                    include_profitability=params.get('include_profitability', True),
-                    include_tasks=params.get('include_tasks', True),
-                    include_time_entries=params.get('include_time_entries', True),
-                    date_from=date_from, date_to=date_to, format_type=report_format
-                )
-            elif report_type == 'profitability_analysis':
-                file_buffer, content_type = ReportGenerationService.generate_profitability_analysis_report(
-                    organization=organization, client_ids=params.get('client_ids'),
-                    year=int(params['year']) if params.get('year') else None,
-                    month=int(params['month']) if params.get('month') else None,
-                    format_type=report_format
-                )
-            elif report_type == 'time_tracking_summary':
-                file_buffer, content_type = ReportGenerationService.generate_time_tracking_summary_report(
-                    organization=organization, user_ids=params.get('user_ids'),
-                    client_ids=params.get('client_ids'), date_from=date_from,
-                    date_to=date_to, format_type=report_format
-                )
-            elif report_type == 'task_performance':
-                 file_buffer, content_type = ReportGenerationService.generate_task_performance_report(
-                    organization=organization, date_from=date_from, date_to=date_to,
-                    client_ids=params.get('client_ids'), user_ids=params.get('user_ids'),
-                    category_ids=params.get('category_ids'), statuses=params.get('statuses'),
-                    format_type=report_format
-                )
-            elif report_type == 'custom_report':
-                # Still a placeholder, but ensure it returns a buffer and content_type
-                file_buffer, content_type = ReportGenerationService.generate_custom_report(
-                    organization=organization, params=params, format_type=report_format
-                )
-            else:
-                return Response({'error': 'Tipo de relatório não reconhecido'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            if not file_buffer or not content_type:
-                 raise ValueError("Serviço de geração de relatório não retornou arquivo ou tipo de conteúdo.")
-
-            file_extension = 'pdf' if report_format == 'pdf' else ('csv' if report_format == 'csv' else 'xlsx')
-            filename = f"reports/{organization.id}/{uuid.uuid4()}.{file_extension}"
-            
-            storage_url = "" # Initialize
-            if hasattr(settings, 'MEDIA_ROOT') and settings.DEBUG:
-                os.makedirs(os.path.join(settings.MEDIA_ROOT, 'reports', str(organization.id)), exist_ok=True)
-                file_path_on_disk = os.path.join(settings.MEDIA_ROOT, filename) # Use a different name for clarity
-                
-                with open(file_path_on_disk, 'wb') as f:
-                    f.write(file_buffer.getvalue())
-                
-                storage_url = request.build_absolute_uri(f"{settings.MEDIA_URL}{filename}")
-            else:
-                file_content = ContentFile(file_buffer.getvalue())
-                saved_file_path = default_storage.save(filename, file_content) # Use a different name
-                storage_url = default_storage.url(saved_file_path)
-            
-            file_size_kb = len(file_buffer.getvalue()) // 1024
-            
-            generated_report = GeneratedReport.objects.create(
-                name=report_name,
-                report_type=report_type,
-                report_format=report_format,
-                organization=organization,
-                generated_by=request.user,
-                parameters=params,
-                storage_url=storage_url,
-                file_size_kb=file_size_kb,
-                description=params.get('description', f'Relatório {report_type} gerado')
-            )
-            
-            # --- NOTIFY ORGANIZATION ADMINS ---
-            try:
-                admin_profiles = Profile.objects.filter(
-                    organization=organization, 
-                    is_org_admin=True,
-                    user__is_active=True # Ensure admin user is active
-                ).select_related('user', 'user__notification_settings') # Optimize
-                
-                for admin_profile in admin_profiles:
-                    # Check if admin has general email notifications enabled (optional, based on your NotificationSettings logic)
-                    should_notify_admin = True # Default to true
-                    try:
-                        if hasattr(admin_profile.user, 'notification_settings') and \
-                           not admin_profile.user.notification_settings.email_notifications_enabled: # Or a more specific setting for reports
-                            should_notify_admin = False
-                    except NotificationSettings.DoesNotExist:
-                        pass # No specific settings, proceed with notification
-
-                    if should_notify_admin:
-                        NotificationTemplateService.create_notification_with_template(
-                            user_target=admin_profile.user,
-                            notification_type='report_generated',
-                            report=generated_report, # Pass the report object
-                            created_by=request.user, # User who generated the report
-                            priority_override='low' # Or 'normal'
-                        )
-                        logger.info(f"Notificação de relatório gerado enviada para o admin {admin_profile.user.username}")
-            except Exception as notify_err:
-                logger.error(f"Erro ao notificar admins sobre relatório gerado {generated_report.id}: {notify_err}", exc_info=True)
-            # --- END NOTIFICATION LOGIC ---
-
-            serializer = GeneratedReportSerializer(generated_report)
-            logger.info(f"Relatório {report_type} gerado com sucesso para organização {organization.name} por {request.user.username}")
-            
-            return Response({
-                'success': True,
-                'message': 'Relatório gerado com sucesso',
-                'report': serializer.data
-            }, status=status.HTTP_201_CREATED)
-            
-        except Exception as generation_error:
-            logger.error(f"Erro na geração do relatório {report_type}: {generation_error}", exc_info=True)
-            return Response({
-                'error': f'Erro ao gerar relatório: {str(generation_error)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
     except Profile.DoesNotExist:
         return Response({'error': 'Perfil não encontrado'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erro geral no endpoint de geração de relatórios: {e}", exc_info=True)
-        return Response({
-            'error': f'Erro interno: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Erro ao iniciar a geração do relatório: {e}", exc_info=True)
+        return Response({'error': f'Erro interno: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

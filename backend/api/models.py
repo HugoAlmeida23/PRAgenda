@@ -13,6 +13,7 @@ import logging
 from django.db.models import OuterRef, Exists, Q
 from django.db.models.expressions import RawSQL
 
+
 class Organization(models.Model):
     """
     Representa uma organização ou empresa que utiliza o sistema.
@@ -27,8 +28,7 @@ class Organization(models.Model):
     logo = models.CharField(max_length=255, blank=True, null=True, verbose_name="Logo URL")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
-    is_active = models.BooleanField(default=True, verbose_name="Ativo")
-    
+    is_active = models.BooleanField(default=True, verbose_name="Ativo", db_index=True) # <-- ADD INDEX    
     # Campos adicionais que podem ser úteis
     subscription_plan = models.CharField(max_length=50, blank=True, null=True, verbose_name="Plano de Subscrição")
     max_users = models.PositiveIntegerField(default=5, verbose_name="Máximo de Utilizadores")
@@ -57,22 +57,36 @@ class GeneratedReport(models.Model):
         ('xlsx', 'Excel (XLSX)'),
     ]
 
+    REPORT_STATUS_CHOICES = [
+        ('PENDING', 'Pendente'),
+        ('IN_PROGRESS', 'Em Progresso'),
+        ('COMPLETED', 'Concluído'),
+        ('FAILED', 'Falhou'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, verbose_name="Nome do Relatório")
-    report_type = models.CharField(max_length=50, choices=REPORT_TYPE_CHOICES, verbose_name="Tipo de Relatório")
+    report_type = models.CharField(max_length=50, choices=REPORT_TYPE_CHOICES, verbose_name="Tipo de Relatório", db_index=True) # <-- ADD INDEX
     report_format = models.CharField(max_length=10, choices=REPORT_FORMAT_CHOICES, default='pdf', verbose_name="Formato")
     
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="generated_reports", verbose_name="Organização")
-    generated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_reports_meta", verbose_name="Gerado por") # blank=True se o sistema puder gerar
-    
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="generated_reports", verbose_name="Organização", db_index=True) # <-- ADD INDEX    
+    generated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_reports_meta", verbose_name="Gerado por", db_index=True) # <-- ADD INDEX    
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Data de Geração")
     parameters = models.JSONField(default=dict, blank=True, verbose_name="Parâmetros Usados")
     
-    storage_url = models.URLField(max_length=1024, verbose_name="URL de Armazenamento (Supabase)")
+    storage_url = models.URLField(max_length=1024, verbose_name="URL de Armazenamento", blank=True, null=True)
     file_size_kb = models.PositiveIntegerField(null=True, blank=True, verbose_name="Tamanho (KB)")
     
     description = models.TextField(blank=True, null=True, verbose_name="Descrição Curta")
     
+    status = models.CharField(
+        max_length=20,
+        choices=REPORT_STATUS_CHOICES,
+        default='PENDING',
+        db_index=True, # Add index for faster filtering
+        verbose_name="Status de Geração"
+    )
+
     class Meta:
         verbose_name = "Relatório Gerado"
         verbose_name_plural = "Relatórios Gerados"
@@ -80,8 +94,7 @@ class GeneratedReport(models.Model):
 
     def __str__(self):
         org_name = self.organization.name if self.organization else "N/A"
-        return f"{self.name} ({self.get_report_type_display()}) - {org_name}"
-
+        return f"{self.name} ({self.get_report_type_display()}) - {org_name} [{self.status}]" 
 
 def generate_four_digit_id():
     """Generate a random 4-digit number (between 1000 and 9999)"""
@@ -388,9 +401,9 @@ class Client(models.Model):
         on_delete=models.SET_NULL, 
         null=True, 
         related_name='clients_managed',
-        verbose_name="Gestor de Conta"
+        verbose_name="Gestor de Conta",
+        db_index=True # <-- ADD INDEX
     )
-
     #Informações Financeiras
     monthly_fee = models.DecimalField(
         max_digits=10, 
@@ -404,13 +417,14 @@ class Client(models.Model):
         Organization, 
         on_delete=models.CASCADE, 
         related_name='clients',
-        null=True,  # Definir como null=False após migração de dados existentes
-        verbose_name="Organização"
+        null=True,
+        verbose_name="Organização",
+        db_index=True # <-- ADD INDEX
     )
     
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
-    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo", db_index=True) # <-- ADD INDEX
     notes = models.TextField(blank=True, null=True, verbose_name="Observações")
     
     fiscal_tags = JSONField(
@@ -481,8 +495,6 @@ class WorkflowDefinition(models.Model):
     
     def __str__(self):
         return self.name
-
-
 
 class Expense(models.Model):
     """
@@ -608,10 +620,10 @@ class ClientProfitability(models.Model):
         self.is_profitable = self.profit > 0 if self.profit is not None else None
         return self.profit  
     
-
 # Add this at the end of your models.py file
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.core.cache import cache
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
@@ -657,8 +669,7 @@ class AutoTimeTracking(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {self.start_time}"
-    
-         
+            
 class WorkflowStep(models.Model):
     """
     Defines a step within a workflow.
@@ -753,7 +764,6 @@ class WorkflowStep(models.Model):
             for step in self.next_steps.all()
         ]
 
-
 class TaskApproval(models.Model):
     """
     Records approvals for workflow steps in tasks.
@@ -792,7 +802,6 @@ class TaskApproval(models.Model):
         status = "aprovado" if self.approved else "rejeitado"
         return f"Passo {self.workflow_step.name} {status} por {self.approved_by.username}"
 
-  
 class Task(models.Model):
     """
     Enhanced Task model with multi-user assignment support.
@@ -822,7 +831,8 @@ class Task(models.Model):
         Client, 
         on_delete=models.CASCADE, 
         related_name='tasks',
-        verbose_name="Cliente"
+        verbose_name="Cliente",
+        db_index=True # <-- ADD INDEX
     )
     category = models.ForeignKey(
         TaskCategory, 
@@ -832,17 +842,15 @@ class Task(models.Model):
         verbose_name="Categoria"
     )
     
-    # ENHANCED: Multiple user assignment options
-    # Primary responsible - the main person accountable for the task
     assigned_to = models.ForeignKey(
         User, 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True,
         related_name='primary_assigned_tasks',
-        verbose_name="Responsável Principal"
+        verbose_name="Responsável Principal",
+        db_index=True # <-- ADD INDEX
     )
-    
     # NEW: Additional collaborators who can work on the task
     collaborators = models.ManyToManyField(
         User,
@@ -857,7 +865,8 @@ class Task(models.Model):
         on_delete=models.SET_NULL, 
         null=True, 
         related_name='created_tasks',
-        verbose_name="Criado por"
+        verbose_name="Criado por",
+        db_index=True # <-- ADD INDEX
     )
     
     # Status e prioridade
@@ -865,7 +874,8 @@ class Task(models.Model):
         max_length=20, 
         choices=STATUS_CHOICES, 
         default='pending',
-        verbose_name="Status"
+        verbose_name="Status",
+        db_index=True # <-- ADD INDEX
     )
     priority = models.IntegerField(
         choices=PRIORITY_CHOICES, 
@@ -874,7 +884,7 @@ class Task(models.Model):
     )
     
     # Datas
-    deadline = models.DateTimeField(blank=True, null=True, verbose_name="Prazo")
+    deadline = models.DateTimeField(blank=True, null=True, verbose_name="Prazo", db_index=True) # <-- ADD INDEX
     estimated_time_minutes = models.PositiveIntegerField(
         blank=True, 
         null=True,
@@ -882,7 +892,7 @@ class Task(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
-    completed_at = models.DateTimeField(blank=True, null=True, verbose_name="Concluída em")
+    completed_at = models.DateTimeField(blank=True, null=True, verbose_name="Concluída em", db_index=True) # <-- ADD INDEX
     
     # Workflow fields
     workflow = models.ForeignKey(
@@ -891,7 +901,8 @@ class Task(models.Model):
         null=True,
         blank=True,
         related_name='tasks',
-        verbose_name="Fluxo de Trabalho"
+        verbose_name="Fluxo de Trabalho",
+        db_index=True # <-- ADD INDEX
     )
     current_workflow_step = models.ForeignKey(
         WorkflowStep,
@@ -899,7 +910,8 @@ class Task(models.Model):
         null=True,
         blank=True,
         related_name='current_tasks',
-        verbose_name="Passo Atual do Fluxo"
+        verbose_name="Passo Atual do Fluxo",
+        db_index=True # <-- ADD INDEX
     )
     workflow_step_assignments = models.JSONField(
         default=dict,
@@ -919,7 +931,8 @@ class Task(models.Model):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='generated_tasks',
-        verbose_name="Origem da Obrigação Fiscal"
+        verbose_name="Origem da Obrigação Fiscal",
+        db_index=True # <-- ADD INDEX
     )
     obligation_period_key = models.CharField(
         max_length=50, null=True, blank=True,
@@ -1184,13 +1197,14 @@ class FiscalObligationDefinition(models.Model):
         default=30, 
         verbose_name="Criar Tarefa X Dias Antes do Deadline"
     )
-    is_active = models.BooleanField(default=True, verbose_name="Definição Ativa")
-    organization = models.ForeignKey( # Uma definição pode ser global (org=null) ou específica de uma org
+    is_active = models.BooleanField(default=True, verbose_name="Definição Ativa", db_index=True) # <-- ADD INDEX
+    organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
         related_name='fiscal_obligation_definitions',
         verbose_name="Organização",
-        null=True, blank=True
+        null=True, blank=True,
+        db_index=True # <-- ADD INDEX
     )
 
     custom_rule_trigger_month = models.PositiveIntegerField(
@@ -1210,7 +1224,6 @@ class FiscalObligationDefinition(models.Model):
     def __str__(self):
         org_name = f" ({self.organization.name})" if self.organization else " (Global)"
         return f"{self.name}{org_name}"
-
 
 class WorkflowNotification(models.Model):
     """
@@ -1268,7 +1281,8 @@ class WorkflowNotification(models.Model):
     notification_type = models.CharField(
         max_length=50,
         choices=NOTIFICATION_TYPES,
-        verbose_name="Tipo de Notificação"
+        verbose_name="Tipo de Notificação",
+        db_index=True # <-- ADD INDEX
     )
     
     priority = models.CharField(
@@ -1281,8 +1295,8 @@ class WorkflowNotification(models.Model):
     title = models.CharField(max_length=200, verbose_name="Título")
     message = models.TextField(verbose_name="Mensagem")
     
-    is_read = models.BooleanField(default=False, verbose_name="Lida")
-    is_archived = models.BooleanField(default=False, verbose_name="Arquivada")
+    is_read = models.BooleanField(default=False, verbose_name="Lida", db_index=True) # <-- ADD INDEX
+    is_archived = models.BooleanField(default=False, verbose_name="Arquivada", db_index=True) # <-- ADD INDEX
     email_sent = models.BooleanField(default=False, verbose_name="Email Enviado")
     
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
@@ -1305,11 +1319,12 @@ class WorkflowNotification(models.Model):
     )
     
     class Meta:
-        verbose_name = "Notificação de Workflow" # Name can remain, it's a general notification model
+        # Your existing Meta class is already good.
+        verbose_name = "Notificação de Workflow"
         verbose_name_plural = "Notificações de Workflow"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['user', 'is_read']),
+            models.Index(fields=['user', 'is_read', 'is_archived']), # <-- Add 'is_archived' for better query performance on the main list
             models.Index(fields=['task', 'notification_type']),
             models.Index(fields=['created_at']),
         ]
@@ -1332,6 +1347,7 @@ class WorkflowNotification(models.Model):
     def archive(self):
         self.is_archived = True
         self.save(update_fields=['is_archived'])
+
 class TimeEntry(models.Model):
     """
     Registro de tempo gasto em tarefas para clientes.
@@ -1344,13 +1360,15 @@ class TimeEntry(models.Model):
         User, 
         on_delete=models.CASCADE, 
         related_name='time_entries',
-        verbose_name="Usuário"
+        verbose_name="Usuário",
+        db_index=True # <-- ADD INDEX
     )
     client = models.ForeignKey(
         Client, 
         on_delete=models.CASCADE, 
         related_name='time_entries',
-        verbose_name="Cliente"
+        verbose_name="Cliente",
+        db_index=True # <-- ADD INDEX
     )
     task = models.ForeignKey(
         Task, 
@@ -1358,7 +1376,8 @@ class TimeEntry(models.Model):
         null=True, 
         blank=True, 
         related_name='time_entries',
-        verbose_name="Tarefa"
+        verbose_name="Tarefa",
+        db_index=True # <-- ADD INDEX
     )
     category = models.ForeignKey(
         TaskCategory, 
@@ -1381,7 +1400,7 @@ class TimeEntry(models.Model):
     # Detalhes do tempo
     description = models.TextField(verbose_name="Descrição")
     minutes_spent = models.PositiveIntegerField(verbose_name="Minutos Gastos")
-    date = models.DateField(default=timezone.now, verbose_name="Data")
+    date = models.DateField(default=timezone.now, verbose_name="Data", db_index=True) # <-- ADD INDEX
     start_time = models.TimeField(null=True, blank=True, verbose_name="Hora de Início")
     end_time = models.TimeField(null=True, blank=True, verbose_name="Hora de Término")
     
@@ -1772,7 +1791,6 @@ class NotificationDigest(models.Model):
     
     def __str__(self):
         return f"Digest {self.digest_type} - {self.user.username} - {self.period_start.date()}"
-
 
 class FiscalSystemSettings(models.Model):
     """

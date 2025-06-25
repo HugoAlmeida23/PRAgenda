@@ -2,9 +2,36 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Loader2, Brain, Sparkles, AlertTriangle, HelpCircle, MessageSquare, User, RefreshCw } from 'lucide-react';
+import { Send, Loader2, Brain, Sparkles, AlertTriangle, HelpCircle, User, RefreshCw } from 'lucide-react';
 import BackgroundElements from '../components/HeroSection/BackgroundElements';
-import { usePermissions } from '../contexts/PermissionsContext';
+
+// Helper custom hook for polling the AI query result
+const usePollAIResult = (taskId, onComplete) => {
+    return useQuery({
+        queryKey: ['aiQueryStatus', taskId],
+        queryFn: async () => {
+            const { data } = await api.get(`/ai-advisor/query-status/${taskId}/`);
+            return data;
+        },
+        refetchInterval: (query) => {
+            if (query.state.data?.status === 'SUCCESS' || query.state.data?.status === 'FAILURE') {
+                return false; // Stop polling
+            }
+            return 3000; // Poll every 3 seconds
+        },
+        refetchOnWindowFocus: false,
+        enabled: !!taskId, // Only run this query if a taskId is provided
+        onSuccess: (data) => {
+            if (data.status === 'SUCCESS' || data.status === 'FAILURE') {
+                onComplete(data);
+            }
+        },
+        onError: (error) => {
+            onComplete({ status: 'FAILURE', result: error.response?.data?.error || 'Polling failed' });
+        }
+    });
+};
+
 
 const glassStyle = {
     background: 'rgba(255, 255, 255, 0.05)',
@@ -13,10 +40,6 @@ const glassStyle = {
     borderRadius: '16px',
     color: 'white',
 };
-
-// AIAdvisorPage.jsx
-
-// ... (imports and other code) ...
 
 const parseMarkdown = (text) => {
     if (!text) return '';
@@ -31,13 +54,12 @@ const parseMarkdown = (text) => {
             if (currentListType === 'ul') {
                 elements.push(<ul key={`ul-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ul>);
             } else if (currentListType === 'ol') {
-                elements.push(<ol key={`ol-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ol>);
+                elements.push(<ul key={`ol-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ul>);
             }
             listItems = [];
             currentListType = null;
         }
-    }
-    
+    };
 
     const parseInline = (lineContent, keyPrefix) => {
         const parts = [];
@@ -53,14 +75,9 @@ const parseMarkdown = (text) => {
         const allMatches = [];
         inlinePatterns.forEach(pattern => {
             let match;
-            const regex = new RegExp(pattern.regex.source, pattern.regex.flags); // Create new RegExp instance
+            const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
             while ((match = regex.exec(lineContent)) !== null) {
-                allMatches.push({
-                    start: match.index,
-                    end: match.index + match[0].length,
-                    content: match[1],
-                    component: pattern.component,
-                });
+                allMatches.push({ start: match.index, end: match.index + match[0].length, content: match[1], component: pattern.component });
             }
         });
 
@@ -93,53 +110,34 @@ const parseMarkdown = (text) => {
 
     lines.forEach((line, lineIndex) => {
         const key = `line-${lineIndex}`;
-
-        // Unordered list item
         const ulMatch = line.match(/^(\s*)(?:[-*+])\s+(.*)/);
         if (ulMatch) {
-            if (currentListType !== 'ul') {
-                flushList(); // Flush previous list if different type
-                currentListType = 'ul';
-            }
-            const [, , itemContent] = ulMatch;
-            listItems.push(<li key={`${key}-li`}>{parseInline(itemContent, `${key}-li-content`)}</li>);
-            return; // Continue to next line
+            if (currentListType !== 'ul') { flushList(); currentListType = 'ul'; }
+            listItems.push(<li key={`${key}-li`}>{parseInline(ulMatch[2], `${key}-li-content`)}</li>);
+            return;
         }
 
-        // Ordered list item
         const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/);
         if (olMatch) {
-            if (currentListType !== 'ol') {
-                flushList();
-                currentListType = 'ol';
-            }
-            const [, , , itemContent] = olMatch;
-            listItems.push(<li key={`${key}-li`}>{parseInline(itemContent, `${key}-li-content`)}</li>);
-            return; // Continue to next line
+            if (currentListType !== 'ol') { flushList(); currentListType = 'ol'; }
+            listItems.push(<li key={`${key}-li`}>{parseInline(olMatch[3], `${key}-li-content`)}</li>);
+            return;
         }
 
-        // If not a list item, flush any existing list
         flushList();
 
-        // Handle empty lines as paragraph breaks (or just breaks if many)
         if (!line.trim()) {
-            // Add a single break for an empty line, but avoid too many consecutive
             if (elements.length === 0 || elements[elements.length - 1].type !== 'br') {
-                 elements.push(<br key={key} />);
+                elements.push(<br key={key} />);
             }
         } else {
-            // Regular paragraph
             elements.push(<div key={key} style={{ marginBottom: '0.5rem' }}>{parseInline(line, `${key}-p-content`)}</div>);
         }
     });
 
-    // Flush any remaining list items at the end of the text
     flushList();
-
     return elements;
 };
-
-// ... (Rest of AIAdvisorPage.jsx) ...
 
 const SuggestedQuestions = ({ onQuestionClick, isLoading }) => {
     const questions = [
@@ -180,19 +178,82 @@ const SuggestedQuestions = ({ onQuestionClick, isLoading }) => {
     );
 };
 
-const AIAdvisorPage = () => {
-    console.log("AIAdvisorPage: Component rendered/re-rendered.");
+// ======================================================================
+// NEW COMPONENT: AIMessage
+// This component manages its own polling to get the final result.
+// ======================================================================
+const AIMessage = ({ message, onUpdateMessage }) => {
+    const { status, taskId, text } = message;
 
+    const handlePollingComplete = useCallback((data) => {
+        if (data.status === 'SUCCESS') {
+            onUpdateMessage(taskId, 'completed', data.result);
+        } else {
+            onUpdateMessage(taskId, 'error', data.error || 'An unknown error occurred.');
+        }
+    }, [taskId, onUpdateMessage]);
+
+    // This hook will only run if taskId is present and status is 'pending'
+    usePollAIResult(status === 'pending' ? taskId : null, handlePollingComplete);
+
+    const renderContent = () => {
+        if (status === 'pending') {
+            return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Consultor AI a processar o seu pedido...</span>
+                </div>
+            );
+        }
+        if (status === 'error') {
+            return (
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <AlertTriangle size={18} />
+                    <span>Erro: {text}</span>
+                 </div>
+            );
+        }
+        // If status is 'completed'
+        return parseMarkdown(text);
+    };
+
+    return (
+        <motion.div
+            key={message.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            layout
+            style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '0.75rem' }}
+        >
+            <Sparkles size={18} style={{ color: 'rgb(196, 181, 253)', marginRight: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
+            <div style={{
+                maxWidth: '75%',
+                padding: '0.75rem 1rem',
+                borderRadius: '12px 12px 12px 0',
+                background: status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                color: status === 'error' ? 'rgb(252, 165, 165)' : 'white',
+                border: status === 'error' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255,255,255,0.05)',
+                fontSize: '0.9rem',
+                lineHeight: '1.5',
+            }}>
+                {renderContent()}
+            </div>
+        </motion.div>
+    );
+};
+
+// ======================================================================
+// Main Component: AIAdvisorPage
+// ======================================================================
+const AIAdvisorPage = () => {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [sessionId, setSessionId] = useState(null);
     const [initialDataContext, setInitialDataContext] = useState(null);
     const [initializationStep, setInitializationStep] = useState('idle');
-    const [initialContextReady, setInitialContextReady] = useState(false);
-    const [shouldStartFetching, setShouldStartFetching] = useState(true);
     
     const messagesEndRef = useRef(null);
-    const queryClient = useQueryClient();
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -201,263 +262,126 @@ const AIAdvisorPage = () => {
     useEffect(scrollToBottom, [messages]);
 
     // 1. Fetch initial data to send to AI
-    const {
-        data: fetchedInitialData,
-        isLoading: isLoadingInitialContextQuery,
-        isError: isErrorInitialContextQuery,
-        error: errorInitialContextQuery,
-        isSuccess: isSuccessInitialContextQuery,
-        refetch: refetchInitialContext
-    } = useQuery({
+    const { refetch: refetchInitialContext } = useQuery({
         queryKey: ['aiAdvisorInitialData'],
-        queryFn: async () => {
-            console.log("AIAdvisorPage: queryFn - Starting fetch...");
+        queryFn: () => {
             setInitializationStep('fetching_context');
-            
-            try {
-                console.log("AIAdvisorPage: Making API call to /ai-advisor/get-initial-context/");
-                const response = await api.get('/ai-advisor/get-initial-context/');
-                console.log("AIAdvisorPage: API response received:", response);
-                console.log("AIAdvisorPage: Response data:", response.data);
-                console.log("AIAdvisorPage: Response status:", response.status);
-                return response.data;
-            } catch (error) {
-                console.error("AIAdvisorPage: API call failed:", error);
-                console.error("AIAdvisorPage: Error response:", error.response);
-                console.error("AIAdvisorPage: Error message:", error.message);
-                throw error;
-            }
+            return api.get('/ai-advisor/get-initial-context/');
         },
-        enabled: shouldStartFetching && !sessionId && !initialDataContext,
-        staleTime: 0,
-        cacheTime: 0,
-        retry: false, // Disable retry for easier debugging
-        refetchOnMount: true,
+        enabled: initializationStep === 'idle', // Only fetch on initial load or retry
+        retry: 1,
         refetchOnWindowFocus: false,
-        onSuccess: (data) => {
-            console.log("AIAdvisorPage: onSuccess triggered with data:", data);
-            console.log("AIAdvisorPage: Data type:", typeof data);
-            console.log("AIAdvisorPage: Data keys:", data ? Object.keys(data) : 'No data');
-            
-            if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-                console.log("AIAdvisorPage: Data validation passed, setting context");
-                setInitialDataContext(data);
-                setInitialContextReady(true);
-            } else {
-                console.warn("AIAdvisorPage: Data validation failed - empty or invalid data");
-                const errorMsg = "Dados iniciais vazios ou inválidos. Tente recarregar.";
-                setMessages(prev => [...prev, { 
-                    id: `err-${Date.now()}`, 
-                    text: errorMsg, 
-                    sender: 'ai', 
-                    type: 'error' 
-                }]);
-                setInitializationStep('error');
-            }
+        onSuccess: (response) => {
+            setInitialDataContext(response.data);
+            setInitializationStep('context_ready');
         },
         onError: (err) => {
-            console.error("AIAdvisorPage: onError triggered:", err);
-            console.error("AIAdvisorPage: Error details:", {
-                message: err.message,
-                status: err.response?.status,
-                statusText: err.response?.statusText,
-                data: err.response?.data
-            });
-            
-            let errorMsg = "Erro desconhecido";
-            if (err.response?.status === 403) {
-                errorMsg = "Sem permissão para aceder ao Consultor AI";
-            } else if (err.response?.status === 404) {
-                errorMsg = "Endpoint do Consultor AI não encontrado";
-            } else if (err.response?.status >= 500) {
-                errorMsg = "Erro interno do servidor";
-            } else if (err.response?.data?.error) {
-                errorMsg = err.response.data.error;
-            } else {
-                errorMsg = err.message || "Erro ao carregar dados iniciais";
-            }
-            
-            setMessages(prev => [...prev, { 
-                id: `err-${Date.now()}`, 
-                text: `Erro: ${errorMsg}`, 
-                sender: 'ai', 
-                type: 'error' 
-            }]);
+            const errorMsg = err.response?.data?.error || err.message || "Erro ao carregar dados iniciais.";
+            setMessages([{ id: `err-${Date.now()}`, text: errorMsg, sender: 'ai', status: 'error' }]);
             setInitializationStep('error');
         }
     });
 
-    // Debug effect to monitor query state and handle success manually
-    useEffect(() => {
-        console.log("AIAdvisorPage: Query state changed:", {
-            isLoading: isLoadingInitialContextQuery,
-            isError: isErrorInitialContextQuery,
-            isSuccess: isSuccessInitialContextQuery,
-            error: errorInitialContextQuery,
-            data: fetchedInitialData,
-            enabled: shouldStartFetching && !sessionId && !initialDataContext,
-            shouldStartFetching,
-            sessionId,
-            initialDataContext: !!initialDataContext
-        });
-
-        // Manual handling if onSuccess didn't trigger
-        if (isSuccessInitialContextQuery && fetchedInitialData && !initialDataContext) {
-            console.log("AIAdvisorPage: Manual success handling - fetchedInitialData:", fetchedInitialData);
-            console.log("AIAdvisorPage: fetchedInitialData type:", typeof fetchedInitialData);
-            console.log("AIAdvisorPage: fetchedInitialData keys:", fetchedInitialData ? Object.keys(fetchedInitialData) : 'No data');
-            
-            // Try to process the data manually
-            if (fetchedInitialData && typeof fetchedInitialData === 'object') {
-                const dataKeys = Object.keys(fetchedInitialData);
-                console.log("AIAdvisorPage: Manual processing - data has", dataKeys.length, "keys");
-                
-                if (dataKeys.length > 0) {
-                    console.log("AIAdvisorPage: Manual processing - setting initial data context");
-                    setInitialDataContext(fetchedInitialData);
-                    setInitialContextReady(true);
-                    setInitializationStep('ready_for_session'); // Different step to avoid confusion
-                } else {
-                    console.warn("AIAdvisorPage: Manual processing - data object is empty");
-                    setInitializationStep('error');
-                }
-            } else {
-                console.warn("AIAdvisorPage: Manual processing - data is not an object:", fetchedInitialData);
-                setInitializationStep('error');
-            }
-        }
-    }, [
-        isLoadingInitialContextQuery, 
-        isErrorInitialContextQuery, 
-        isSuccessInitialContextQuery, 
-        errorInitialContextQuery, 
-        fetchedInitialData,
-        shouldStartFetching,
-        sessionId,
-        initialDataContext
-    ]);
-
-    // 2. Start AI session mutation
-    const { mutate: startSession, isPending: isStartingSessionMutation, reset: resetStartSessionMutation } = useMutation({
-        mutationFn: (contextData) => {
-            console.log("AIAdvisorPage: startSessionMutation mutationFn - Context:", contextData);
-            if (!contextData || Object.keys(contextData).length === 0) {
-                throw new Error("Dados de contexto inválidos");
-            }
-            return api.post('/ai-advisor/start-session/', { context: contextData });
-        },
+    // 2. Start AI session mutation (when context is ready)
+    const { mutate: startSession, isPending: isStartingSession } = useMutation({
+        mutationFn: (contextData) => api.post('/ai-advisor/start-session/', { context: contextData }),
         onSuccess: (response) => {
             const data = response.data;
-            console.log("AIAdvisorPage: startSessionMutation onSuccess - AI session started:", data);
             setSessionId(data.session_id);
-            setMessages([{ id: `ai-${Date.now()}`, text: data.initial_message || "Olá! Sou o seu Consultor AI...", sender: 'ai' }]);
+            setMessages([{ id: `ai-${Date.now()}`, text: data.initial_message, sender: 'ai', status: 'completed' }]);
             setInitializationStep('ready');
         },
         onError: (err) => {
-            console.error("AIAdvisorPage: startSessionMutation onError - Error starting AI session:", err);
-            const errorMsg = err.response?.data?.error || err.message || "Erro desconhecido";
-            setMessages(prev => [...prev, { id: `err-${Date.now()}`, text: `Erro ao iniciar sessão: ${errorMsg}`, sender: 'ai', type: 'error' }]);
+            const errorMsg = err.response?.data?.error || err.message || "Erro desconhecido ao iniciar sessão.";
+            setMessages(prev => [...prev, { id: `err-${Date.now()}`, text: `Erro: ${errorMsg}`, sender: 'ai', status: 'error' }]);
             setInitializationStep('error');
         }
     });
 
-    // Effect to trigger session start once initial context is ready
+    // Effect to trigger session start automatically
     useEffect(() => {
-        console.log("AIAdvisorPage: useEffect [session start check] - State:", { 
-            initialContextReady, 
-            initialDataContext: initialDataContext ? "Data Loaded" : "No Data", 
-            sessionId, 
-            initializationStep, 
-            isStartingSessionMutation 
-        });
-
-        if (initialContextReady && initialDataContext && !sessionId && 
-            (initializationStep === 'ready_for_session' || initializationStep === 'fetching_context') &&
-            initializationStep !== 'starting_session' && 
-            initializationStep !== 'ready' &&          
-            initializationStep !== 'error' &&          
-            !isStartingSessionMutation) {
-            
-            console.log("AIAdvisorPage: useEffect - Starting session...");
+        if (initializationStep === 'context_ready' && initialDataContext) {
             setInitializationStep('starting_session');
             startSession(initialDataContext);
         }
-    }, [initialContextReady, initialDataContext, sessionId, initializationStep, startSession, isStartingSessionMutation]);
+    }, [initializationStep, initialDataContext, startSession]);
 
-    // 3. Send query mutation
-    const { mutate: sendQuery, isPending: isSendingQuery } = useMutation({
-        mutationFn: (queryData) => {
-            console.log("AIAdvisorPage: sendQueryMutation mutationFn - Sending query:", queryData);
-            return api.post('/ai-advisor/query/', queryData);
+    // 3. Start the AI query task (asynchronous)
+    const { mutate: startQueryTask, isPending: isStartingQueryTask } = useMutation({
+        mutationFn: (queryData) => api.post('/ai-advisor/start-query/', queryData),
+        onSuccess: (response, variables) => {
+            const { task_id } = response.data;
+            const { placeholderId } = variables;
+            // Update placeholder with the real task ID to trigger polling
+            setMessages(prev =>
+                prev.map(msg =>
+                    msg.id === placeholderId ? { ...msg, taskId: task_id } : msg
+                )
+            );
         },
-        onSuccess: (response) => {
-            const data = response.data;
-            console.log("AIAdvisorPage: sendQueryMutation onSuccess - Received AI response:", data);
-            setMessages(prev => [...prev, { id: `ai-${Date.now()}`, text: data.response, sender: 'ai' }]);
-        },
-        onError: (err) => {
-            console.error("AIAdvisorPage: sendQueryMutation onError - Error sending query to AI:", err);
-            const errorMessage = err?.response?.data?.error || err?.message || "Erro desconhecido.";
-            setMessages(prev => [...prev, { id: `err-${Date.now()}`, text: `Erro ao processar sua pergunta: ${errorMessage}`, sender: 'ai', type: 'error' }]);
+        onError: (err, variables) => {
+            const { placeholderId } = variables;
+            const errorMessage = err.response?.data?.error || 'Não foi possível enviar o seu pedido.';
+            setMessages(prev =>
+                prev.map(msg =>
+                    msg.id === placeholderId ? { ...msg, status: 'error', text: errorMessage } : msg
+                )
+            );
         }
     });
+    
+    // Callback to update a message in the state (e.g., when polling finishes)
+    const handleUpdateMessage = useCallback((taskId, newStatus, newText) => {
+        setMessages(prev =>
+            prev.map(msg =>
+                msg.taskId === taskId ? { ...msg, status: newStatus, text: newText } : msg
+            )
+        );
+    }, []);
 
     const handleSendMessage = (e, questionOverride = null) => {
         if (e) e.preventDefault();
         const queryText = questionOverride || inputValue.trim();
-        console.log("AIAdvisorPage: handleSendMessage - Attempting to send:", queryText);
+        const isAiBusy = messages.some(m => m.sender === 'ai' && m.status === 'pending');
 
-        if (!queryText || !sessionId) {
-            console.warn("AIAdvisorPage: handleSendMessage - Aborted: No query text or session ID.", { queryText, sessionId });
-            return;
-        }
-        if (isSendingQuery || initializationStep !== 'ready') {
-            console.warn("AIAdvisorPage: handleSendMessage - Aborted: AI busy or not ready.", { isSendingQuery, initializationStep });
+        if (!queryText || !sessionId || isAiBusy || isStartingQueryTask) {
             return;
         }
 
-        setMessages(prev => [...prev, { id: `user-${Date.now()}`, text: queryText, sender: 'user' }]);
+        const userMessage = { id: `user-${Date.now()}`, text: queryText, sender: 'user' };
+        const aiPlaceholderId = `ai-placeholder-${Date.now()}`;
+        const aiPlaceholderMessage = {
+            id: aiPlaceholderId,
+            sender: 'ai',
+            status: 'pending',
+            text: 'Iniciando...',
+            taskId: null
+        };
+
+        setMessages(prev => [...prev, userMessage, aiPlaceholderMessage]);
         setInputValue('');
-        sendQuery({ session_id: sessionId, query: queryText });
+        startQueryTask({ session_id: sessionId, query: queryText, placeholderId: aiPlaceholderId });
     };
     
     const handleRetryInitialization = () => {
-        console.log("AIAdvisorPage: handleRetryInitialization - Retrying...");
         setMessages([]);
         setInitialDataContext(null);
         setSessionId(null);
         setInitializationStep('idle');
-        setInitialContextReady(false);
-        resetStartSessionMutation();
-        // Trigger refetch immediately
-        refetchInitialContext();
+        // This will trigger the useQuery to run again due to `enabled: initializationStep === 'idle'`
     };
     
-    // Determine UI loading/disabled states
-    const isChatInterfaceDisabled = !sessionId || initializationStep !== 'ready' || isSendingQuery;
-
-    console.log("AIAdvisorPage: Current State:", { 
-        initializationStep, 
-        sessionId, 
-        isLoadingInitialContextQuery, 
-        isStartingSessionMutation, 
-        isSendingQuery, 
-        isChatInterfaceDisabled,
-        shouldStartFetching
-    });
+    const isAiBusy = messages.some(m => m.sender === 'ai' && m.status === 'pending');
+    const isChatInterfaceDisabled = initializationStep !== 'ready' || isAiBusy;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', color: 'white', position: 'relative' }}>
             <BackgroundElements />
             <div style={{
                 ...glassStyle,
-                margin: '1.5rem',
-                padding: '1.5rem',
-                flexGrow: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                position: 'relative',
-                zIndex: 1,
+                margin: '1.5rem', padding: '1.5rem', flexGrow: 1,
+                display: 'flex', flexDirection: 'column',
+                position: 'relative', zIndex: 1,
                 background: 'rgba(15, 20, 30, 0.85)',
                 border: '1px solid rgba(255,255,255,0.1)'
             }}>
@@ -468,167 +392,83 @@ const AIAdvisorPage = () => {
                         </motion.div>
                         <div>
                             <h1 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>Consultor AI TarefAI</h1>
-                            <p style={{ color: 'rgba(255,255,255,0.7)', margin: 0, fontSize: '0.875rem' }}>
-                                Seu assistente inteligente para otimização de negócios.
-                            </p>
+                            <p style={{ color: 'rgba(255,255,255,0.7)', margin: 0, fontSize: '0.875rem' }}>Seu assistente inteligente para otimização de negócios.</p>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {initializationStep === 'error' && (
-                             <motion.button
-                                onClick={handleRetryInitialization}
-                                style={{...glassStyle, padding: '0.5rem 1rem', background: 'rgba(251, 191, 36, 0.2)', border: '1px solid rgba(251, 191, 36, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
-                                whileHover={{ background: 'rgba(251, 191, 36, 0.3)'}}
-                                whileTap={{ scale: 0.95 }}
-                            >
-                                <RefreshCw size={16} /> Tentar Novamente
-                            </motion.button>
-                        )}
-                        <motion.button
-                            onClick={() => {
-                                console.log("=== DEBUG INFO ===");
-                                console.log("Current State:", {
-                                    initializationStep,
-                                    sessionId,
-                                    initialDataContext: !!initialDataContext,
-                                    initialContextReady,
-                                    shouldStartFetching,
-                                    isLoadingInitialContextQuery,
-                                    isErrorInitialContextQuery,
-                                    errorInitialContextQuery,
-                                    isSuccessInitialContextQuery
-                                });
-                                console.log("Messages:", messages);
-                                console.log("=== END DEBUG ===");
-                            }}
-                            style={{...glassStyle, padding: '0.5rem 1rem', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
-                            whileHover={{ background: 'rgba(59, 130, 246, 0.3)'}}
+                    {initializationStep === 'error' && (
+                         <motion.button
+                            onClick={handleRetryInitialization}
+                            style={{...glassStyle, padding: '0.5rem 1rem', background: 'rgba(251, 191, 36, 0.2)', border: '1px solid rgba(251, 191, 36, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
+                            whileHover={{ background: 'rgba(251, 191, 36, 0.3)'}}
                             whileTap={{ scale: 0.95 }}
                         >
-                            🔍 Debug
+                            <RefreshCw size={16} /> Tentar Novamente
                         </motion.button>
-                    </div>
+                    )}
                 </header>
 
                 <div style={{ flexGrow: 1, overflowY: 'auto', marginBottom: '1rem', paddingRight: '0.5rem' }} className="custom-scrollbar-dark">
                     <AnimatePresence>
-                        {messages.map((msg) => (
-                            <motion.div
-                                key={msg.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0 }}
-                                layout
-                                style={{
-                                    display: 'flex',
-                                    justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                                    marginBottom: '0.75rem',
-                                }}
-                            >
-                                {msg.sender === 'ai' && (
-                                    <Sparkles size={18} style={{ color: 'rgb(196, 181, 253)', marginRight: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
-                                )}
-                                <div style={{
-                                    maxWidth: '75%',
-                                    padding: '0.75rem 1rem',
-                                    borderRadius: msg.sender === 'user' ? '12px 12px 0 12px' : '12px 12px 12px 0',
-                                    background: msg.sender === 'user'
-                                        ? 'linear-gradient(135deg, rgb(59, 130, 246), rgb(96, 165, 250))'
-                                        : (msg.type === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.1)'),
-                                    color: msg.type === 'error' ? 'rgb(252, 165, 165)' : 'white',
-                                    border: msg.type === 'error' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(255,255,255,0.05)',
-                                    fontSize: '0.9rem',
-                                    lineHeight: '1.5',
-                                    boxShadow: msg.sender === 'user' ? '0 2px 5px rgba(0,0,0,0.2)' : '0 2px 5px rgba(0,0,0,0.1)'
-                                }}>
-                                    {msg.type === 'error' && <AlertTriangle size={16} style={{ marginRight: '0.5rem', display: 'inline-block', verticalAlign: 'middle' }} />}
-                                    {msg.sender === 'ai' ? parseMarkdown(msg.text) : msg.text}
-                                </div>
-                                {msg.sender === 'user' && (
-                                     <User size={18} style={{ color: 'rgb(96, 165, 250)', marginLeft: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
-                                )}
-                            </motion.div>
-                        ))}
+                        {messages.map((msg) => 
+                            msg.sender === 'user' ? (
+                                <motion.div
+                                    key={msg.id}
+                                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} layout
+                                    style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}
+                                >
+                                    <div style={{
+                                        maxWidth: '75%', padding: '0.75rem 1rem', borderRadius: '12px 12px 0 12px',
+                                        background: 'linear-gradient(135deg, rgb(59, 130, 246), rgb(96, 165, 250))',
+                                        color: 'white', fontSize: '0.9rem', lineHeight: '1.5',
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+                                    }}>
+                                        {msg.text}
+                                    </div>
+                                    <User size={18} style={{ color: 'rgb(96, 165, 250)', marginLeft: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
+                                </motion.div>
+                            ) : (
+                                <AIMessage key={msg.id} message={msg} onUpdateMessage={handleUpdateMessage} />
+                            )
+                        )}
                     </AnimatePresence>
                     
-                    {/* Loading Indicators */}
                     {initializationStep === 'fetching_context' && (
-                        <motion.div layout className="ai-message-loading">
-                            <Loader2 className="animate-spin" size={18} />
-                            <div>
-                                <div>A recolher e analisar dados do seu escritório...</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.25rem' }}>
-                                    Query state: {isLoadingInitialContextQuery ? 'Loading' : isErrorInitialContextQuery ? 'Error' : isSuccessInitialContextQuery ? 'Success' : 'Idle'}
-                                </div>
-                            </div>
-                        </motion.div>
+                        <motion.div layout className="ai-message-loading"><Loader2 className="animate-spin" size={18} />A recolher e analisar dados do seu escritório...</motion.div>
                     )}
                     {initializationStep === 'starting_session' && (
-                        <motion.div layout className="ai-message-loading">
-                            <Sparkles size={18} />
-                            A iniciar sessão com o Consultor AI e a preparar os seus insights...
-                        </motion.div>
-                    )}
-                     {isSendingQuery && (
-                        <motion.div layout className="ai-message-loading">
-                            <Sparkles size={18} />
-                            Consultor AI a processar o seu pedido...
-                        </motion.div>
+                        <motion.div layout className="ai-message-loading"><Sparkles size={18} />A iniciar sessão com o Consultor AI e a preparar os seus insights...</motion.div>
                     )}
                     <div ref={messagesEndRef} />
                 </div>
                 
-                {initializationStep === 'ready' && <SuggestedQuestions onQuestionClick={(q) => handleSendMessage(null, q)} isLoading={isSendingQuery} />}
+                {initializationStep === 'ready' && <SuggestedQuestions onQuestionClick={(q) => handleSendMessage(null, q)} isLoading={isAiBusy} />}
 
-                <div style={{ display: 'flex', gap: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
                     <input
-                        type="text"
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyPress={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSendMessage(e);
-                            }
-                        }}
+                        type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
                         placeholder={initializationStep !== 'ready' ? "Aguarde o Consultor AI..." : "Faça uma pergunta sobre seus dados..."}
                         disabled={isChatInterfaceDisabled}
                         style={{
-                            flexGrow: 1,
-                            padding: '0.85rem 1.15rem',
-                            background: 'rgba(0,0,0,0.25)',
-                            border: '1px solid rgba(255,255,255,0.15)',
-                            borderRadius: '10px',
-                            color: 'white',
-                            fontSize: '0.95rem',
-                            outline: 'none',
+                            flexGrow: 1, padding: '0.85rem 1.15rem', background: 'rgba(0,0,0,0.25)',
+                            border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px',
+                            color: 'white', fontSize: '0.95rem', outline: 'none',
                             opacity: isChatInterfaceDisabled ? 0.6 : 1,
                         }}
                     />
                     <motion.button
-                        onClick={handleSendMessage}
-                        disabled={isChatInterfaceDisabled || !inputValue.trim()}
+                        type="submit" disabled={isChatInterfaceDisabled || !inputValue.trim()}
                         style={{
-                            padding: '0.85rem 1.5rem',
-                            background: 'linear-gradient(135deg, rgb(59, 130, 246), rgb(96, 165, 250))',
-                            border: 'none',
-                            borderRadius: '10px',
-                            color: 'white',
-                            fontSize: '0.95rem',
-                            fontWeight: '500',
-                            cursor: (isChatInterfaceDisabled || !inputValue.trim()) ? 'not-allowed' : 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
+                            padding: '0.85rem 1.5rem', background: 'linear-gradient(135deg, rgb(59, 130, 246), rgb(96, 165, 250))',
+                            border: 'none', borderRadius: '10px', color: 'white', fontSize: '0.95rem',
+                            fontWeight: '500', cursor: (isChatInterfaceDisabled || !inputValue.trim()) ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '0.5rem',
                             opacity: (isChatInterfaceDisabled || !inputValue.trim()) ? 0.6 : 1,
                         }}
-                        whileHover={{ filter: 'brightness(1.15)' }}
-                        whileTap={{ scale: 0.97 }}
+                        whileHover={{ filter: 'brightness(1.15)' }} whileTap={{ scale: 0.97 }}
                     >
-                        {isSendingQuery ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                        Enviar
+                        <Send size={18} /> Enviar
                     </motion.button>
-                </div>
+                </form>
             </div>
              <style jsx global>{`
                 .custom-scrollbar-dark::-webkit-scrollbar { width: 6px; }
@@ -636,35 +476,13 @@ const AIAdvisorPage = () => {
                 .custom-scrollbar-dark::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
                 .custom-scrollbar-dark::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
                 .ai-message-loading {
-                    display: flex;
-                    align-items: center;
-                    gap: 0.5rem;
-                    padding: 0.75rem 1rem;
-                    background: rgba(255,255,255,0.05);
-                    border-radius: 12px;
-                    font-size: 0.9rem;
-                    color: rgba(255,255,255,0.6);
-                    margin-bottom: 0.75rem;
+                    display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem;
+                    background: rgba(255,255,255,0.05); border-radius: 12px;
+                    font-size: 0.9rem; color: rgba(255,255,255,0.6); margin-bottom: 0.75rem;
                 }
-                .ai-message-loading > svg {
-                    animation: spin 1.5s linear infinite;
-                    color: rgba(255,255,255,0.6);
-                }
-                .ai-message-loading .animate-pulse > svg {
-                     animation: pulseColor 2s infinite ease-in-out;
-                }
-
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-                @keyframes pulseColor {
-                    0%, 100% { color: rgb(196, 181, 253); }
-                    50% { color: rgb(147, 51, 234); }
-                }
-                .animate-spin {
-                    animation: spin 1s linear infinite;
-                }
+                .ai-message-loading > svg { animation: spin 1.5s linear infinite; color: rgba(255,255,255,0.6); }
+                .animate-spin { animation: spin 1s linear infinite; }
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             `}</style>
         </div>
     );

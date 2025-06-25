@@ -4,9 +4,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { ArrowUpRight, Zap, Sparkles } from 'lucide-react';
-import { Clock, CheckSquare, AlertTriangle, Users, Mic } from 'lucide-react';
 
-// --- Styled Components (No changes) ---
 const PanelContainer = styled(motion.div)`
   background: ${({ theme }) => theme.quickActions.bg};
   backdrop-filter: blur(12px);
@@ -33,7 +31,7 @@ const HeaderLeft = styled.div`
   gap: 0.75rem;
 `;
 
-const IconContainer = styled(motion.div)`
+const IconContainer = styled.div`
   padding: 0.5rem;
   background-color: ${({ theme }) => theme.quickActions.iconContainer};
   border-radius: 12px;
@@ -67,16 +65,10 @@ const ActionCard = styled(motion.div)`
   min-height: 96px;
   border: 1px solid ${({ theme }) => theme.quickActions.actionCardBorder};
   cursor: pointer;
-  transition: all 0.2s ease-in-out;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  
-  &:hover {
-    border-color: ${({ theme }) => theme.quickActions.actionCardHoverBorder};
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-  }
 `;
 
 const ActionContent = styled.div`
@@ -94,7 +86,7 @@ const ActionTop = styled.div`
   justify-content: space-between;
 `;
 
-const ActionIconContainer = styled(motion.div)`
+const ActionIconContainer = styled.div`
   padding: 0.5rem;
   border-radius: 8px;
   display: flex;
@@ -116,34 +108,17 @@ const ActionSublabel = styled.p`
   margin: 0;
 `;
 
-const ShineEffect = styled(motion.div)`
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.1), transparent);
-    border-radius: 12px;
-    pointer-events: none;
-`;
-
-// --- Main Component ---
-const QuickActionsGrid = ({ actions = [], dashboardData }) => {
+const QuickActionsGrid = ({ actions = [] }) => {
     const [hoveredAction, setHoveredAction] = useState(null);
 
-    // REFACTOR: Faster stagger and simpler child animation for a snappier grid appearance.
     const containerVariants = {
         hidden: { opacity: 0 },
-        visible: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.1 } }
+        visible: { opacity: 1, transition: { staggerChildren: 0.05 } }
     };
     
-    // REFACTOR: Replaced spring with a simple, fast easeOut transition.
     const actionVariants = {
-        hidden: { y: 15, opacity: 0 },
-        visible: { y: 0, opacity: 1, transition: { duration: 0.3, ease: 'easeOut' } }
-    };
-
-    const handleActionClick = (action) => {
-        if (action.type === 'voice_entry' || action.type === 'time_entry_voice') {
-            alert(`Voice entry for: ${action.label}`);
-        }
+        hidden: { y: 10, opacity: 0 },
+        visible: { y: 0, opacity: 1, transition: { duration: 0.2, ease: 'easeOut' } }
     };
 
     const getActionContent = (action) => {
@@ -155,15 +130,14 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
                 onHoverStart={() => setHoveredAction(action.type)}
                 onHoverEnd={() => setHoveredAction(null)}
             >
-                {/* REFACTOR: Changed hover to a direct prop for simplicity and responsiveness. */}
-                <ActionCard whileHover={{ scale: 1.03, y: -4, transition: { duration: 0.2, ease: "easeOut" } }} whileTap={{ scale: 0.97 }}>
-                    <div style={{ position: 'absolute', inset: 0, backgroundColor: action.color || 'rgba(255,255,255,0.1)', opacity: hoveredAction === action.type ? 0.15 : 0, borderRadius: '12px', transition: 'opacity 0.3s' }} />
+                <ActionCard whileHover={{ y: -4, transition: { duration: 0.15, ease: "easeOut" } }} whileTap={{ scale: 0.97 }}>
+                    <div style={{ position: 'absolute', inset: 0, backgroundColor: action.color || 'rgba(255,255,255,0.1)', opacity: hoveredAction === action.type ? 0.15 : 0, borderRadius: '12px', transition: 'opacity 0.2s' }} />
                     <ActionContent>
                         <ActionTop>
                             <ActionIconContainer color={action.color}>
                                 {ActionIconComponent && <ActionIconComponent style={{ color: 'white' }} size={16} />}
                             </ActionIconContainer>
-                            <motion.div initial={{ opacity: 0, scale: 0 }} animate={{ opacity: hoveredAction === action.type ? 1 : 0, scale: hoveredAction === action.type ? 1 : 0 }} transition={{ duration: 0.2 }}>
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: hoveredAction === action.type ? 1 : 0 }} transition={{ duration: 0.2 }}>
                                 <ArrowUpRight style={{ opacity: 0.6 }} size={14} />
                             </motion.div>
                         </ActionTop>
@@ -172,7 +146,6 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
                             <ActionSublabel>{action.subtitle}</ActionSublabel>
                         </div>
                     </ActionContent>
-                    <ShineEffect initial={{ x: '-100%' }} animate={{ x: hoveredAction === action.type ? '100%' : '-100%' }} transition={{ duration: 0.6, ease: 'linear' }} />
                 </ActionCard>
             </motion.div>
         );
@@ -212,7 +185,7 @@ const QuickActionsGrid = ({ actions = [], dashboardData }) => {
                                 {getActionContent(action)}
                             </Link>
                         ) : (
-                            <div onClick={() => handleActionClick(action)} style={{ height: '100%', cursor: 'pointer' }}>
+                            <div onClick={() => {}} style={{ height: '100%', cursor: 'pointer' }}>
                                 {getActionContent(action)}
                             </div>
                         )}

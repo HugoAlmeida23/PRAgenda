@@ -26,16 +26,14 @@ class GeneratedReportSerializer(serializers.ModelSerializer):
             'id', 'name', 'report_type', 'report_type_display', 'report_format', 'report_format_display',
             'organization', 'organization_name', 'generated_by', 'generated_by_username',
             'created_at', 'parameters', 'storage_url', 'file_size_kb', 'description',
+            'status', # <-- ADD THIS FIELD
         ]
-        # Campos que não devem ser editáveis diretamente pela API de listagem/detalhe,
-        # a criação será mais controlada.
         read_only_fields = [
             'id', 'organization', 'organization_name', 
             'generated_by', 'generated_by_username', 
             'created_at', 'report_type_display', 'report_format_display',
-            'storage_url', 'file_size_kb' # Estes seriam definidos pelo backend ao gerar
+            'storage_url', 'file_size_kb', 'status' # <-- ADD status TO read_only_fields
         ]
-
     def validate_parameters(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Parâmetros devem ser um objeto JSON.")

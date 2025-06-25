@@ -1,14 +1,13 @@
 // src/components/HeroSection/AIInsightsPanel.jsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import {
     Brain, ArrowRight, Sparkles, ChevronLeft, ChevronRight,
-    Play, Pause, Clock, CheckSquare, AlertTriangle, Users
+    Play, Pause
 } from 'lucide-react';
 
-// --- Styled Components (No changes) ---
 const PanelContainer = styled(motion.div)`
   background: ${({ theme }) => theme.aiInsights.bg};
   backdrop-filter: blur(12px);
@@ -66,11 +65,6 @@ const ControlButton = styled(motion.button)`
   border-radius: 8px;
   cursor: pointer;
   color: ${({ theme }) => theme.textMuted};
-  transition: background-color 0.2s;
-  
-  &:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-  }
 `;
 
 const InsightContainer = styled.div`
@@ -132,11 +126,6 @@ const ActionButton = styled(motion.button)`
   cursor: pointer;
   margin-top: 1.5rem;
   align-self: flex-start;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background-color: rgba(255, 255, 255, 0.2);
-  }
 `;
 
 const ProgressBarContainer = styled.div`
@@ -156,13 +145,11 @@ const LoadingContainer = styled.div`
     justify-content: center;
     height: 100%;
     color: ${({ theme }) => theme.textMuted};
-
     svg {
         margin-right: 0.75rem;
     }
 `;
 
-// --- Main Component ---
 const AIInsightsPanel = ({ insights = [], dashboardData }) => {
     const [currentInsight, setCurrentInsight] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
@@ -174,7 +161,7 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
             setCurrentInsight((prev) => (prev + 1) % insights.length);
         }, 5000);
         return () => clearInterval(interval);
-    }, [isPaused, insights, insights.length]);
+    }, [isPaused, insights]);
     
     const handlePrevious = () => setCurrentInsight(prev => (prev === 0 ? (insights?.length || 1) - 1 : prev - 1));
     const handleNext = () => setCurrentInsight(prev => (prev + 1) % (insights?.length || 1));
@@ -183,18 +170,10 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
         if (insight?.action) navigate(insight.action);
     };
 
-    // REFACTOR: Simplified animation variants for a faster, cleaner feel.
-    const containerVariants = { 
-        hidden: { opacity: 0, y: 15 }, 
-        visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } 
-    };
-    
-    // REFACTOR: Replaced the complex spring-based slide animation with a simple, clean cross-fade.
-    // This feels faster, less "wobbly", and is more performant.
     const insightVariants = {
         enter: { opacity: 0 },
-        center: { opacity: 1, transition: { duration: 0.3, ease: 'easeIn' } },
-        exit: { opacity: 0, transition: { duration: 0.2, ease: 'easeOut' } }
+        center: { opacity: 1, transition: { duration: 0.2 } },
+        exit: { opacity: 0, transition: { duration: 0.2 } }
     };
     
     const getImpactBadge = (impact) => {
@@ -208,7 +187,7 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
     
     if (!insights || insights.length === 0) {
         return (
-            <PanelContainer variants={containerVariants} initial="hidden" animate="visible">
+            <PanelContainer>
                 <LoadingContainer>
                     <Brain size={24} />
                     <span>Analisando dados para gerar insights...</span>
@@ -220,7 +199,7 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
     const currentInsightData = insights[currentInsight];
 
     return (
-        <PanelContainer variants={containerVariants} initial="hidden" animate="visible">
+        <PanelContainer>
             <Header>
                 <HeaderLeft>
                     <IconContainer>
@@ -231,17 +210,19 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
                         <Subtitle>Análise inteligente em tempo real</Subtitle>
                     </div>
                 </HeaderLeft>
-                <Controls>
-                    <ControlButton onClick={handlePauseToggle} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        {isPaused ? <Play size={16} /> : <Pause size={16} />}
-                    </ControlButton>
-                    <ControlButton onClick={handlePrevious} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <ChevronLeft size={16} />
-                    </ControlButton>
-                    <ControlButton onClick={handleNext} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <ChevronRight size={16} />
-                    </ControlButton>
-                </Controls>
+                {insights.length > 1 && (
+                    <Controls>
+                        <ControlButton onClick={handlePauseToggle} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                            {isPaused ? <Play size={16} /> : <Pause size={16} />}
+                        </ControlButton>
+                        <ControlButton onClick={handlePrevious} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                            <ChevronLeft size={16} />
+                        </ControlButton>
+                        <ControlButton onClick={handleNext} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                            <ChevronRight size={16} />
+                        </ControlButton>
+                    </Controls>
+                )}
             </Header>
 
             {!isPaused && insights.length > 1 && (
@@ -278,7 +259,7 @@ const AIInsightsPanel = ({ insights = [], dashboardData }) => {
                                     <InsightMessage>{currentInsightData.message}</InsightMessage>
                                 </div>
                                 {currentInsightData.action && (
-                                    <ActionButton whileHover={{ scale: 1.02, x: 2, transition:{duration: 0.2} }} whileTap={{ scale: 0.98 }} onClick={() => insightAction(currentInsightData)}>
+                                    <ActionButton whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => insightAction(currentInsightData)}>
                                         <span>Tomar Ação</span>
                                         <ArrowRight size={14} />
                                     </ActionButton>

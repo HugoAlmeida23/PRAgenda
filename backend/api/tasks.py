@@ -15,6 +15,7 @@ from .services.notification_digest_service import NotificationDigestService
 from .services.notification_escalation import NotificationEscalationService
 from .services.fiscal_obligation_service import FiscalObligationGenerator
 from .services.fiscal_notification_service import FiscalNotificationService
+from .models import GeneratedReport
 
 from .utils import update_profitability_for_period, update_client_profitability
 from dateutil.relativedelta import relativedelta
@@ -22,6 +23,94 @@ from .models import Client
 
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task(bind=True, max_retries=3)
+def generate_report_task(self, report_id):
+    """
+    Asynchronous task to generate a report, save it to storage,
+    and update the GeneratedReport model instance.
+    """
+    logger.info(f"Starting report generation task for Report ID: {report_id}")
+    try:
+        # Get the report instance and mark it as in-progress
+        report = GeneratedReport.objects.select_related('organization', 'generated_by').get(id=report_id)
+        report.status = 'IN_PROGRESS'
+        report.save(update_fields=['status'])
+
+        organization = report.organization
+        params = report.parameters
+        report_format = report.report_format
+        
+        # --- Call the existing ReportGenerationService ---
+        file_buffer, content_type = (None, None)
+
+        if report.report_type == 'client_summary':
+            file_buffer, content_type = ReportGenerationService.generate_client_summary_report(
+                organization=organization, client_ids=params.get('client_ids'),
+                date_from=params.get('date_from'), date_to=params.get('date_to'),
+                format_type=report_format
+            )
+        elif report.report_type == 'profitability_analysis':
+            file_buffer, content_type = ReportGenerationService.generate_profitability_analysis_report(
+                organization=organization, client_ids=params.get('client_ids'),
+                year=params.get('year'), month=params.get('month'),
+                format_type=report_format
+            )
+        # ... Add other report types here ...
+        else:
+            raise ValueError(f"Report type '{report.report_type}' not implemented for async generation.")
+
+        if not file_buffer:
+            raise ValueError("Report generation service returned an empty file buffer.")
+
+        # --- Save the generated file to storage ---
+        file_extension = report_format
+        filename = f"reports/{organization.id}/{uuid.uuid4()}.{file_extension}"
+        
+        file_content = ContentFile(file_buffer.getvalue())
+        saved_file_path = default_storage.save(filename, file_content)
+        storage_url = default_storage.url(saved_file_path)
+
+        # --- Update the report instance with the final details ---
+        report.storage_url = storage_url
+        report.file_size_kb = len(file_buffer.getvalue()) // 1024
+        report.status = 'COMPLETED'
+        report.save()
+
+        logger.info(f"Successfully generated and saved report {report_id} to {storage_url}")
+
+        # --- Notify the user who requested the report ---
+        if report.generated_by:
+            NotificationService.create_notification(
+                user=report.generated_by,
+                task=None, # Not related to a specific task
+                notification_type='report_generated',
+                title=f"O seu relatório está pronto: {report.name}",
+                message=f"O relatório '{report.name}' que solicitou foi gerado com sucesso e está pronto para download.",
+                priority='normal',
+                metadata={'report_id': str(report.id), 'download_url': report.storage_url}
+            )
+
+        return {"status": "success", "report_id": report_id, "url": storage_url}
+
+    except GeneratedReport.DoesNotExist:
+        logger.error(f"Report with ID {report_id} not found for generation task.")
+        return {"status": "error", "message": "Report not found"}
+    except Exception as e:
+        logger.error(f"Failed to generate report {report_id}: {e}", exc_info=True)
+        # Update the report status to FAILED
+        try:
+            report = GeneratedReport.objects.get(id=report_id)
+            report.status = 'FAILED'
+            # You could also add an error message field to the model
+            report.save(update_fields=['status'])
+        except GeneratedReport.DoesNotExist:
+            pass # Nothing to update if it doesn't exist
+        
+        # Retry the task with exponential backoff
+        self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
+
 
 @shared_task
 def update_profitability_for_single_organization_task(organization_id, months_to_update_list):
