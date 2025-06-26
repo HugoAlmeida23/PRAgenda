@@ -44,8 +44,41 @@ from dateutil.relativedelta import relativedelta
 from django.db.models.expressions import RawSQL # Make sure this is imported
 from .permissions import IsOrgAdmin, CanManageClients, CanManageTimeEntry
 from .tasks import generate_report_task # <-- Import the new task
+from rest_framework.parsers import MultiPartParser
+from .serializers import SAFTFileSerializer
+from .models import SAFTFile
+from .tasks import process_saft_file_task
 
 logger = logging.getLogger(__name__)
+
+class SAFTFileViewSet(viewsets.ModelViewSet):
+    serializer_class = SAFTFileSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser] # To handle file uploads
+
+    def get_queryset(self):
+        # Users can only see files from their own organization
+        profile = self.request.user.profile
+        if not profile.organization:
+            return SAFTFile.objects.none()
+        return SAFTFile.objects.filter(organization=profile.organization)
+
+    def perform_create(self, serializer):
+        profile = self.request.user.profile
+        file_obj = self.request.data.get('file')
+
+        if not file_obj:
+            raise ValidationError({'file': 'Nenhum ficheiro foi enviado.'})
+        
+        # Save the instance and trigger the Celery task
+        saft_instance = serializer.save(
+            organization=profile.organization,
+            uploaded_by=self.request.user,
+            original_filename=file_obj.name
+        )
+        
+        # Dispatch the background task
+        process_saft_file_task.delay(saft_instance.id)
 
 class GeneratedReportViewSet(viewsets.ReadOnlyModelViewSet): # ReadOnly por agora, criação será via "gerar relatório"
     serializer_class = GeneratedReportSerializer

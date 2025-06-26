@@ -21,9 +21,54 @@ from .utils import update_profitability_for_period, update_client_profitability
 from dateutil.relativedelta import relativedelta
 from .models import Client
 
-
+from .services.saft_parser import SAFTParser
+from .models import SAFTFile
+from django.core.files.storage import default_storage
 logger = logging.getLogger(__name__)
 
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60) # Retry on failure
+def process_saft_file_task(self, saft_file_id):
+    logger.info(f"Starting SAFT processing task for ID: {saft_file_id}")
+    try:
+        saft_instance = SAFTFile.objects.get(id=saft_file_id)
+        saft_instance.status = 'PROCESSING'
+        saft_instance.save(update_fields=['status'])
+
+        # Get file path from storage
+        file_path = default_storage.path(saft_instance.file.name)
+        
+        parser = SAFTParser(file_path)
+        parsed_data = parser.parse()
+
+        # Update the model instance with the parsed data
+        header = parsed_data.get('header', {})
+        saft_instance.fiscal_year = header.get('fiscal_year')
+        saft_instance.start_date = header.get('start_date')
+        saft_instance.end_date = header.get('end_date')
+        saft_instance.company_name = header.get('company_name')
+        saft_instance.company_tax_id = header.get('company_tax_id')
+        saft_instance.summary_data = parsed_data.get('summary', {})
+
+        saft_instance.status = 'COMPLETED'
+        saft_instance.processed_at = timezone.now()
+        saft_instance.processing_log = "Ficheiro processado com sucesso."
+        saft_instance.save()
+
+        logger.info(f"Successfully processed SAFT file {saft_file_id}")
+        
+        # TODO: Create a notification for the user who uploaded the file
+        
+    except Exception as e:
+        logger.error(f"Error processing SAFT file {saft_file_id}: {e}", exc_info=True)
+        try:
+            saft_instance = SAFTFile.objects.get(id=saft_file_id)
+            saft_instance.status = 'ERROR'
+            saft_instance.processing_log = f"Ocorreu um erro: {str(e)}"
+            saft_instance.save()
+            self.retry(exc=e)
+        except SAFTFile.DoesNotExist:
+            logger.error(f"SAFT instance {saft_file_id} was deleted during a processing error.")
 
 @shared_task(bind=True, max_retries=3)
 def generate_report_task(self, report_id):

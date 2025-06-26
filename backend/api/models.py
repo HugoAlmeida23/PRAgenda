@@ -1920,3 +1920,49 @@ class FiscalSystemSettings(models.Model):
         
         return recipients
     
+# In api/models.py
+
+class SAFTFile(models.Model):
+    """
+    Represents an uploaded SAFT-PT file and its processing status.
+    """
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendente para Processamento'),
+        ('PROCESSING', 'A Processar'),
+        ('COMPLETED', 'Concluído com Sucesso'),
+        ('ERROR', 'Erro no Processamento'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="saft_files", verbose_name="Organização")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="saft_uploads", verbose_name="Enviado por")
+    
+    # File Storage
+    file = models.FileField(upload_to='saft_files/%Y/%m/', verbose_name="Ficheiro SAFT")
+    original_filename = models.CharField(max_length=255, verbose_name="Nome Original do Ficheiro")
+    
+    # Processing Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', db_index=True)
+    processing_log = models.TextField(blank=True, null=True, help_text="Registos ou erros do processo de parsing.")
+    
+    # Extracted Header Data
+    fiscal_year = models.IntegerField(null=True, blank=True, verbose_name="Ano Fiscal")
+    start_date = models.DateField(null=True, blank=True, verbose_name="Data de Início")
+    end_date = models.DateField(null=True, blank=True, verbose_name="Data de Fim")
+    company_name = models.CharField(max_length=255, null=True, blank=True, verbose_name="Nome da Empresa")
+    company_tax_id = models.CharField(max_length=50, null=True, blank=True, verbose_name="NIF da Empresa")
+    
+    # Extracted Summary Data (for quick access)
+    summary_data = models.JSONField(default=dict, blank=True, help_text="Sumário de dados extraídos, como totais de faturação, impostos, etc.")
+
+    # Timestamps
+    uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Data de Upload")
+    processed_at = models.DateTimeField(null=True, blank=True, verbose_name="Data de Processamento")
+
+    class Meta:
+        verbose_name = "Ficheiro SAFT-PT"
+        verbose_name_plural = "Ficheiros SAFT-PT"
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"SAFT para {self.organization.name} ({self.fiscal_year or 'N/A'}) - {self.get_status_display()}"

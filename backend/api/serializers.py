@@ -2,7 +2,7 @@
 
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Organization, Client,GeneratedReport, NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
+from .models import Organization, Client,GeneratedReport,SAFTFile, NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
 import json
 from django.db import models
 from django.db.models import Sum, Exists, OuterRef # Import Exists
@@ -38,7 +38,27 @@ class GeneratedReportSerializer(serializers.ModelSerializer):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Parâmetros devem ser um objeto JSON.")
         return value
-    
+
+class SAFTFileSerializer(serializers.ModelSerializer):
+    uploaded_by_username = serializers.ReadOnlyField(source='uploaded_by.username')
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = SAFTFile
+        fields = [
+            'id', 'organization', 'uploaded_by', 'uploaded_by_username', 
+            'file', 'original_filename', 'status', 'status_display', 
+            'processing_log', 'fiscal_year', 'start_date', 'end_date', 
+            'company_name', 'company_tax_id', 'summary_data', 
+            'uploaded_at', 'processed_at'
+        ]
+        read_only_fields = [
+            'id', 'organization', 'uploaded_by', 'uploaded_by_username', 
+            'status', 'status_display', 'processing_log', 'fiscal_year', 
+            'start_date', 'end_date', 'company_name', 'company_tax_id', 
+            'summary_data', 'uploaded_at', 'processed_at'
+        ]  
+
 class FiscalObligationDefinitionSerializer(serializers.ModelSerializer):
     # These fields are now provided by the optimized queryset, no performance hit.
     organization_name = serializers.ReadOnlyField(source='organization.name', allow_null=True)

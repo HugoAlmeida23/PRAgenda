@@ -29,6 +29,7 @@ router.register(r'notification-digests', views.NotificationDigestViewSet, basena
 router.register(r'fiscal-obligation-definitions', views.FiscalObligationDefinitionViewSet, basename='fiscal-obligation-definition')
 router.register(r'fiscal-system-settings', views.FiscalSystemSettingsViewSet, basename='fiscal-system-settings')
 router.register(r'generated-reports', views.GeneratedReportViewSet, basename='generated-report') # NOVA LINHA
+router.register(r'saft-files', views.SAFTFileViewSet, basename='saftfile')
 
 urlpatterns = [
     path("token/", TokenObtainPairView.as_view(), name="get_token"),
