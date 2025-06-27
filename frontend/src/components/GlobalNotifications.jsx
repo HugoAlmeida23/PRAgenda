@@ -8,6 +8,7 @@ import {
   X
 } from 'lucide-react';
 import { useTaskStore } from '../stores/useTaskStore'; // Using the existing store
+import { forwardRef } from 'react'; // <-- Import forwardRef
 
 // Re-usable style for the notification cards
 const glassStyle = {
@@ -19,7 +20,7 @@ const glassStyle = {
 };
 
 // The individual notification item
-const NotificationItem = ({ notification, onRemove }) => {
+const NotificationItem = forwardRef(({ notification, onRemove }, ref) => { // <-- Receive `ref` as the second argument
   const icons = {
     success: <CheckCircleIcon />,
     error: <XCircle />,
@@ -39,6 +40,7 @@ const NotificationItem = ({ notification, onRemove }) => {
 
   return (
     <motion.div
+      ref={ref} // <-- ATTACH THE FORWARDED REF HERE
       initial={{ opacity: 0, y: 50, scale: 0.8 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2 } }}
@@ -46,7 +48,7 @@ const NotificationItem = ({ notification, onRemove }) => {
       layout
       style={{
         ...glassStyle,
-        background: `${color}20`, // Hex color with 20% opacity
+        background: `${color}20`,
         border: `1px solid ${color}30`,
         padding: '1rem',
         marginBottom: '0.75rem',
@@ -88,7 +90,7 @@ const NotificationItem = ({ notification, onRemove }) => {
       </div>
     </motion.div>
   );
-};
+});
 
 // The container that will be placed globally
 const GlobalNotifications = () => {

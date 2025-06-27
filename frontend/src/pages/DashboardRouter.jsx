@@ -1,4 +1,4 @@
-// src/pages/DashboardRouter.jsx
+// src/pages/DashboardRouter.jsx (Corrected)
 
 import React, { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -45,9 +45,8 @@ const formatDate = (dateString, options = { day: '2-digit', month: 'short' }) =>
 };
 
 // =================================================================================
-//  THEME-AWARE SUB-COMPONENTS (WITH FAST ANIMATIONS)
+//  THEME-AWARE SUB-COMPONENTS (WITH FAST ANIMATIONS) - Unchanged
 // =================================================================================
-
 const StatCard = ({ title, value, unit = '', icon: Icon, color, linkTo, isLoading }) => {
     const { theme } = useTheme();
     const cardStyle = useMemo(() => ({
@@ -102,13 +101,14 @@ const MyDaySection = ({ upcomingTasks = [], recentTimeEntries = [], isLoading })
 };
 
 const FiscalSnapshotSection = ({ fiscalStats, upcomingFiscalDeadlines, permissions, isLoadingStats, isLoadingDeadlines }) => {
+    // ... (This component remains the same)
     const { theme } = useTheme();
     const queryClient = useQueryClient();
     const manualGenerateMutation = useMutation({
         mutationFn: (params) => api.post('/fiscal/generate-manual/', params),
         onSuccess: (data) => {
             toast.success(data.data.message || 'Geração manual concluída!');
-            queryClient.invalidateQueries(['dashboardFiscalStats', 'dashboardUpcomingFiscal']);
+            queryClient.invalidateQueries({ queryKey: ['dashboardFiscalStats', 'dashboardUpcomingFiscal'] });
         },
         onError: (err) => toast.error(`Falha na geração: ${err.response?.data?.error || err.message}`),
     });
@@ -131,7 +131,7 @@ const FiscalSnapshotSection = ({ fiscalStats, upcomingFiscalDeadlines, permissio
                 </div>
             ) : (
                 <>
-                    {/* Conteúdo do FiscalSnapshotSection aqui */}
+                    {/* Your fiscal snapshot content here */}
                     <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', textAlign: 'right', marginTop: '1rem', marginBottom: 0 }}>Última geração: {lastGenDate}</p>
                 </>
             )}
@@ -166,7 +166,7 @@ const fetchUpcomingFiscalDeadlines = async () => {
 };
 
 // =================================================================================
-//  MAIN DASHBOARD COMPONENT (WITH FAST ANIMATIONS)
+//  MAIN DASHBOARD COMPONENT (WITH ERROR HANDLING FIX)
 // =================================================================================
 
 const DashboardRouter = () => {
@@ -210,6 +210,7 @@ const DashboardRouter = () => {
     });
 
     const insights = useMemo(() => {
+        // --- FIX: Check for summary before accessing its properties ---
         if (!summary) return [{ type: 'loading', title: 'Analisando...', message: 'A processar seus dados.', icon: Brain, color: 'rgb(147, 51, 234)' }];
         const generated = [];
         if (summary.overdue_tasks > 0) generated.push({ type: 'urgent_tasks', title: 'Tarefas Atrasadas!', message: `Existem ${summary.overdue_tasks} tarefas urgentes.`, icon: AlertTriangle, color: 'rgb(239, 68, 68)', action: '/tasks?overdue=true' });
@@ -223,20 +224,32 @@ const DashboardRouter = () => {
         return actions;
     }, [permissions]);
 
-    if (permissions.loading) {
+    // Initial loading state for the whole page
+    if (permissions.loading || (isLoadingSummary && !summary)) {
         return <LoadingIndicator />;
     }
 
+    // --- FIX: Specific error handling view for the 500 error ---
     if (isErrorSummary) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', padding: '2rem' }}>
-                <AlertTriangle size={60} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
-                <h2 style={{ fontSize: '1.5rem',marginBottom:'2rem', color: theme === 'light' ? '#111827' : 'white' }}>
-                    {errorSummary?.response?.data?.error || "Ocorreu um erro ao carregar o dashboard."}
-                </h2>
-                <motion.button onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] })} whileHover={{scale: 1.05}} whileTap={{scale: 0.95}} style={{ padding: '0.75rem 1.5rem', cursor: 'pointer', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', color: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <RefreshCw size={16} /> Tentar Novamente
-                </motion.button>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', padding: '2rem', color: theme === 'light' ? '#111827' : 'white' }}>
+                 <BackgroundElements />
+                 <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '2rem', borderRadius: '16px', textAlign: 'center', maxWidth: '500px' }}>
+                    <AlertTriangle size={60} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
+                    <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>
+                        Erro ao Carregar Dashboard
+                    </h2>
+                    <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '2rem' }}>
+                        {errorSummary?.response?.data?.error || "Não foi possível carregar os dados do painel de controlo. O servidor pode estar com problemas."}
+                    </p>
+                    <motion.button 
+                        onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] })} 
+                        whileHover={{scale: 1.05}} whileTap={{scale: 0.95}} 
+                        style={{ padding: '0.75rem 1.5rem', cursor: 'pointer', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', color: 'white', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        <RefreshCw size={16} /> Tentar Novamente
+                    </motion.button>
+                 </motion.div>
             </div>
         );
     }

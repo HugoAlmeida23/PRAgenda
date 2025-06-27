@@ -12,6 +12,7 @@ from django.db.models import Manager # <--- Make sure this is imported
 import logging
 from django.db.models import OuterRef, Exists, Q
 from django.db.models.expressions import RawSQL
+from django.db.models import Subquery
 
 
 class Organization(models.Model):
@@ -171,18 +172,31 @@ class TaskManager(Manager):
                 return self.filter(client__organization=profile.organization)
             
             # Regular users see tasks they are involved in
-            user_id_str = str(user.id) # For consistent comparison with JSONField values
+            user_id_str = str(user.id)
 
-            # Subquery to check if the logged-in user is assigned to any workflow step
+            # --- THE FIX IS HERE ---
+            # Correctly construct the subquery to check if the user is in the JSONField
             is_workflow_assignee_subquery = Task.objects.filter(
-                pk=OuterRef('pk')
+                pk=OuterRef('pk'), # Correlate with the outer Task query
+                workflow_step_assignments__contains={f'"{user_id_str}"': ''} # A simplified but effective check if user ID is a value.
+                                                                           # For more robust checking on values in a JSON object, raw SQL is still good.
+                                                                           # Let's use a corrected RawSQL approach that works with Exists.
             ).annotate(
-                is_wf_assigned=RawSQL(
-                    "EXISTS(SELECT 1 FROM jsonb_each_text(workflow_step_assignments) vals WHERE vals.value = %s)",
-                    (user_id_str,)
-                )
+                # This subquery is just to link to the outer one, the actual check is in the Exists filter
+                is_assigned=RawSQL("1", [])
             )
-            q_in_workflow = Q(Exists(is_workflow_assignee_subquery.filter(is_wf_assigned=True)))
+            # This is a more robust way to check for a value in a JSONB object, if the above `__contains` is not sufficient
+            is_assigned_via_json_subquery = Task.objects.filter(pk=OuterRef('pk')).annotate(
+                is_assigned=Exists(
+                    RawSQL(
+                        "SELECT 1 FROM jsonb_each_text(workflow_step_assignments) vals WHERE vals.value = %s",
+                        (user_id_str,)
+                    )
+                )
+            ).filter(is_assigned=True)
+
+            q_in_workflow = Q(id__in=Subquery(is_assigned_via_json_subquery.values('id')))
+            # --- END OF FIX ---
             
             # Combine all involvement conditions for the logged-in user
             q_user_is_involved = Q(assigned_to=user) | Q(collaborators=user) | q_in_workflow
@@ -1921,7 +1935,68 @@ class FiscalSystemSettings(models.Model):
         return recipients
     
 # In api/models.py
+class InvoiceBatch(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey('Organization', on_delete=models.CASCADE, related_name="invoice_batches")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="invoice_batches")
+    created_at = models.DateTimeField(auto_now_add=True)
+    description = models.CharField(max_length=255, blank=True, null=True, verbose_name="Descrição do Lote")
 
+    class Meta:
+        verbose_name = "Lote de Faturas"
+        verbose_name_plural = "Lotes de Faturas"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Lote de {self.created_at.strftime('%Y-%m-%d %H:%M')} por {self.uploaded_by.username if self.uploaded_by else 'Unknown'}"
+
+
+class ScannedInvoice(models.Model):
+    """Stores the data for a single invoice, extracted from its QR code."""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendente'),
+        ('PROCESSING', 'A Processar'),
+        ('REVIEW', 'Requer Revisão'),
+        ('COMPLETED', 'Concluído'),
+        ('ERROR', 'Erro'),
+    ]
+    DOC_TYPE_CHOICES = [('FT', 'Fatura'), ('FS', 'Fatura Simplificada'), ('FR', 'Fatura-Recibo'), ('NC', 'Nota de Crédito'), ('ND', 'Nota de Débito'), ('OT', 'Outro')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(InvoiceBatch, on_delete=models.CASCADE, related_name="invoices")
+    original_file = models.FileField(upload_to='invoice_uploads/%Y/%m/')
+    original_filename = models.CharField(max_length=255, blank=True, null=True)    
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', db_index=True)
+    processing_log = models.TextField(blank=True, null=True, help_text="Log de processamento ou mensagem de erro.")
+
+    # Extracted Data (from QR Code)
+    raw_qr_code_data = models.CharField(max_length=500, blank=True, null=True)
+    nif_emitter = models.CharField(max_length=20, blank=True, null=True, db_index=True)
+    nif_acquirer = models.CharField(max_length=20, blank=True, null=True, db_index=True)
+    country_code = models.CharField(max_length=2, blank=True, null=True)
+    doc_type = models.CharField(max_length=5, choices=DOC_TYPE_CHOICES, blank=True, null=True)
+    doc_date = models.DateField(null=True, blank=True)
+    doc_uid = models.CharField(max_length=100, blank=True, null=True)
+    atcud = models.CharField(max_length=100, blank=True, null=True, unique=True)
+    taxable_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    vat_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    gross_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # User Edited Data
+    edited_data = models.JSONField(default=dict, blank=True, help_text="Armazena correções feitas pelo utilizador.")
+    is_reviewed = models.BooleanField(default=False, help_text="Marcado como True após revisão do utilizador.")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Fatura Digitalizada"
+        verbose_name_plural = "Faturas Digitalizadas"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Fatura {self.atcud or self.id}"
+    
 class SAFTFile(models.Model):
     """
     Represents an uploaded SAFT-PT file and its processing status.

@@ -6,7 +6,7 @@ import {
   Home, Users, Clock, CheckSquare, DollarSign, Settings,
   LogOut, User as UserIcon, Briefcase, ChevronDown, 
   Archive as ArchiveIcon, BarChart3, Settings2, Bot, Sun, Moon, GitBranch, List, FileText,
-  BellRing
+  BellRing,ScanLine
 } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
 import api from '../../api';
@@ -14,6 +14,7 @@ import BackgroundElements from '../HeroSection/BackgroundElements';
 import NotificationDropdown from '../NotificationDropdown';
 import './Layout.css';
 import { useTheme } from '../../contexts/ThemeContext';
+import '../../styles/Home.css';
 
 const usePrefetchData = () => {
   useQuery({
@@ -211,6 +212,8 @@ const Layout = () => {
       { path: "/fiscal-dashboard", icon: <BarChart3 size={16} />, label: "Dashboard Fiscal" },
       { path: "/fiscal-definitions", icon: <Settings size={16} />, label: "Definições Fiscais" },
       { path: "/fiscal-settings", icon: <Settings2 size={16} />, label: "Config. Sistema Fiscal" },
+      { path: '/saft-management', icon: <FileText size={20} />, label: 'Ficheiros SAFT' },
+      { path: '/invoice-processing', icon: <ScanLine size={20} />, label: 'Processar Faturas' },
     ]},
     { name: 'Análise', icon: <BarChart3 size={16} />, items: [
         { path: "/clientprofitability", icon: <DollarSign size={16} />, label: "Rentabilidade" },

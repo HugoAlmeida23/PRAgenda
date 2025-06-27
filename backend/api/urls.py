@@ -30,6 +30,8 @@ router.register(r'fiscal-obligation-definitions', views.FiscalObligationDefiniti
 router.register(r'fiscal-system-settings', views.FiscalSystemSettingsViewSet, basename='fiscal-system-settings')
 router.register(r'generated-reports', views.GeneratedReportViewSet, basename='generated-report') # NOVA LINHA
 router.register(r'saft-files', views.SAFTFileViewSet, basename='saftfile')
+router.register(r'invoice-batches', views.InvoiceBatchViewSet, basename='invoicebatch')
+router.register(r'scanned-invoices', views.ScannedInvoiceViewSet, basename='scannedinvoice')
 
 urlpatterns = [
     path("token/", TokenObtainPairView.as_view(), name="get_token"),

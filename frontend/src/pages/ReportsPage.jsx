@@ -10,7 +10,7 @@ import ReportCreationModal from '../components/reports/ReportCreationModal';
 import { useReportStore } from '../stores/useReportStore';
 import { usePermissions } from '../contexts/PermissionsContext';
 import { ToastContainer } from 'react-toastify';
-import "../styles/Home.css";
+
 
 const glassStyle = {
     background: 'rgba(30, 41, 59, 0.8)',

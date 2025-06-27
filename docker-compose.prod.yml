@@ -1,6 +1,4 @@
-# docker-compose.prod.yml (Corrected for your structure)
 version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
@@ -13,8 +11,8 @@ services:
 
   backend:
     build:
-      context: .                  # Use the root directory as the build context
-      dockerfile: Dockerfile.backend # Specify the Dockerfile in the root
+      context: .
+      dockerfile: Dockerfile.backend
     command: >
       sh -c "echo 'Waiting for Redis...' && while ! nc -z redis 6379; do sleep 1; done; echo 'Redis started.' &&
              python manage.py migrate &&
@@ -28,11 +26,45 @@ services:
     restart: unless-stopped
     expose:
       - 8000
+    volumes:
+      - media_files:/app/media  # ADD THIS SHARED VOLUME
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: >
+      sh -c "echo 'Waiting for Redis...' && while ! nc -z redis 6379; do sleep 1; done; echo 'Redis started.' &&
+             celery -A backend worker --loglevel=info --concurrency=2"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - media_files:/app/media  # ADD THIS SHARED VOLUME
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: >
+      sh -c "echo 'Waiting for Redis...' && while ! nc -z redis 6379; do sleep 1; done; echo 'Redis started.' &&
+             celery -A backend beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - media_files:/app/media  # ADD THIS SHARED VOLUME
 
   nginx:
     build:
-      context: .                 # Use the root directory as the build context
-      dockerfile: Dockerfile.nginx # Specify the Nginx Dockerfile in the root
+      context: .
+      dockerfile: Dockerfile.nginx
       args:
         VITE_API_URL: /api
     ports:
@@ -40,3 +72,7 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+# ADD THIS VOLUMES SECTION
+volumes:
+  media_files:

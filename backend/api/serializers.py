@@ -1,5 +1,4 @@
-# serializers.py
-
+from django.db.models import Count
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import Organization, Client,GeneratedReport,SAFTFile, NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
@@ -7,7 +6,7 @@ import json
 from django.db import models
 from django.db.models import Sum, Exists, OuterRef # Import Exists
 import logging
-from .models import FiscalSystemSettings
+from .models import FiscalSystemSettings, ScannedInvoice, InvoiceBatch
 from django.utils import timezone
 
 
@@ -39,6 +38,63 @@ class GeneratedReportSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Parâmetros devem ser um objeto JSON.")
         return value
 
+class ScannedInvoiceSerializer(serializers.ModelSerializer):
+    original_filename = serializers.CharField(source='original_file.name', read_only=True)
+    
+    class Meta:
+        model = ScannedInvoice
+        fields = [
+            'id', 'original_filename', 'status', 'processing_log',
+            'raw_qr_code_data', 'nif_emitter', 'nif_acquirer', 'country_code',
+            'doc_type', 'doc_date', 'doc_uid', 'atcud', 'taxable_amount',
+            'vat_amount', 'gross_total', 'edited_data', 'is_reviewed', 'created_at'
+        ]
+        read_only_fields = ['id', 'original_filename', 'created_at']
+
+class InvoiceBatchSerializer(serializers.ModelSerializer):
+    invoices = ScannedInvoiceSerializer(many=True, read_only=True)
+    invoice_count = serializers.SerializerMethodField()
+    status_summary = serializers.SerializerMethodField()
+    uploaded_by_username = serializers.CharField(source='uploaded_by.username', read_only=True)
+    
+    class Meta:
+        model = InvoiceBatch
+        fields = [
+            'id', 'organization', 'uploaded_by', 'uploaded_by_username',
+            'created_at', 'description', 'invoices', 'invoice_count', 'status_summary'
+        ]
+        read_only_fields = ['id', 'organization', 'uploaded_by', 'uploaded_by_username', 'created_at']
+
+    def get_invoice_count(self, obj):
+        """Get the count of invoices in this batch."""
+        try:
+            # Use prefetched data if available
+            if hasattr(obj, '_prefetched_objects_cache') and 'invoices' in obj._prefetched_objects_cache:
+                return len(obj.invoices.all())
+            else:
+                return obj.invoices.count()
+        except Exception:
+            return 0
+
+    def get_status_summary(self, obj):
+        """Get a summary of invoice statuses in this batch."""
+        try:
+            # Use prefetched data if available
+            if hasattr(obj, '_prefetched_objects_cache') and 'invoices' in obj._prefetched_objects_cache:
+                invoices = obj.invoices.all()
+                status_counts = {}
+                for invoice in invoices:
+                    status = invoice.status
+                    status_counts[status] = status_counts.get(status, 0) + 1
+                return [{'status': status, 'count': count} for status, count in status_counts.items()]
+            else:
+                # Fallback to database query
+                summary = obj.invoices.values('status').annotate(count=Count('status')).order_by('status')
+                return list(summary)
+        except Exception as e:
+            # If there's any error, return empty list
+            return []
+    
 class SAFTFileSerializer(serializers.ModelSerializer):
     uploaded_by_username = serializers.ReadOnlyField(source='uploaded_by.username')
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -56,8 +112,8 @@ class SAFTFileSerializer(serializers.ModelSerializer):
             'id', 'organization', 'uploaded_by', 'uploaded_by_username', 
             'status', 'status_display', 'processing_log', 'fiscal_year', 
             'start_date', 'end_date', 'company_name', 'company_tax_id', 
-            'summary_data', 'uploaded_at', 'processed_at'
-        ]  
+            'summary_data', 'uploaded_at', 'processed_at', 'original_filename'
+        ]
 
 class FiscalObligationDefinitionSerializer(serializers.ModelSerializer):
     # These fields are now provided by the optimized queryset, no performance hit.

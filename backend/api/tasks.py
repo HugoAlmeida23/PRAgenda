@@ -16,59 +16,146 @@ from .services.notification_escalation import NotificationEscalationService
 from .services.fiscal_obligation_service import FiscalObligationGenerator
 from .services.fiscal_notification_service import FiscalNotificationService
 from .models import GeneratedReport
-
 from .utils import update_profitability_for_period, update_client_profitability
 from dateutil.relativedelta import relativedelta
 from .models import Client
-
 from .services.saft_parser import SAFTParser
 from .models import SAFTFile
 from django.core.files.storage import default_storage
 logger = logging.getLogger(__name__)
+# In api/tasks.py
+from .services.qr_code_parser import QRCodeParser
+from .models import ScannedInvoice
 
+# Add this import at the top of tasks.py
+from datetime import datetime
+import io  # Also needed for process_invoice_file_task
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60) # Retry on failure
+# Replace your existing process_invoice_file_task function with this updated version:
+from .qr_processor import EnhancedQRProcessor
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=120)
+def process_invoice_file_task(self, invoice_id):
+    """
+    Celery task to process an uploaded invoice file, extract QR code data,
+    and handle potential duplicates.
+    """
+    logger.info(f"Starting invoice processing for ID: {invoice_id}")
+    try:
+        invoice = ScannedInvoice.objects.get(id=invoice_id)
+        invoice.status = 'PROCESSING'
+        invoice.save(update_fields=['status'])
+
+        if not invoice.original_file:
+            raise FileNotFoundError("Original file not found for this invoice record.")
+        
+        with default_storage.open(invoice.original_file.name, 'rb') as f:
+            file_content = f.read()
+
+        processor = EnhancedQRProcessor()
+        parsed_data = processor.process_file_content(file_content)
+
+        if not parsed_data or not parsed_data.get('atcud'):
+            invoice.status = 'ERROR'
+            invoice.processing_log = "Não foi possível encontrar ou ler um QR Code ATCUD válido no ficheiro."
+            invoice.save()
+            logger.warning(f"No valid ATCUD QR code found for invoice {invoice.id}")
+            return {"status": "error", "message": "No valid QR code found."}
+
+        atcud_code = parsed_data.get('atcud')
+        
+        existing_invoice = ScannedInvoice.objects.filter(
+            batch__organization=invoice.batch.organization,
+            atcud=atcud_code,
+            status='COMPLETED'
+        ).exclude(id=invoice.id).first()
+
+        if existing_invoice:
+            invoice.status = 'ERROR'
+            invoice.processing_log = f"Fatura duplicada. O ATCUD '{atcud_code}' já existe (ID: {existing_invoice.id})."
+            invoice.save()
+            logger.warning(f"Duplicate invoice detected for ATCUD {atcud_code}. New: {invoice.id}")
+            return {"status": "duplicate"}
+
+        for key, value in parsed_data.items():
+            if hasattr(invoice, key):
+                setattr(invoice, key, value)
+        
+        invoice.status = 'REVIEW'
+        invoice.processing_log = "Dados extraídos com sucesso. Pronto para revisão."
+        invoice.save()
+        
+        logger.info(f"Finished processing for invoice {invoice.id}. Status: {invoice.status}")
+        return {"status": "success"}
+        
+    except ScannedInvoice.DoesNotExist:
+        logger.error(f"Invoice {invoice_id} not found.")
+        return {"status": "error", "message": "Invoice not found."}
+    except Exception as e:
+        logger.error(f"Error processing invoice file {invoice_id}: {e}", exc_info=True)
+        try:
+            invoice = ScannedInvoice.objects.get(id=invoice_id)
+            invoice.status = 'ERROR'
+            invoice.processing_log = f"Erro inesperado: {str(e)}"
+            invoice.save()
+        except ScannedInvoice.DoesNotExist:
+            pass
+        self.retry(exc=e)
+        
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def process_saft_file_task(self, saft_file_id):
-    logger.info(f"Starting SAFT processing task for ID: {saft_file_id}")
+    logger.info(f"TASK STARTED: Processing SAFT file with ID: {saft_file_id}")
+    saft_instance = None
     try:
         saft_instance = SAFTFile.objects.get(id=saft_file_id)
         saft_instance.status = 'PROCESSING'
-        saft_instance.save(update_fields=['status'])
+        saft_instance.processing_log = "A iniciar o processamento..."
+        saft_instance.save(update_fields=['status', 'processing_log'])
 
-        # Get file path from storage
-        file_path = default_storage.path(saft_instance.file.name)
-        
-        parser = SAFTParser(file_path)
-        parsed_data = parser.parse()
+        with default_storage.open(saft_instance.file.name, 'rb') as f:
+            parser = SAFTParser(f)
+            parsed_data = parser.parse()
 
-        # Update the model instance with the parsed data
+        logger.info(f"TASK INFO: Parsed data for {saft_file_id}: {parsed_data}")
+
         header = parsed_data.get('header', {})
-        saft_instance.fiscal_year = header.get('fiscal_year')
-        saft_instance.start_date = header.get('start_date')
-        saft_instance.end_date = header.get('end_date')
+        summary = parsed_data.get('summary', {})
+        
+        # Safely assign values and handle potential type errors
+        saft_instance.fiscal_year = int(header.get('fiscal_year')) if header.get('fiscal_year') else None
+        
+        start_date_str = header.get('start_date')
+        saft_instance.start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
+        
+        end_date_str = header.get('end_date')
+        saft_instance.end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
+        
         saft_instance.company_name = header.get('company_name')
         saft_instance.company_tax_id = header.get('company_tax_id')
-        saft_instance.summary_data = parsed_data.get('summary', {})
+        saft_instance.summary_data = summary
 
         saft_instance.status = 'COMPLETED'
         saft_instance.processed_at = timezone.now()
         saft_instance.processing_log = "Ficheiro processado com sucesso."
+        
         saft_instance.save()
 
-        logger.info(f"Successfully processed SAFT file {saft_file_id}")
+        logger.info(f"TASK SUCCESS: Successfully processed and saved SAFT file {saft_file_id}")
         
-        # TODO: Create a notification for the user who uploaded the file
-        
+    except SAFTFile.DoesNotExist:
+        logger.error(f"TASK FAILED: SAFTFile with id {saft_file_id} does not exist.")
+        # No retry needed if the object is gone
+        return
+
     except Exception as e:
-        logger.error(f"Error processing SAFT file {saft_file_id}: {e}", exc_info=True)
-        try:
-            saft_instance = SAFTFile.objects.get(id=saft_file_id)
+        logger.error(f"TASK FAILED: Unhandled exception while processing SAFT file {saft_file_id}: {e}", exc_info=True)
+        if saft_instance:
             saft_instance.status = 'ERROR'
-            saft_instance.processing_log = f"Ocorreu um erro: {str(e)}"
-            saft_instance.save()
-            self.retry(exc=e)
-        except SAFTFile.DoesNotExist:
-            logger.error(f"SAFT instance {saft_file_id} was deleted during a processing error.")
+            saft_instance.processing_log = f"Ocorreu um erro inesperado: {str(e)}"
+            saft_instance.save(update_fields=['status', 'processing_log'])
+        
+        # Retry the task with exponential backoff
+        self.retry(exc=e)
 
 @shared_task(bind=True, max_retries=3)
 def generate_report_task(self, report_id):

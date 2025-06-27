@@ -34,6 +34,8 @@ import NotificationDropdown from "./components/NotificationDropdown";
 import WorkflowDesigner from "./pages/WorkflowDesigner";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage";
 import ReportsPage from "./pages/ReportsPage";
+import SAFTManagementPage from "./pages/SAFTManagement";
+import InvoiceProcessingPage from "./pages/InvoiceProcessing";
 
 // --- React Query Client Configuration ---
 const queryClient = new QueryClient({
@@ -99,6 +101,8 @@ function App() {
                 <Route path="notification-dropdown" element={<NotificationDropdown />} />
                 <Route path="notifications-settings" element={<NotificationSettingsPage />} />
                 <Route path="reports" element={<ReportsPage />} />
+                <Route path="saft-management" element={<SAFTManagementPage/>} />
+                <Route path="invoice-processing" element={<InvoiceProcessingPage />} />
               </Route>
               
               {/* Fallback for any route that doesn't match */}

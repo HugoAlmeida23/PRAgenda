@@ -48,38 +48,313 @@ from rest_framework.parsers import MultiPartParser
 from .serializers import SAFTFileSerializer
 from .models import SAFTFile
 from .tasks import process_saft_file_task
+from .models import InvoiceBatch, ScannedInvoice
+from .serializers import InvoiceBatchSerializer, ScannedInvoiceSerializer
+from .tasks import process_invoice_file_task
 
 logger = logging.getLogger(__name__)
 
+class InvoiceBatchViewSet(viewsets.ModelViewSet):
+    serializer_class = InvoiceBatchSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Handle superuser
+        if user.is_superuser:
+            return InvoiceBatch.objects.all().select_related(
+                'uploaded_by', 'organization'
+            ).prefetch_related('invoices').order_by('-created_at')
+        
+        try:
+            profile = user.profile
+            if not profile or not profile.organization:
+                return InvoiceBatch.objects.none()
+            
+            return InvoiceBatch.objects.filter(
+                organization=profile.organization
+            ).select_related(
+                'uploaded_by', 'organization'
+            ).prefetch_related('invoices').order_by('-created_at')
+            
+        except AttributeError:
+            # User has no profile
+            return InvoiceBatch.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        files = request.FILES.getlist('files')
+        if not files:
+            return Response({
+                'error': 'Nenhum ficheiro enviado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check user profile and organization
+        try:
+            profile = request.user.profile
+            if not profile or not profile.organization:
+                return Response({
+                    'error': 'Utilizador não está numa organização.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except AttributeError:
+            return Response({
+                'error': 'Perfil de utilizador não encontrado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create the batch
+        try:
+            batch = InvoiceBatch.objects.create(
+                organization=profile.organization,
+                uploaded_by=request.user,
+                description=request.data.get('description', f'Lote de {len(files)} faturas')
+            )
+
+            # Create invoice records and dispatch processing tasks
+            created_invoices = []
+            for file in files:
+                invoice = ScannedInvoice.objects.create(
+                    batch=batch, 
+                    original_file=file,
+                    original_filename=file.name
+                )
+                created_invoices.append(invoice)
+                
+                # Dispatch the processing task
+                try:
+                    from .tasks import process_invoice_file_task
+                    process_invoice_file_task.delay(str(invoice.id))
+                except Exception as e:
+                    # If Celery is not available or task fails to dispatch
+                    invoice.status = 'ERROR'
+                    invoice.processing_log = f'Erro ao iniciar processamento: {str(e)}'
+                    invoice.save()
+            
+            # Return the created batch with all related data
+            serializer = self.get_serializer(batch)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                'error': f'Erro ao criar lote: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    @action(detail=True, methods=['get'])
+    def generate_excel(self, request, pk=None):
+            """
+            Generates an Excel file with details of all invoices in a specific batch.
+            """
+            batch = self.get_object()
+            invoices = batch.invoices.all().order_by('created_at')
+
+            # Create an in-memory workbook
+            buffer = io.BytesIO()
+            workbook = openpyxl.Workbook()
+            worksheet = workbook.active
+            worksheet.title = 'Faturas Processadas'
+
+            # Define headers
+            headers = [
+                'ID Fatura', 'Ficheiro Original', 'Status', 'NIF Emissor', 'NIF Adquirente',
+                'Data Documento', 'ATCUD', 'Total Bruto', 'Total IVA', 'Base Tributável'
+            ]
+            
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = openpyxl.styles.PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")
+
+            for col_num, header_title in enumerate(headers, 1):
+                cell = worksheet.cell(row=1, column=col_num, value=header_title)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+
+            # Populate rows with invoice data
+            for row_num, invoice in enumerate(invoices, 2):
+                worksheet.cell(row=row_num, column=1, value=str(invoice.id))
+                worksheet.cell(row=row_num, column=2, value=invoice.original_file.name.split('/')[-1])
+                worksheet.cell(row=row_num, column=3, value=invoice.get_status_display())
+                worksheet.cell(row=row_num, column=4, value=invoice.nif_emitter)
+                worksheet.cell(row=row_num, column=5, value=invoice.nif_acquirer)
+                worksheet.cell(row=row_num, column=6, value=invoice.doc_date)
+                worksheet.cell(row=row_num, column=7, value=invoice.atcud)
+                worksheet.cell(row=row_num, column=8, value=float(invoice.gross_total or 0)).number_format = '#,##0.00€'
+                worksheet.cell(row=row_num, column=9, value=float(invoice.vat_amount or 0)).number_format = '#,##0.00€'
+                worksheet.cell(row=row_num, column=10, value=float(invoice.taxable_amount or 0)).number_format = '#,##0.00€'
+
+            # Auto-fit column widths
+            for col in worksheet.columns:
+                max_length = 0
+                column = col[0].column_letter
+                for cell in col:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                worksheet.column_dimensions[column].width = adjusted_width
+
+            # Save the workbook to the buffer
+            workbook.save(buffer)
+            buffer.seek(0)
+
+            # Create the HTTP response
+            response = HttpResponse(
+                buffer,
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = f'attachment; filename="faturas_lote_{batch.id}.xlsx"'
+
+            return response
+
+class ScannedInvoiceViewSet(viewsets.ModelViewSet):
+    serializer_class = ScannedInvoiceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.is_superuser:
+            return ScannedInvoice.objects.all().select_related('batch__organization')
+        
+        try:
+            profile = user.profile
+            if not profile or not profile.organization:
+                return ScannedInvoice.objects.none()
+            
+            return ScannedInvoice.objects.filter(
+                batch__organization=profile.organization
+            ).select_related('batch__organization')
+            
+        except AttributeError:
+            return ScannedInvoice.objects.none()
+
+    def partial_update(self, request, *args, **kwargs):
+        """Handle user edits to invoice data."""
+        invoice = self.get_object()
+        
+        # Update edited_data with the new values
+        edited_data = request.data.copy()
+        
+        # Remove non-editable fields
+        for field in ['id', 'batch', 'created_at', 'original_file', 'status']:
+            edited_data.pop(field, None)
+        
+        invoice.edited_data = edited_data
+        invoice.is_reviewed = True
+        invoice.status = 'COMPLETED'  # Mark as completed after review
+        invoice.save()
+        
+        serializer = self.get_serializer(invoice)
+        return Response(serializer.data)
+    
+# In views.py - Update SAFTFileViewSet
 class SAFTFileViewSet(viewsets.ModelViewSet):
     serializer_class = SAFTFileSerializer
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser] # To handle file uploads
+    parser_classes = [MultiPartParser]
 
     def get_queryset(self):
-        # Users can only see files from their own organization
-        profile = self.request.user.profile
-        if not profile.organization:
+        try:
+            profile = self.request.user.profile
+            if not profile or not profile.organization:
+                logger.warning(f"User {self.request.user.username} has no profile or organization")
+                return SAFTFile.objects.none()
+            
+            queryset = SAFTFile.objects.filter(
+                organization=profile.organization
+            ).select_related('uploaded_by', 'organization').order_by('-uploaded_at')
+            
+            logger.info(f"SAFT queryset for user {self.request.user.username}: {queryset.count()} files")
+            return queryset
+            
+        except Profile.DoesNotExist:
+            logger.warning(f"User {self.request.user.username} without a profile tried to access SAFT files")
             return SAFTFile.objects.none()
-        return SAFTFile.objects.filter(organization=profile.organization)
+        except Exception as e:
+            logger.error(f"Error in SAFTFileViewSet.get_queryset: {e}")
+            return SAFTFile.objects.none()
 
-    def perform_create(self, serializer):
-        profile = self.request.user.profile
-        file_obj = self.request.data.get('file')
+    def create(self, request, *args, **kwargs):
+        """
+        Custom create method to provide detailed error responses.
+        """
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            # perform_create logic is now here:
+            profile = request.user.profile
+            file_obj = request.data.get('file')
+            
+            saft_instance = serializer.save(
+                organization=profile.organization,
+                uploaded_by=request.user,
+                original_filename=file_obj.name
+            )
+            
+            # Dispatch the background task
+            process_saft_file_task.delay(saft_instance.id)
 
-        if not file_obj:
-            raise ValidationError({'file': 'Nenhum ficheiro foi enviado.'})
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+        except Profile.DoesNotExist:
+            logger.error(f"User {request.user.username} has no profile, cannot upload SAFT.")
+            return Response({"detail": "O seu perfil de utilizador não foi encontrado. Contacte o suporte."}, status=status.HTTP_403_FORBIDDEN)
         
-        # Save the instance and trigger the Celery task
-        saft_instance = serializer.save(
-            organization=profile.organization,
-            uploaded_by=self.request.user,
-            original_filename=file_obj.name
-        )
+        except ValidationError as e:
+            logger.warning(f"SAFT upload validation error for user {request.user.username}: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
         
-        # Dispatch the background task
-        process_saft_file_task.delay(saft_instance.id)
+        except Exception as e:
+            logger.error(f"Unhandled exception during SAFT upload for user {request.user.username}: {e}", exc_info=True)
+            return Response({"detail": "Ocorreu um erro inesperado no servidor ao processar o seu pedido."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['get'])
+    def details(self, request, pk=None):
+        """
+        Retrieve detailed information about a processed SAFT file
+        """
+        try:
+            saft_file = self.get_object()
+            
+            # Calculate file size dynamically
+            file_size_kb = None
+            if saft_file.file:
+                try:
+                    file_size_kb = saft_file.file.size // 1024  # Convert bytes to KB
+                except (OSError, AttributeError):
+                    file_size_kb = None
+            
+            # Basic file information
+            details = {
+                'id': str(saft_file.id),
+                'filename': saft_file.file.name.split('/')[-1] if saft_file.file else 'N/A',
+                'original_filename': saft_file.original_filename,
+                'status': saft_file.status,
+                'processing_log': saft_file.processing_log,
+                'uploaded_at': saft_file.uploaded_at,
+                'processed_at': saft_file.processed_at,
+                'file_size_kb': file_size_kb,
+                
+                # Processed data
+                'fiscal_year': saft_file.fiscal_year,
+                'start_date': saft_file.start_date,
+                'end_date': saft_file.end_date,
+                'company_name': saft_file.company_name,
+                'company_tax_id': saft_file.company_tax_id,
+                'summary_data': saft_file.summary_data or {},
+            }
+            
+            return Response(details)
+            
+        except Exception as e:
+            logger.error(f"Error in SAFTFile details view: {e}", exc_info=True)
+            return Response(
+                {'error': f'Erro ao obter detalhes: {str(e)}'}, 
+                status=500
+            )
+    
 class GeneratedReportViewSet(viewsets.ReadOnlyModelViewSet): # ReadOnly por agora, criação será via "gerar relatório"
     serializer_class = GeneratedReportSerializer
     permission_classes = [IsAuthenticated]

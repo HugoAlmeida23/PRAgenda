@@ -1,4 +1,4 @@
-// src/pages/ClientManagement.jsx
+// src/pages/ClientManagement.jsx (Corrected)
 
 import React, { useState, useMemo, useCallback } from "react";
 import { toast, ToastContainer } from "react-toastify";
@@ -92,7 +92,8 @@ const TableHeader = styled.div`
 `;
 
 const ViewToggleButton = styled.button`
-    background: ${({ theme, active }) => active ? theme.button.primaryBg : 'transparent'};
+    // <-- FIX: Use the transient prop '$active' for styling logic
+    background: ${({ theme, $active }) => $active ? theme.button.primaryBg : 'transparent'};
     border: none;
     padding: 0.5rem;
     border-radius: 8px;
@@ -110,8 +111,8 @@ const fetchClientsData = async () => {
     api.get("/profiles/")
   ]);
   return {
-    clients: clientsRes.data || [],
-    users: usersRes.data || []
+    clients: clientsRes.data.results || clientsRes.data || [], // Handle pagination
+    users: usersRes.data.results || usersRes.data || []
   };
 };
 
@@ -120,30 +121,65 @@ const ClientManagement = () => {
     const permissions = usePermissions();
     const {
         viewMode, setViewMode, showForm, selectedClient, showClientModal,
-        // ... other store properties
+        openFormForNew, closeForm, openDetailsModal, closeDetailsModal, sortConfig,
+        setSortConfig: setSortConfigInStore, filters
     } = useClientStore();
 
-    // ... (All your existing data fetching and mutation logic remains exactly the same)
-    // ... useQuery, useMutation for create, update, delete, etc.
-    // ... useMemo for filteredClients
-    // ... useCallback for handlers (handleSort, handleSubmit, etc.)
+    const { data, isLoading, isError, error, refetch } = useQuery({ 
+        queryKey: ['clientsData', filters], // Add filters to queryKey
+        queryFn: fetchClientsData 
+    });
     
-    // For brevity, I am skipping the hooks, but they should be here in your actual file
-    const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['clientsData'], queryFn: fetchClientsData });
-    const createClientMutation = useMutation({ mutationFn: () => {} });
-    const updateClientMutation = useMutation({ mutationFn: () => {} });
-    const toggleClientStatusMutation = useMutation({ mutationFn: () => {} });
-    const deleteClientMutation = useMutation({ mutationFn: () => {} });
+    // For brevity, assuming mutations and handlers exist as before
+    const createClientMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeForm(); } });
+    const updateClientMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeDetailsModal(); } });
+    const toggleClientStatusMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); } });
+    const deleteClientMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); } });
+
     const clients = data?.clients || [];
     const users = data?.users || [];
-    const filteredClients = useMemo(() => clients, [clients]);
-    const { openFormForNew, closeDetailsModal, sortConfig } = useClientStore();
-    const handleSort = () => {};
-    const handleSubmit = () => {};
-    const toggleClientStatus = () => {};
-    const confirmDelete = () => {};
+    
+    // Memoize filtered clients based on store filters
+    const filteredClients = useMemo(() => {
+        return clients.filter(client => {
+            const matchesSearch = !filters.searchTerm || client.name.toLowerCase().includes(filters.searchTerm.toLowerCase());
+            const matchesStatus = filters.status === 'all' || (filters.status === 'active' ? client.is_active : !client.is_active);
+            const matchesManager = !filters.accountManager || client.account_manager === filters.accountManager;
+            return matchesSearch && matchesStatus && matchesManager;
+        });
+    }, [clients, filters]);
+    
+    const sortedClients = useMemo(() => {
+        let sortableClients = [...filteredClients];
+        if (sortConfig.key) {
+            sortableClients.sort((a, b) => {
+                if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return sortableClients;
+    }, [filteredClients, sortConfig]);
 
-    // Loading and Error states
+    const handleSort = useCallback((key) => {
+        setSortConfigInStore(key);
+    }, [setSortConfigInStore]);
+
+    const handleSubmit = (formData) => {
+        if (selectedClient && showForm) { // Editing existing
+            updateClientMutation.mutate({ id: selectedClient.id, ...formData });
+        } else { // Creating new
+            createClientMutation.mutate(formData);
+        }
+    };
+
+    const toggleClientStatus = (clientId) => toggleClientStatusMutation.mutate(clientId);
+    const confirmDelete = (clientId) => {
+        if (window.confirm("Tem a certeza que deseja excluir este cliente?")) {
+            deleteClientMutation.mutate(clientId);
+        }
+    };
+    
     if (isLoading) { /* return loading component */ }
     if (isError) { /* return error component */ }
     
@@ -184,31 +220,32 @@ const ClientManagement = () => {
                         <div>
                             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Lista de Clientes</h3>
                             <p style={{ margin: 0, fontSize: '0.875rem', color: 'inherit', opacity: '0.7' }}>
-                                {filteredClients.length} clientes encontrados
+                                {sortedClients.length} clientes encontrados
                             </p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(0,0,0,0.1)', padding: '0.25rem', borderRadius: '10px' }}>
-                            <ViewToggleButton active={viewMode === 'grid'} onClick={() => setViewMode('grid')}>
+                            {/* <-- FIX: Pass the transient prop '$active' instead of 'active' */}
+                            <ViewToggleButton $active={viewMode === 'grid'} onClick={() => setViewMode('grid')}>
                                 <Grid size={16} />
                             </ViewToggleButton>
-                            <ViewToggleButton active={viewMode === 'list'} onClick={() => setViewMode('list')}>
+                            <ViewToggleButton $active={viewMode === 'list'} onClick={() => setViewMode('list')}>
                                 <List size={16} />
                             </ViewToggleButton>
                         </div>
                     </TableHeader>
                     <div style={{ padding: '1.5rem' }}>
                         {viewMode === 'grid' ? (
-                            <ClientGrid clients={filteredClients} onToggleStatus={toggleClientStatus} onDelete={confirmDelete} permissions={permissions} />
+                            <ClientGrid clients={sortedClients} onToggleStatus={toggleClientStatus} onDelete={confirmDelete} permissions={permissions} />
                         ) : (
-                            <ClientTable clients={filteredClients} onSort={handleSort} sortConfig={sortConfig} onToggleStatus={toggleClientStatus} onDelete={confirmDelete} permissions={permissions} />
+                            <ClientTable clients={sortedClients} onSort={handleSort} sortConfig={sortConfig} onToggleStatus={toggleClientStatus} onDelete={confirmDelete} permissions={permissions} />
                         )}
                     </div>
                 </TableContainer>
             </ContentWrapper>
 
             <AnimatePresence>
-                {showClientModal && (
-                    <ClientDetailsModal client={selectedClient} onClose={closeDetailsModal} onSave={(updatedData) => { updateClientMutation.mutate({ id: selectedClient.id, updatedData }); }} permissions={permissions} />
+                {showClientModal && selectedClient && (
+                    <ClientDetailsModal client={selectedClient} onClose={closeDetailsModal} onSave={(updatedData) => { updateClientMutation.mutate({ id: selectedClient.id, ...updatedData }); }} permissions={permissions} />
                 )}
             </AnimatePresence>
         </PageContainer>
