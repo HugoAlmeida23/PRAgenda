@@ -1,3 +1,5 @@
+# Updated qr_processor.py - Fix the process_image method to handle bytes
+
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance
@@ -154,11 +156,9 @@ class EnhancedQRProcessor:
     def parse_portuguese_qr_data(self, qr_data: str) -> Dict:
         """
         Parse Portuguese AT (Autoridade Tributária) QR code data.
+        Based on the actual format: A:NIF*B:NIF*C:PT*D:FS*E:N*F:YYYYMMDD*G:DocSeries*H:ATCUD*I1:PT*I3:Tax*I4:Tax*I7:Base*I8:Tax*N:Total*O:TotalTax*Q:Hash*R:Cert*S:Timestamp
         """
         data = {}
-        
-        # QR code format for Portuguese invoices is typically:
-        # A:NIF_Emitter*B:NIF_Acquirer*C:Country*D:DocType*E:Status*F:Date*G:UniqueID*H:ATCUD*I1:TaxableAmount*I2:0.00*I3:TaxAmount*I4:0.00*I5:0.00*I6:0.00*I7:TaxableAmount*I8:VATAmount*N:GrossTotal*O:TaxAmount*P:WithholdingTax*Q:ExemptAmount*R:ReducedRate*S:IntermediateRate*T:NormalRate
         
         try:
             # Split by asterisk - Portuguese QR format
@@ -169,44 +169,49 @@ class EnhancedQRProcessor:
                     if ':' in part:
                         key, value = part.split(':', 1)
                         
-                        # Map Portuguese QR code fields
+                        # Map Portuguese QR code fields based on actual format
                         field_mapping = {
-                            'A': 'nif_emitter',
-                            'B': 'nif_acquirer', 
-                            'C': 'country_code',
-                            'D': 'doc_type',
-                            'E': 'status',
-                            'F': 'doc_date',
-                            'G': 'doc_uid',
-                            'H': 'atcud',
-                            'I1': 'taxable_amount_normal',
-                            'I2': 'taxable_amount_intermediate', 
-                            'I3': 'tax_amount_normal',
-                            'I4': 'tax_amount_intermediate',
-                            'I5': 'taxable_amount_reduced',
-                            'I6': 'tax_amount_reduced',
-                            'I7': 'taxable_amount_exempt',
-                            'I8': 'tax_amount_exempt',
-                            'N': 'gross_total',
-                            'O': 'total_tax',
-                            'P': 'withholding_tax',
-                            'Q': 'exempt_amount',
-                            'R': 'reduced_rate_amount',
-                            'S': 'intermediate_rate_amount', 
-                            'T': 'normal_rate_amount'
+                            'A': 'nif_emitter',           # NIF do emitente
+                            'B': 'nif_acquirer',          # NIF do adquirente  
+                            'C': 'country_code',          # Código do país (PT)
+                            'D': 'doc_type',              # Tipo de documento (FS, FT, etc.)
+                            'E': 'doc_status',            # Status do documento (N=Normal)
+                            'F': 'doc_date',              # Data (YYYYMMDD)
+                            'G': 'doc_uid',               # Identificador único do documento
+                            'H': 'atcud',                 # Código ATCUD
+                            'I1': 'tax_country_region',   # País/região fiscal (PT)
+                            'I2': 'taxable_amount_intermediate',  # Base tributável intermédia
+                            'I3': 'tax_amount_normal',    # Imposto normal
+                            'I4': 'tax_amount_intermediate', # Imposto intermédio
+                            'I5': 'taxable_amount_reduced', # Base tributável reduzida
+                            'I6': 'tax_amount_reduced',   # Imposto reduzido
+                            'I7': 'taxable_amount_exempt', # Base isenta
+                            'I8': 'tax_amount_exempt',    # Imposto isento
+                            'N': 'total_with_tax',        # Total com impostos
+                            'O': 'total_tax',             # Total de impostos
+                            'P': 'withholding_tax',       # Retenção na fonte
+                            'Q': 'hash_characters',       # Caracteres de hash
+                            'R': 'certificate_number',    # Número do certificado
+                            'S': 'timestamp'              # Timestamp
                         }
                         
                         if key in field_mapping:
                             field_name = field_mapping[key]
                             
+                            # Handle date conversion for F field (YYYYMMDD format)
+                            if key == 'F' and len(value) == 8 and value.isdigit():
+                                try:
+                                    from datetime import datetime
+                                    date_obj = datetime.strptime(value, '%Y%m%d')
+                                    data['doc_date'] = date_obj.strftime('%Y-%m-%d')
+                                except ValueError:
+                                    data[field_name] = value
                             # Convert numeric fields
-                            if field_name in ['taxable_amount_normal', 'taxable_amount_intermediate', 
-                                            'tax_amount_normal', 'tax_amount_intermediate',
-                                            'taxable_amount_reduced', 'tax_amount_reduced',
-                                            'taxable_amount_exempt', 'tax_amount_exempt',
-                                            'gross_total', 'total_tax', 'withholding_tax',
-                                            'exempt_amount', 'reduced_rate_amount', 
-                                            'intermediate_rate_amount', 'normal_rate_amount']:
+                            elif field_name in ['tax_amount_normal', 'tax_amount_intermediate',
+                                              'taxable_amount_intermediate', 'taxable_amount_reduced', 
+                                              'tax_amount_reduced', 'taxable_amount_exempt', 
+                                              'tax_amount_exempt', 'total_with_tax', 'total_tax', 
+                                              'withholding_tax']:
                                 try:
                                     data[field_name] = float(value)
                                 except ValueError:
@@ -214,26 +219,37 @@ class EnhancedQRProcessor:
                             else:
                                 data[field_name] = value
             
-            # Calculate main amounts for the invoice
-            if 'taxable_amount_normal' in data or 'gross_total' in data:
-                # Calculate taxable amount (sum of all taxable amounts)
-                taxable_fields = ['taxable_amount_normal', 'taxable_amount_intermediate', 
-                                'taxable_amount_reduced', 'taxable_amount_exempt']
-                taxable_total = sum(data.get(field, 0) for field in taxable_fields)
-                if taxable_total > 0:
-                    data['taxable_amount'] = taxable_total
+            # Calculate derived fields for compatibility with the model
+            if data:
+                # Set gross_total from total_with_tax
+                if 'total_with_tax' in data:
+                    data['gross_total'] = data['total_with_tax']
                 
-                # Calculate VAT amount (sum of all tax amounts)
+                # Calculate total VAT amount
                 vat_fields = ['tax_amount_normal', 'tax_amount_intermediate', 
                             'tax_amount_reduced', 'tax_amount_exempt']
-                vat_total = sum(data.get(field, 0) for field in vat_fields)
+                vat_total = sum(data.get(field, 0) for field in vat_fields if isinstance(data.get(field), (int, float)))
                 if vat_total > 0:
                     data['vat_amount'] = vat_total
+                elif 'total_tax' in data:
+                    data['vat_amount'] = data['total_tax']
+                
+                # Calculate total taxable amount
+                taxable_fields = ['taxable_amount_intermediate', 'taxable_amount_reduced', 'taxable_amount_exempt']
+                taxable_total = sum(data.get(field, 0) for field in taxable_fields if isinstance(data.get(field), (int, float)))
+                
+                # If we have gross_total and vat_amount, calculate taxable_amount
+                if 'gross_total' in data and 'vat_amount' in data:
+                    calculated_taxable = data['gross_total'] - data['vat_amount']
+                    if taxable_total == 0 and calculated_taxable > 0:
+                        data['taxable_amount'] = calculated_taxable
+                elif taxable_total > 0:
+                    data['taxable_amount'] = taxable_total
             
-            logger.info(f"Successfully parsed QR data: {data}")
+            logger.info(f"Successfully parsed Portuguese QR data. ATCUD: {data.get('atcud', 'N/A')}, Total: {data.get('gross_total', 'N/A')}")
             
         except Exception as e:
-            logger.error(f"Error parsing QR data: {e}")
+            logger.error(f"Error parsing Portuguese QR data: {e}")
             # Store raw data if parsing fails
             data['raw_qr_code_data'] = qr_data
         
@@ -257,9 +273,10 @@ class EnhancedQRProcessor:
             logger.error(f"Error processing image file {file_path}: {e}")
             return {'error': f'Error processing image: {str(e)}'}
     
-    def process_image(self, image: np.ndarray) -> Dict:
+    def process_image(self, image_input) -> Dict:
         """
         Process an image and extract invoice data from QR codes.
+        Handles both numpy arrays and bytes input.
         """
         result = {
             'qr_codes_found': 0,
@@ -269,6 +286,33 @@ class EnhancedQRProcessor:
         }
         
         try:
+            # Convert bytes to numpy array if needed
+            if isinstance(image_input, bytes):
+                # Convert bytes to numpy array
+                nparr = np.frombuffer(image_input, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if image is None:
+                    # Try with PIL as fallback
+                    try:
+                        pil_image = Image.open(io.BytesIO(image_input))
+                        image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+                    except Exception as e:
+                        result['processing_log'].append(f"Erro ao converter bytes para imagem: {str(e)}")
+                        return result
+                        
+                result['processing_log'].append("Imagem convertida de bytes com sucesso")
+            elif isinstance(image_input, np.ndarray):
+                image = image_input
+                result['processing_log'].append("Processando numpy array diretamente")
+            else:
+                result['processing_log'].append(f"Tipo de entrada não suportado: {type(image_input)}")
+                return result
+            
+            if image is None:
+                result['processing_log'].append("Falha ao carregar a imagem")
+                return result
+            
             # Detect QR codes
             qr_data_list = self.detect_qr_codes(image)
             
@@ -283,15 +327,25 @@ class EnhancedQRProcessor:
             for i, qr_data in enumerate(qr_data_list):
                 result['processing_log'].append(f"QR Code {i+1} encontrado: {qr_data[:100]}...")
                 
-                # Try to parse as Portuguese invoice QR
-                parsed_data = self.parse_portuguese_qr_data(qr_data)
-                
-                if parsed_data:
-                    # Use the first successfully parsed QR code
-                    if not result['invoice_data']:
-                        result['invoice_data'] = parsed_data
-                        result['processing_log'].append(f"Dados extraídos do QR Code {i+1}")
-                    break
+                # Check if it looks like a Portuguese ATCUD QR code
+                if 'A:' in qr_data and 'H:' in qr_data and '*' in qr_data:
+                    result['processing_log'].append(f"QR Code {i+1} parece ser um código ATCUD português")
+                    
+                    # Try to parse as Portuguese invoice QR
+                    parsed_data = self.parse_portuguese_qr_data(qr_data)
+                    
+                    if parsed_data and ('atcud' in parsed_data or 'gross_total' in parsed_data):
+                        # Use the first successfully parsed QR code
+                        if not result['invoice_data']:
+                            result['invoice_data'] = parsed_data
+                            result['processing_log'].append(f"Dados extraídos com sucesso do QR Code {i+1}")
+                            result['processing_log'].append(f"ATCUD: {parsed_data.get('atcud', 'N/A')}")
+                            result['processing_log'].append(f"Total: {parsed_data.get('gross_total', 'N/A')}€")
+                        break
+                    else:
+                        result['processing_log'].append(f"QR Code {i+1} não contém dados válidos de fatura")
+                else:
+                    result['processing_log'].append(f"QR Code {i+1} não é um código ATCUD português válido")
             
             if not result['invoice_data'] and qr_data_list:
                 # If no structured data was extracted, store the raw QR data
@@ -304,91 +358,3 @@ class EnhancedQRProcessor:
             logger.error(error_msg)
         
         return result
-
-# Updated task function
-from celery import shared_task
-import os
-from django.conf import settings
-from .models import ScannedInvoice
-
-@shared_task
-def process_invoice_file_task(invoice_id):
-    """
-    Celery task to process an uploaded invoice file and extract QR code data.
-    """
-    try:
-        invoice = ScannedInvoice.objects.get(id=invoice_id)
-        invoice.status = 'PROCESSING'
-        invoice.save()
-        
-        # Get the file path
-        file_path = invoice.original_file.path
-        
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-        
-        # Process the image
-        processor = EnhancedQRProcessor()
-        result = processor.process_image_file(file_path)
-        
-        # Update the invoice with the results
-        if result.get('invoice_data'):
-            invoice_data = result['invoice_data']
-            
-            # Map the extracted data to model fields
-            if 'nif_emitter' in invoice_data:
-                invoice.nif_emitter = invoice_data['nif_emitter']
-            if 'nif_acquirer' in invoice_data:
-                invoice.nif_acquirer = invoice_data['nif_acquirer']
-            if 'country_code' in invoice_data:
-                invoice.country_code = invoice_data['country_code']
-            if 'doc_type' in invoice_data:
-                invoice.doc_type = invoice_data['doc_type']
-            if 'doc_date' in invoice_data:
-                invoice.doc_date = invoice_data['doc_date']
-            if 'doc_uid' in invoice_data:
-                invoice.doc_uid = invoice_data['doc_uid']
-            if 'atcud' in invoice_data:
-                invoice.atcud = invoice_data['atcud']
-            if 'taxable_amount' in invoice_data:
-                invoice.taxable_amount = invoice_data['taxable_amount']
-            if 'vat_amount' in invoice_data:
-                invoice.vat_amount = invoice_data['vat_amount']
-            if 'gross_total' in invoice_data:
-                invoice.gross_total = invoice_data['gross_total']
-            
-            # Store raw QR data
-            if 'raw_qr_code_data' in invoice_data:
-                invoice.raw_qr_code_data = invoice_data['raw_qr_code_data']
-            elif result.get('raw_qr_data'):
-                invoice.raw_qr_code_data = result['raw_qr_data'][0] if result['raw_qr_data'] else ''
-        
-        # Update processing log
-        processing_log = '\n'.join(result.get('processing_log', []))
-        invoice.processing_log = processing_log
-        
-        # Set status based on results
-        if result.get('invoice_data') and any(key in result['invoice_data'] for key in ['atcud', 'gross_total', 'nif_emitter']):
-            invoice.status = 'COMPLETED'
-        elif result.get('qr_codes_found', 0) > 0:
-            invoice.status = 'COMPLETED'  # QR found but may need manual review
-        else:
-            invoice.status = 'ERROR'
-            if not processing_log:
-                invoice.processing_log = "Não foi possível encontrar ou ler um QR Code ATCUD válido no ficheiro."
-        
-        invoice.save()
-        
-        return f"Invoice {invoice_id} processed successfully"
-        
-    except ScannedInvoice.DoesNotExist:
-        return f"Invoice {invoice_id} not found"
-    except Exception as e:
-        try:
-            invoice = ScannedInvoice.objects.get(id=invoice_id)
-            invoice.status = 'ERROR'
-            invoice.processing_log = f"Erro no processamento: {str(e)}"
-            invoice.save()
-        except:
-            pass
-        return f"Error processing invoice {invoice_id}: {str(e)}"

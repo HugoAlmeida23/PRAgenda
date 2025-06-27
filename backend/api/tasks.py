@@ -46,60 +46,115 @@ def process_invoice_file_task(self, invoice_id):
         invoice.status = 'PROCESSING'
         invoice.save(update_fields=['status'])
 
+        # Read the file content from storage
         if not invoice.original_file:
-            raise FileNotFoundError("Original file not found for this invoice record.")
+            raise FileNotFoundError("Original file not associated with the invoice record.")
         
         with default_storage.open(invoice.original_file.name, 'rb') as f:
             file_content = f.read()
 
+        # Process using the enhanced processor
         processor = EnhancedQRProcessor()
-        parsed_data = processor.process_file_content(file_content)
-
+        result = processor.process_image(file_content)  # Now properly handles bytes
+        
+        # Extract the parsed data
+        parsed_data = result.get('invoice_data', {})
+        processing_log = '\n'.join(result.get('processing_log', []))
+        
+        # Update processing log first
+        invoice.processing_log = processing_log
+        
         if not parsed_data or not parsed_data.get('atcud'):
             invoice.status = 'ERROR'
-            invoice.processing_log = "Não foi possível encontrar ou ler um QR Code ATCUD válido no ficheiro."
+            if not processing_log:
+                invoice.processing_log = "Não foi possível encontrar ou ler um QR Code ATCUD válido no ficheiro."
             invoice.save()
             logger.warning(f"No valid ATCUD QR code found for invoice {invoice.id}")
             return {"status": "error", "message": "No valid QR code found."}
 
+        # --- DUPLICATE CHECK LOGIC ---
         atcud_code = parsed_data.get('atcud')
         
+        # Check if another invoice in the same organization already has this ATCUD
         existing_invoice = ScannedInvoice.objects.filter(
             batch__organization=invoice.batch.organization,
             atcud=atcud_code,
-            status='COMPLETED'
+            status='COMPLETED'  # Only check against successfully completed invoices
         ).exclude(id=invoice.id).first()
 
         if existing_invoice:
+            # Duplicate found! Mark this one as an error and stop.
             invoice.status = 'ERROR'
-            invoice.processing_log = f"Fatura duplicada. O ATCUD '{atcud_code}' já existe (ID: {existing_invoice.id})."
+            invoice.processing_log = f"Fatura duplicada. O ATCUD '{atcud_code}' já existe no sistema (Fatura ID: {existing_invoice.id})."
             invoice.save()
-            logger.warning(f"Duplicate invoice detected for ATCUD {atcud_code}. New: {invoice.id}")
-            return {"status": "duplicate"}
-
-        for key, value in parsed_data.items():
-            if hasattr(invoice, key):
-                setattr(invoice, key, value)
+            logger.warning(f"Duplicate invoice detected for ATCUD {atcud_code}. Original: {existing_invoice.id}, New: {invoice.id}")
+            return {"status": "duplicate", "invoice_id": invoice.id, "original_invoice_id": existing_invoice.id}
         
-        invoice.status = 'REVIEW'
-        invoice.processing_log = "Dados extraídos com sucesso. Pronto para revisão."
+        # --- NO DUPLICATE FOUND - PROCEED WITH SAVING ---
+        # Map the extracted data to model fields
+        if 'nif_emitter' in parsed_data:
+            invoice.nif_emitter = parsed_data['nif_emitter']
+        if 'nif_acquirer' in parsed_data:
+            invoice.nif_acquirer = parsed_data['nif_acquirer']
+        if 'country_code' in parsed_data:
+            invoice.country_code = parsed_data['country_code']
+        if 'doc_type' in parsed_data:
+            invoice.doc_type = parsed_data['doc_type']
+        if 'doc_date' in parsed_data:
+            # Handle date conversion if it's a string
+            doc_date = parsed_data['doc_date']
+            if isinstance(doc_date, str):
+                try:
+                    invoice.doc_date = datetime.strptime(doc_date, '%Y-%m-%d').date()
+                except ValueError:
+                    try:
+                        invoice.doc_date = datetime.strptime(doc_date, '%d-%m-%Y').date()
+                    except ValueError:
+                        logger.warning(f"Could not parse date: {doc_date}")
+            else:
+                invoice.doc_date = doc_date
+        if 'doc_uid' in parsed_data:
+            invoice.doc_uid = parsed_data['doc_uid']
+        if 'atcud' in parsed_data:
+            invoice.atcud = parsed_data['atcud']
+        if 'taxable_amount' in parsed_data:
+            invoice.taxable_amount = parsed_data['taxable_amount']
+        if 'vat_amount' in parsed_data:
+            invoice.vat_amount = parsed_data['vat_amount']
+        if 'gross_total' in parsed_data:
+            invoice.gross_total = parsed_data['gross_total']
+        
+        # Store raw QR data
+        if 'raw_qr_code_data' in parsed_data:
+            invoice.raw_qr_code_data = parsed_data['raw_qr_code_data']
+        elif result.get('raw_qr_data'):
+            invoice.raw_qr_code_data = result['raw_qr_data'][0] if result['raw_qr_data'] else ''
+        
+        # Set status based on results
+        if parsed_data and any(key in parsed_data for key in ['atcud', 'gross_total', 'nif_emitter']):
+            invoice.status = 'COMPLETED'
+            invoice.processing_log = "Dados extraídos com sucesso do QR Code."
+        else:
+            invoice.status = 'REVIEW'  # Needs manual review
+            invoice.processing_log = "QR Code encontrado mas alguns dados podem precisar de revisão."
+        
         invoice.save()
         
-        logger.info(f"Finished processing for invoice {invoice.id}. Status: {invoice.status}")
-        return {"status": "success"}
+        logger.info(f"Finished processing for invoice {invoice_id}. Status: {invoice.status}")
+        return {"status": "success", "invoice_id": invoice.id}
         
     except ScannedInvoice.DoesNotExist:
         logger.error(f"Invoice {invoice_id} not found.")
-        return {"status": "error", "message": "Invoice not found."}
+        return {"status": "error", "message": f"Invoice {invoice_id} not found."}
     except Exception as e:
         logger.error(f"Error processing invoice file {invoice_id}: {e}", exc_info=True)
         try:
             invoice = ScannedInvoice.objects.get(id=invoice_id)
             invoice.status = 'ERROR'
-            invoice.processing_log = f"Erro inesperado: {str(e)}"
+            invoice.processing_log = f"Ocorreu um erro inesperado: {str(e)}"
             invoice.save()
         except ScannedInvoice.DoesNotExist:
-            pass
+            pass  # Nothing to do if it's already gone
         self.retry(exc=e)
         
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
