@@ -6,6 +6,7 @@ import {
   User, Edit, Trash2, ArrowRight, Tag,
   Phone, Mail, MapPin, XCircle, CheckCircle
 } from "lucide-react";
+import ChurnRiskIndicator from './ChurnRiskIndicator';
 
 // --- Styled Components Definition ---
 
@@ -251,7 +252,16 @@ const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onC
                     </div>
                 </div>
             )}
-            
+            <ClientInfo>
+    <ClientName>{client.name}</ClientName>
+    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <StatusPill $isActive={isActive}>
+            {isActive ? 'Ativo' : 'Inativo'}
+        </StatusPill>
+        {/* NEWLY ADDED */}
+        <ChurnRiskIndicator risk={client.churn_risk} /> 
+    </div>
+</ClientInfo>
             <CardFooter>
                 <MonthlyFeeBox>
                     <FeeLabel>Avença Mensal:</FeeLabel>

@@ -122,11 +122,11 @@ const ClientManagement = () => {
     const {
         viewMode, setViewMode, showForm, selectedClient, showClientModal,
         openFormForNew, closeForm, openDetailsModal, closeDetailsModal, sortConfig,
-        setSortConfig: setSortConfigInStore, filters
+        setSortConfig: setSortConfigInStore, filters, searchTerm
     } = useClientStore();
 
     const { data, isLoading, isError, error, refetch } = useQuery({ 
-        queryKey: ['clientsData', filters], // Add filters to queryKey
+        queryKey: ['clientsData', filters, searchTerm], // Add searchTerm to queryKey
         queryFn: fetchClientsData 
     });
     
@@ -139,15 +139,60 @@ const ClientManagement = () => {
     const clients = data?.clients || [];
     const users = data?.users || [];
     
+    // Debug logging
+    console.log('ClientManagement Debug:', {
+        totalClients: clients.length,
+        filters,
+        searchTerm,
+        filteredClientsCount: 0, // Will be calculated below
+        sortedClientsCount: 0    // Will be calculated below
+    });
+    
     // Memoize filtered clients based on store filters
     const filteredClients = useMemo(() => {
-        return clients.filter(client => {
-            const matchesSearch = !filters.searchTerm || client.name.toLowerCase().includes(filters.searchTerm.toLowerCase());
-            const matchesStatus = filters.status === 'all' || (filters.status === 'active' ? client.is_active : !client.is_active);
-            const matchesManager = !filters.accountManager || client.account_manager === filters.accountManager;
-            return matchesSearch && matchesStatus && matchesManager;
+        const filtered = clients.filter(client => {
+            // Search term filter
+            const matchesSearch = !searchTerm || 
+                client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (client.nif && client.nif.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase()));
+            
+            // Active status filter
+            const matchesActive = filters.active === null || 
+                (filters.active === true ? client.is_active : !client.is_active);
+            
+            // Email filter
+            const matchesEmail = filters.hasEmail === null || 
+                (filters.hasEmail === true ? !!client.email : !client.email);
+            
+            // Phone filter
+            const matchesPhone = filters.hasPhone === null || 
+                (filters.hasPhone === true ? !!client.phone : !client.phone);
+            
+            // NIF filter
+            const matchesNif = filters.hasNif === null || 
+                (filters.hasNif === true ? !!client.nif : !client.nif);
+            
+            // Monthly fee filter
+            const matchesMonthlyFee = filters.hasMonthlyFee === null || 
+                (filters.hasMonthlyFee === true ? !!client.monthly_fee : !client.monthly_fee);
+            
+            // Account manager filter
+            const matchesManager = !filters.accountManager || 
+                client.account_manager === filters.accountManager;
+            
+            // Monthly fee range filter
+            const monthlyFee = parseFloat(client.monthly_fee) || 0;
+            const matchesMinFee = !filters.minMonthlyFee || monthlyFee >= parseFloat(filters.minMonthlyFee);
+            const matchesMaxFee = !filters.maxMonthlyFee || monthlyFee <= parseFloat(filters.maxMonthlyFee);
+            
+            return matchesSearch && matchesActive && matchesEmail && matchesPhone && 
+                   matchesNif && matchesMonthlyFee && matchesManager && matchesMinFee && matchesMaxFee;
         });
-    }, [clients, filters]);
+        
+        console.log('Filtered clients:', filtered.length, 'out of', clients.length);
+        return filtered;
+    }, [clients, filters, searchTerm]);
     
     const sortedClients = useMemo(() => {
         let sortableClients = [...filteredClients];
@@ -158,6 +203,7 @@ const ClientManagement = () => {
                 return 0;
             });
         }
+        console.log('Sorted clients:', sortableClients.length, 'out of', filteredClients.length);
         return sortableClients;
     }, [filteredClients, sortConfig]);
 
@@ -180,8 +226,51 @@ const ClientManagement = () => {
         }
     };
     
-    if (isLoading) { /* return loading component */ }
-    if (isError) { /* return error component */ }
+    if (isLoading) {
+        return (
+            <PageContainer>
+                <BackgroundElements/>
+                <ContentWrapper>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+                        <div style={{ textAlign: 'center', color: 'white' }}>
+                            <Loader2 size={48} className="animate-spin" style={{ marginBottom: '1rem' }} />
+                            <p>Carregando clientes...</p>
+                        </div>
+                    </div>
+                </ContentWrapper>
+            </PageContainer>
+        );
+    }
+    
+    if (isError) {
+        return (
+            <PageContainer>
+                <BackgroundElements/>
+                <ContentWrapper>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+                        <div style={{ textAlign: 'center', color: 'white' }}>
+                            <AlertCircle size={48} style={{ marginBottom: '1rem', color: 'rgb(239, 68, 68)' }} />
+                            <p>Erro ao carregar clientes: {error?.message || 'Erro desconhecido'}</p>
+                            <button 
+                                onClick={() => refetch()}
+                                style={{ 
+                                    marginTop: '1rem', 
+                                    padding: '0.5rem 1rem', 
+                                    background: 'rgba(59, 130, 246, 0.2)', 
+                                    border: '1px solid rgba(59, 130, 246, 0.3)', 
+                                    borderRadius: '8px', 
+                                    color: 'white', 
+                                    cursor: 'pointer' 
+                                }}
+                            >
+                                Tentar novamente
+                            </button>
+                        </div>
+                    </div>
+                </ContentWrapper>
+            </PageContainer>
+        );
+    }
     
     return (
         <PageContainer>
@@ -220,7 +309,7 @@ const ClientManagement = () => {
                         <div>
                             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Lista de Clientes</h3>
                             <p style={{ margin: 0, fontSize: '0.875rem', color: 'inherit', opacity: '0.7' }}>
-                                {sortedClients.length} clientes encontrados
+                                {sortedClients.length} de {clients.length} clientes encontrados
                             </p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(0,0,0,0.1)', padding: '0.25rem', borderRadius: '10px' }}>

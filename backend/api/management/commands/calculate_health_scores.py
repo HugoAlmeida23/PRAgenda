@@ -14,6 +14,6 @@ class Command(BaseCommand):
         for client in active_clients:
             score = FinancialHealthService.calculate_for_client(client)
             client.financial_health_score = score
-            client.save(update_fields=['financial_health_score'])
+            client.save(update_fields=['financial_health_score','churn_risk'])
             updated_count += 1
         self.stdout.write(self.style.SUCCESS(f"Successfully updated scores for {updated_count} clients."))

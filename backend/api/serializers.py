@@ -245,7 +245,7 @@ class ClientSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'nif', 'email', 'phone', 'address', 
                   'organization', 'organization_name',
                   'account_manager', 'account_manager_name', 'monthly_fee', 
-                  'created_at', 'updated_at', 'is_active', 'notes', 'fiscal_tags','financial_health_score','compliance_risks','revenue_opportunities']
+                  'created_at', 'updated_at', 'is_active', 'notes', 'fiscal_tags','financial_health_score','compliance_risks','revenue_opportunities','churn_risk']
         read_only_fields = ['id', 'created_at', 'updated_at', 'organization_name']
     
     def validate_fiscal_tags(self, value):

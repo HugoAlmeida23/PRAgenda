@@ -436,6 +436,8 @@ class Client(models.Model):
         db_index=True # <-- ADD INDEX
     )
     
+    CHURN_RISK_CHOICES = [('LOW', 'Baixo'), ('MEDIUM', 'Médio'), ('HIGH', 'Alto')]
+    churn_risk = models.CharField(max_length=10, choices=CHURN_RISK_CHOICES, default='LOW', blank=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
     is_active = models.BooleanField(default=True, verbose_name="Ativo", db_index=True) # <-- ADD INDEX
@@ -551,6 +553,13 @@ class Expense(models.Model):
         verbose_name="Fonte"
     )  # ex: 'bank_import', 'manual'
     
+    source_scanned_invoice = models.OneToOneField(
+        'ScannedInvoice',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='created_expense',
+        verbose_name="Fatura Digitalizada de Origem"
+    )
     class Meta:
         verbose_name = "Despesa"
         verbose_name_plural = "Despesas"
@@ -716,7 +725,7 @@ class WorkflowStep(models.Model):
         null=True,
         verbose_name="Papel do Aprovador"
     )
-    
+    avg_completion_minutes = models.FloatField(null=True, blank=True, help_text="Average time in minutes to complete this step.")
     # ONLY define next_steps - Django automatically creates previous_steps!
     next_steps = models.ManyToManyField(
         'self',

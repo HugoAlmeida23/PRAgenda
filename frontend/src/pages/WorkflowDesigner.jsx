@@ -48,6 +48,32 @@ const CONNECTION_TYPES = {
   CUSTOM: 'custom'
 };
 
+const WorkflowAnalysis = ({ workflowId }) => {
+  const { data: analysis, isLoading, isError } = useQuery({
+      queryKey: ['workflowAnalysis', workflowId],
+      queryFn: () => api.get(`/workflow-definitions/${workflowId}/analyze/`).then(res => res.data),
+      enabled: !!workflowId,
+  });
+
+  if (isLoading) return <div><Loader2 className="animate-spin" /> Analisando...</div>;
+  if (isError) return <div><AlertTriangle /> Erro ao carregar análise.</div>;
+
+  return (
+      <motion.div style={{ ...glassStyle, padding: '1.5rem', background: 'rgba(147, 51, 234, 0.1)', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', color: 'white' }}>Otimizações Sugeridas</h3>
+          {analysis && analysis.bottlenecks && analysis.bottlenecks.map(b => (
+               <div key={b.step_id}>
+                  <h4>Gargalo: {b.step_name}</h4>
+                  <p>Tempo médio: {b.avg_time.toFixed(0)} min (Média geral: {b.overall_avg.toFixed(0)} min)</p>
+               </div>
+          ))}
+          {analysis && analysis.suggestions && analysis.suggestions.map((s, i) => (
+              <p key={i}>{s}</p>
+          ))}
+      </motion.div>
+  );
+}
+
 const WorkflowDesigner = ({
   existingWorkflow = null,
   users = [],
@@ -1175,6 +1201,12 @@ const WorkflowDesigner = ({
               </div>
             )}
           </div>
+        </motion.div>
+      )}
+
+      {workflowData.steps.length > 0 && existingWorkflow && (
+        <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
+          <WorkflowAnalysis workflowId={existingWorkflow.id} />
         </motion.div>
       )}
 

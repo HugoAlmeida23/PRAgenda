@@ -141,8 +141,55 @@ def process_invoice_file_task(self, invoice_id):
         invoice.save()
         
         logger.info(f"Finished processing for invoice {invoice_id}. Status: {invoice.status}")
-        return {"status": "success", "invoice_id": invoice.id}
+
+        invoice = ScannedInvoice.objects.get(id=invoice_id)
+        if invoice.status == 'COMPLETED':
+            try:
+                # Step 1: Auto-categorize and create Expense
+                category = ExpenseCategorizationService.categorize_from_invoice(invoice)
+                client = invoice.batch.organization.clients.filter(nif=invoice.nif_acquirer).first()
+                
+                Expense.objects.create(
+                    organization=invoice.batch.organization,
+                    client=client, # Link to client if NIF matches
+                    amount=invoice.gross_total,
+                    description=f"Fatura de {invoice.original_filename}",
+                    category=category,
+                    date=invoice.doc_date,
+                    is_auto_categorized=True,
+                    source_scanned_invoice=invoice
+                )
+                logger.info(f"Expense created and categorized as '{category}' for invoice {invoice.id}")
+
+                # Step 2: Auto-create a bookkeeping task
+                if client:
+                    task_title = f"Lançamento Contabilístico - Fatura {invoice.atcud}"
+                    task_description = (
+                        f"Realizar o lançamento contabilístico da fatura de {invoice.original_filename}.\n"
+                        f"Valor: {invoice.gross_total}€\n"
+                        f"NIF Emissor: {invoice.nif_emitter}\n"
+                        f"Categoria Sugerida: {category}"
+                    )
+                    
+                    # Assign to the client's account manager or a default user
+                    assignee = client.account_manager or invoice.batch.uploaded_by
+
+                    Task.objects.create(
+                        client=client,
+                        title=task_title,
+                        description=task_description,
+                        assigned_to=assignee,
+                        priority=4 # Low priority by default
+                    )
+                    logger.info(f"Bookkeeping task created for invoice {invoice.id} and client {client.name}")
+
+            except Exception as e:
+                logger.error(f"Error in post-processing for invoice {invoice.id}: {e}", exc_info=True)
+                # Don't fail the entire task, just log the error. The main invoice data is already saved.
+                invoice.processing_log += f"\nErro na automação pós-processamento: {str(e)}"
+                invoice.save(update_fields=['processing_log'])
         
+        return {"status": "success", "invoice_id": invoice.id}
     except ScannedInvoice.DoesNotExist:
         logger.error(f"Invoice {invoice_id} not found.")
         return {"status": "error", "message": f"Invoice {invoice_id} not found."}
@@ -156,6 +203,8 @@ def process_invoice_file_task(self, invoice_id):
         except ScannedInvoice.DoesNotExist:
             pass  # Nothing to do if it's already gone
         self.retry(exc=e)
+
+    
         
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def process_saft_file_task(self, saft_file_id):

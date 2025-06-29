@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   X, Save, User, Mail, Phone, MapPin, Building, Euro, FileText, 
-  Calendar, Tag, Info, Edit3, Loader2, CheckCircle, XCircle 
+  Calendar, Tag, Info, Edit3, Loader2, CheckCircle, XCircle, TrendingUp, ShieldCheck
 } from 'lucide-react';
 import TagInput from './TagInput'; // Usando nosso novo componente robusto
 import FinancialHealthScore from './client/FinancialHealthScore';
 import ComplianceRiskPanel from './client/ComplianceRiskPanel';
 import RevenueOpportunityPanel from './client/RevenueOpportunityPanel';
+import ChurnRiskIndicator from './client/ChurnRiskIndicator';
 // --- Sub-componentes para um código mais limpo ---
 
 const ModalSection = ({ title, icon, children }) => (
@@ -247,6 +248,9 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
 
           {/* Coluna Direita */}
           <div>
+            <ModalSection title="Risco de Churn" icon={<ShieldCheck size={18} />}>
+                <ChurnRiskIndicator risk={client.churn_risk} />
+            </ModalSection>
             <ModalSection title="Análise Financeira" icon={<TrendingUp size={18} />}>
                   <FinancialHealthScore score={client.financial_health_score} placement="modal" />
             </ModalSection>

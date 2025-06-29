@@ -1727,6 +1727,14 @@ class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
             )
         return super().destroy(request, *args, **kwargs)
     
+    @action(detail=True, methods=['get'])
+    def analyze(self, request, pk=None):
+        """Analyzes a workflow for bottlenecks and optimization suggestions."""
+        workflow = self.get_object()
+        # Permission check needed here
+        analysis_data = WorkflowAnalyticsService.analyze_workflow(workflow)
+        return Response(analysis_data)
+        
     @action(detail=True, methods=['post'])
     def assign_to_task(self, request, pk=None):
         workflow = self.get_object()

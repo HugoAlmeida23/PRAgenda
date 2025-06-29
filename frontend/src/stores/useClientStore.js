@@ -8,7 +8,7 @@ const initialFormData = {
 };
 
 const initialFilters = {
-    active: true, hasEmail: null, hasPhone: null, hasNif: null,
+    active: null, hasEmail: null, hasPhone: null, hasNif: null,
     hasMonthlyFee: null, accountManager: '', minMonthlyFee: '', maxMonthlyFee: ''
 };
 

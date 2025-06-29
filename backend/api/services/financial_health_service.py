@@ -54,3 +54,42 @@ class FinancialHealthService:
         if fee > 200: return 75
         if fee > 50: return 60
         return 40
+
+    @staticmethod
+    def calculate_churn_risk(client: Client) -> str:
+        """Calculates the churn risk for a single client."""
+        score = 0
+        reasons = []
+
+        # Factor 1: Profitability Trend (very important)
+        last_six_months_profit = ClientProfitability.objects.filter(
+            client=client
+        ).order_by('-year', '-month')[:6].values_list('profit_margin', flat=True)
+
+        if len(last_six_months_profit) >= 3:
+            recent_avg = sum(last_six_months_profit[:3]) / 3
+            older_avg = sum(last_six_months_profit[3:]) / len(last_six_months_profit[3:])
+            if recent_avg < (older_avg * 0.8): # If recent profit dropped by 20%
+                score += 4
+                reasons.append("Margem de lucro em queda.")
+
+        # Factor 2: Overdue Tasks (indicates problems)
+        overdue_tasks_count = Task.objects.filter(
+            client=client,
+            status__in=['pending', 'in_progress'],
+            deadline__lt=timezone.now()
+        ).count()
+        if overdue_tasks_count > 2:
+            score += 3
+            reasons.append(f"{overdue_tasks_count} tarefas importantes atrasadas.")
+        
+        # Factor 3: Fee vs. Effort (is the client paying too little for the work?)
+        last_profit_record = ClientProfitability.objects.filter(client=client).order_by('-year', '-month').first()
+        if last_profit_record and last_profit_record.profit_margin is not None and last_profit_record.profit_margin < 10:
+            score += 2
+            reasons.append("Margem de lucro muito baixa.")
+
+        # Determine final risk level
+        if score >= 6: return 'HIGH'
+        if score >= 3: return 'MEDIUM'
+        return 'LOW'
