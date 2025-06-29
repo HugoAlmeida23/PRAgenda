@@ -40,6 +40,7 @@ class GeneratedReportSerializer(serializers.ModelSerializer):
 
 class ScannedInvoiceSerializer(serializers.ModelSerializer):
     original_filename = serializers.CharField(source='original_file.name', read_only=True)
+    generated_task_ids = serializers.SerializerMethodField()
     
     class Meta:
         model = ScannedInvoice
@@ -47,9 +48,20 @@ class ScannedInvoiceSerializer(serializers.ModelSerializer):
             'id', 'original_filename', 'status', 'processing_log',
             'raw_qr_code_data', 'nif_emitter', 'nif_acquirer', 'country_code',
             'doc_type', 'doc_date', 'doc_uid', 'atcud', 'taxable_amount',
-            'vat_amount', 'gross_total', 'edited_data', 'is_reviewed', 'created_at'
+            'vat_amount', 'gross_total', 'edited_data', 'is_reviewed', 'created_at',
+            'generated_task_ids'
         ]
-        read_only_fields = ['id', 'original_filename', 'created_at']
+        read_only_fields = ['id', 'original_filename', 'created_at', 'generated_task_ids']
+
+    def get_generated_task_ids(self, obj):
+        """Returns a list of task IDs linked to this invoice."""
+        # Check if the related manager exists and has been prefetched
+        if hasattr(obj, 'generated_tasks') and obj.generated_tasks.all()._result_cache is not None:
+            # Use prefetched data
+            return [task.id for task in obj.generated_tasks.all()]
+        else:
+            # Fallback to a database query if not prefetched
+            return list(obj.generated_tasks.values_list('id', flat=True))
 
 class InvoiceBatchSerializer(serializers.ModelSerializer):
     invoices = ScannedInvoiceSerializer(many=True, read_only=True)
@@ -233,7 +245,7 @@ class ClientSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'nif', 'email', 'phone', 'address', 
                   'organization', 'organization_name',
                   'account_manager', 'account_manager_name', 'monthly_fee', 
-                  'created_at', 'updated_at', 'is_active', 'notes', 'fiscal_tags']
+                  'created_at', 'updated_at', 'is_active', 'notes', 'fiscal_tags','financial_health_score','compliance_risks','revenue_opportunities']
         read_only_fields = ['id', 'created_at', 'updated_at', 'organization_name']
     
     def validate_fiscal_tags(self, value):

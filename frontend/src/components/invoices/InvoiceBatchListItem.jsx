@@ -42,10 +42,8 @@ const InvoiceBatchListItem = ({ batch, clients, isExpanded, onToggle }) => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       
-      toast.success('Download do Excel iniciado!');
     } catch (err) {
       console.error("Error generating Excel:", err);
-      toast.error('Não foi possível gerar o ficheiro Excel.');
     } finally {
       setIsGeneratingExcel(false);
     }

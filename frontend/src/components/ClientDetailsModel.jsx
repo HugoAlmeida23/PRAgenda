@@ -5,7 +5,9 @@ import {
   Calendar, Tag, Info, Edit3, Loader2, CheckCircle, XCircle 
 } from 'lucide-react';
 import TagInput from './TagInput'; // Usando nosso novo componente robusto
-
+import FinancialHealthScore from './client/FinancialHealthScore';
+import ComplianceRiskPanel from './client/ComplianceRiskPanel';
+import RevenueOpportunityPanel from './client/RevenueOpportunityPanel';
 // --- Sub-componentes para um código mais limpo ---
 
 const ModalSection = ({ title, icon, children }) => (
@@ -245,6 +247,15 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
 
           {/* Coluna Direita */}
           <div>
+            <ModalSection title="Análise Financeira" icon={<TrendingUp size={18} />}>
+                  <FinancialHealthScore score={client.financial_health_score} placement="modal" />
+            </ModalSection>
+            <ModalSection title="Riscos de Compliance" icon={<ShieldCheck size={18} />}>
+                <ComplianceRiskPanel risks={client.compliance_risks} />
+            </ModalSection>
+            <ModalSection title="Oportunidades de Receita" icon={<TrendingUp size={18} />}>
+                <RevenueOpportunityPanel opportunities={client.revenue_opportunities} />
+            </ModalSection>
             <ModalSection title="Tags Fiscais" icon={<Tag size={18} style={{ color: 'rgb(196, 181, 253)' }} />}>
               <TagInput tags={formData.fiscal_tags} onTagsChange={handleTagsChange} disabled={!isEditing} />
               <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>

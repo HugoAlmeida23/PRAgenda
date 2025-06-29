@@ -440,7 +440,9 @@ class Client(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
     is_active = models.BooleanField(default=True, verbose_name="Ativo", db_index=True) # <-- ADD INDEX
     notes = models.TextField(blank=True, null=True, verbose_name="Observações")
-    
+    financial_health_score = models.IntegerField(null=True, blank=True, help_text="Calculated score (0-100) representing client's financial health.")
+    compliance_risks = models.JSONField(default=list, blank=True, help_text="List of identified compliance risks.")
+    revenue_opportunities = models.JSONField(default=list, blank=True, help_text="List of identified revenue opportunities.")
     fiscal_tags = JSONField(
         default=list, blank=True,
         verbose_name="Tags Fiscais do Cliente",

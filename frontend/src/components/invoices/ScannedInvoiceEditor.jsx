@@ -1,7 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Edit2, AlertTriangle, CheckCircle, PlusSquare } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Save, Edit2, AlertTriangle, CheckCircle, PlusSquare, Eye } from 'lucide-react';
 import api from '../../api';
 import { useTaskStore } from '../../stores/useTaskStore';
 
@@ -9,6 +10,7 @@ import { useTaskStore } from '../../stores/useTaskStore';
 const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
   const queryClient = useQueryClient();
   const { openFormForInvoiceLaunch } = useTaskStore();
+  const navigate = useNavigate();
 
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
@@ -48,19 +50,16 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
     e.stopPropagation();
     
     if (isCreatingTask) {
-      console.log('Task creation already in progress, ignoring click');
       return;
     }
     
     setIsCreatingTask(true);
-    console.log('Creating task for invoice:', invoice.id, 'from batch:', batch.id);
     
     try {
       const safeClients = Array.isArray(clients) ? clients : [];
       
       setTimeout(() => {
         try {
-          // Passar `invoice`, `batch`, e `clients` para a store
           openFormForInvoiceLaunch(invoice, batch, safeClients);
           
           setTimeout(() => {
@@ -78,8 +77,16 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
     }
   }, [invoice, batch, clients, openFormForInvoiceLaunch, isCreatingTask]);
 
+  const handleViewTaskClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const taskId = invoice.generated_task_ids[0]; // Assume a primeira tarefa é a relevante
+    navigate(`/task-workflow/${taskId}`);
+  };
+
   const hasError = invoice.status === 'ERROR';
   const isCompleted = invoice.status === 'COMPLETED';
+  const hasTask = invoice.generated_task_ids && invoice.generated_task_ids.length > 0;
 
   return (
     <div style={{ 
@@ -123,31 +130,57 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
           )}
           
           {isCompleted && (
-            <motion.button
-              onClick={handleCreateTaskClick}
-              disabled={isCreatingTask}
-              whileHover={!isCreatingTask ? { scale: 1.1, color: '#34d399' } : {}}
-              whileTap={!isCreatingTask ? { scale: 0.95 } : {}}
-              title="Criar tarefa a partir desta fatura"
-              style={{ 
-                background: 'none', 
-                border: 'none', 
-                color: isCreatingTask ? '#6b7280' : '#86efac', 
-                cursor: isCreatingTask ? 'not-allowed' : 'pointer', 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.25rem', 
-                fontSize: '0.8rem', 
-                fontWeight: '500',
-                padding: '0.25rem 0.5rem',
-                borderRadius: '4px',
-                transition: 'all 0.2s ease',
-                opacity: isCreatingTask ? 0.6 : 1
-              }}
-            >
-              <PlusSquare size={16} /> 
-              {isCreatingTask ? 'A criar...' : 'Criar Tarefa'}
-            </motion.button>
+            hasTask ? (
+              <motion.button
+                onClick={handleViewTaskClick}
+                whileHover={{ scale: 1.1, color: '#60a5fa' }}
+                whileTap={{ scale: 0.95 }}
+                title="Ver a tarefa associada"
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  color: '#93c5fd', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.25rem', 
+                  fontSize: '0.8rem', 
+                  fontWeight: '500',
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '4px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <Eye size={16} /> 
+                Ver Tarefa
+              </motion.button>
+            ) : (
+              <motion.button
+                onClick={handleCreateTaskClick}
+                disabled={isCreatingTask}
+                whileHover={!isCreatingTask ? { scale: 1.1, color: '#34d399' } : {}}
+                whileTap={!isCreatingTask ? { scale: 0.95 } : {}}
+                title="Criar tarefa a partir desta fatura"
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  color: isCreatingTask ? '#6b7280' : '#86efac', 
+                  cursor: isCreatingTask ? 'not-allowed' : 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.25rem', 
+                  fontSize: '0.8rem', 
+                  fontWeight: '500',
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '4px',
+                  transition: 'all 0.2s ease',
+                  opacity: isCreatingTask ? 0.6 : 1
+                }}
+              >
+                <PlusSquare size={16} /> 
+                {isCreatingTask ? 'A criar...' : 'Criar Tarefa'}
+              </motion.button>
+            )
           )}
 
           <button 

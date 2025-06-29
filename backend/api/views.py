@@ -65,7 +65,7 @@ class InvoiceBatchViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return InvoiceBatch.objects.all().select_related(
                 'uploaded_by', 'organization'
-            ).prefetch_related('invoices').order_by('-created_at')
+            ).prefetch_related('invoices__generated_tasks').order_by('-created_at')
         
         try:
             profile = user.profile
@@ -76,7 +76,7 @@ class InvoiceBatchViewSet(viewsets.ModelViewSet):
                 organization=profile.organization
             ).select_related(
                 'uploaded_by', 'organization'
-            ).prefetch_related('invoices').order_by('-created_at')
+            ).prefetch_related('invoices__generated_tasks').order_by('-created_at')
             
         except AttributeError:
             # User has no profile
