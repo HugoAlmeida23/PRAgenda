@@ -10,7 +10,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 // --- Components & Layouts ---
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from './components/Layout/Layout';
-import GlobalNotifications from './components/GlobalNotifications'; // <-- IMPORT THE NEW COMPONENT
+import GlobalNotifications from './components/GlobalNotifications';
 
 // --- Page Imports ---
 import Login from "./pages/Login";
@@ -36,6 +36,7 @@ import NotificationSettingsPage from "./pages/NotificationSettingsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SAFTManagementPage from "./pages/SAFTManagement";
 import InvoiceProcessingPage from "./pages/InvoiceProcessing";
+import TaskCreationModal from "./components/task/TaskCreationModal";
 
 // --- React Query Client Configuration ---
 const queryClient = new QueryClient({
@@ -58,7 +59,6 @@ function RegisterAndLogout() {
   return <Register />;
 }
 
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -72,7 +72,6 @@ function App() {
               <Route path="/register" element={<RegisterAndLogout />} />
 
               {/* === Protected Routes (Wrapped in Layout) === */}
-              {/* This is the Layout Route. It protects and provides the layout for all its children. */}
               <Route 
                 element={
                   <ProtectedRoute>
@@ -108,8 +107,16 @@ function App() {
               {/* Fallback for any route that doesn't match */}
               <Route path="*" element={<NotFound />} />
             </Routes>
+            
+            {/* 
+              FIXED: Move TaskCreationModal here - inside BrowserRouter 
+              but outside Routes, with proper context access 
+            */}
+            <TaskCreationModal />
           </BrowserRouter>
-                    <GlobalNotifications />
+          
+          {/* GlobalNotifications can stay here as it's context-aware */}
+          <GlobalNotifications />
         </ThemeProvider>
       </PermissionsProvider>
     </QueryClientProvider>

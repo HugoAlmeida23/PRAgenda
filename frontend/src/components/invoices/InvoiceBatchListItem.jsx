@@ -1,15 +1,14 @@
-// frontend/src/components/invoices/InvoiceBatchListItem.jsx
+// src/components/invoices/InvoiceBatchListItem.jsx
 
-import React, { useState } from 'react'; // Adicionar useState
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, CheckCircle, Clock, XCircle, FileSpreadsheet, Loader2 } from 'lucide-react';
 import ScannedInvoiceEditor from './ScannedInvoiceEditor';
-// Removido 'useTaskStore' se não for mais usado diretamente para notificações
 import api from '../../api';
-import { toast } from 'react-toastify'; // Usar react-toastify diretamente
+import { toast } from 'react-toastify';
 
-const InvoiceBatchListItem = ({ batch, isExpanded, onToggle }) => {
-  const [isGeneratingExcel, setIsGeneratingExcel] = useState(false); // Adicionar estado de loading
+const InvoiceBatchListItem = ({ batch, clients, isExpanded, onToggle }) => {
+  const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
 
   const summary = batch.status_summary.reduce((acc, curr) => {
     acc[curr.status] = curr.count;
@@ -20,34 +19,27 @@ const InvoiceBatchListItem = ({ batch, isExpanded, onToggle }) => {
     setIsGeneratingExcel(true);
     toast.info("A gerar o seu ficheiro Excel. Por favor, aguarde...");
     try {
-      // --- LÓGICA ATUALIZADA ---
       const response = await api.get(`/invoice-batches/${batch.id}/generate_excel/`, {
-        responseType: 'blob', // **Importante:** para tratar a resposta como um ficheiro
+        responseType: 'blob',
       });
 
-      // Criar um URL para o ficheiro blob
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      
-      // Criar um link temporário para iniciar o download
       const link = document.createElement('a');
       link.href = url;
       
-      // Definir o nome do ficheiro
       const contentDisposition = response.headers['content-disposition'];
       let fileName = `faturas_lote_${batch.id}.xlsx`;
       if (contentDisposition) {
           const fileNameMatch = contentDisposition.match(/filename="(.+)"/);
-          if (fileNameMatch.length === 2)
+          if (fileNameMatch && fileNameMatch.length === 2) {
               fileName = fileNameMatch[1];
+          }
       }
       link.setAttribute('download', fileName);
       
-      // Adicionar, clicar e remover o link
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      // Limpar o URL do blob
       window.URL.revokeObjectURL(url);
       
       toast.success('Download do Excel iniciado!');
@@ -60,7 +52,7 @@ const InvoiceBatchListItem = ({ batch, isExpanded, onToggle }) => {
   };
 
   return (
-    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}>
+    <div style={{ background: 'rgba(255, 255, 255,0.03)', border: '1px solid rgba(255, 255, 255,0.1)', borderRadius: '12px' }}>
       <motion.header
         onClick={onToggle}
         style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
@@ -106,7 +98,8 @@ const InvoiceBatchListItem = ({ batch, isExpanded, onToggle }) => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {batch.invoices.map(invoice => (
-                  <ScannedInvoiceEditor key={invoice.id} invoice={invoice} />
+                  // Passar `batch` e `clients` para o componente filho
+                  <ScannedInvoiceEditor key={invoice.id} invoice={invoice} batch={batch} clients={clients} />
                 ))}
               </div>
             </div>

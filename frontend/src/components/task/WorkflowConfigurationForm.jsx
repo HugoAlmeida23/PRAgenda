@@ -1,11 +1,10 @@
 // src/components/task/WorkflowConfigurationForm.jsx
-// This is the adapted WorkflowConfiguration component for use within TaskForm
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Workflow, ArrowRight, Loader2, AlertTriangle } from 'lucide-react';
 import { useTaskStore } from '../../stores/useTaskStore';
 
-const WorkflowConfigurationForm = ({ workflows, users, onStepAssignmentChange }) => {
+const WorkflowConfigurationForm = ({ workflows = [], users = [], onStepAssignmentChange }) => {
     const {
         selectedWorkflowForForm,
         workflowStepsForForm,
@@ -13,9 +12,13 @@ const WorkflowConfigurationForm = ({ workflows, users, onStepAssignmentChange })
         isLoadingWorkflowStepsForForm,
     } = useTaskStore();
 
-    if (!selectedWorkflowForForm) return null;
+    // --- GUARDA DE SEGURANÇA ---
+    // Se não houver um workflow selecionado, não renderiza nada.
+    if (!selectedWorkflowForForm) {
+        return null;
+    }
 
-    const selectedWorkflowData = workflows.find(w => w.id === selectedWorkflowForForm);
+    const selectedWorkflowData = (workflows || []).find(w => w.id === selectedWorkflowForForm);
 
     return (
         <motion.div
@@ -38,7 +41,7 @@ const WorkflowConfigurationForm = ({ workflows, users, onStepAssignmentChange })
                         Configuração do Workflow: {selectedWorkflowData?.name}
                     </h4>
                     <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
-                        Atribua responsáveis para cada passo do workflow
+                        Atribua responsáveis para cada passo do workflow.
                     </p>
                 </div>
             </div>
@@ -48,9 +51,14 @@ const WorkflowConfigurationForm = ({ workflows, users, onStepAssignmentChange })
                     <Loader2 size={24} className="animate-spin" style={{ color: 'rgb(147, 51, 234)' }} />
                     <p style={{ margin: '0.5rem 0 0 0', color: 'rgba(255, 255, 255, 0.7)' }}>Carregando passos...</p>
                 </div>
+            ) : !workflowStepsForForm || workflowStepsForForm.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '1rem', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '8px' }}>
+                    <AlertTriangle size={18} style={{ color: 'rgb(251, 191, 36)', marginBottom: '0.5rem' }}/>
+                    <p style={{margin: 0, color: 'rgba(255,255,255,0.8)'}}>Este workflow não tem passos definidos.</p>
+                </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {workflowStepsForForm.map((step, index) => (
+                    {workflowStepsForForm.map((step) => (
                         <div key={step.id} style={{
                             display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem',
                             background: 'rgba(255, 255, 255, 0.05)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)'
@@ -58,11 +66,11 @@ const WorkflowConfigurationForm = ({ workflows, users, onStepAssignmentChange })
                             <div style={{
                                 width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(147, 51, 234, 0.2)',
                                 border: '1px solid rgba(147, 51, 234, 0.3)', display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', color: 'rgb(147, 51, 234)', fontWeight: '600', fontSize: '0.875rem'
+                                justifyContent: 'center', color: 'rgb(147, 51, 234)', fontWeight: '600', fontSize: '0.875rem', flexShrink: 0
                             }}>
                                 {step.order}
                             </div>
-                            <div style={{ flex: 1 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontWeight: '600', color: 'white', marginBottom: '0.25rem' }}>{step.name}</div>
                                 {step.description && <div style={{ fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.6)' }}>{step.description}</div>}
                                 {step.requires_approval && (
@@ -80,15 +88,14 @@ const WorkflowConfigurationForm = ({ workflows, users, onStepAssignmentChange })
                                         border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '6px', color: 'white', fontSize: '0.875rem'
                                     }}
                                 >
-                                    <option value="" style={{ background: '#1f2937', color: 'white' }}>Selecionar Responsável</option>
-                                    {users.map((user) => (
-                                        <option key={user.id} value={user.user} style={{ background: '#1f2937', color: 'white' }}>
+                                    <option value="" style={{ background: '#1f2937' }}>{step.assign_to_name || 'Automático'}</option>
+                                    {(users || []).map((user) => ( // Adicionada guarda (users || [])
+                                        <option key={user.user || user.id} value={user.user || user.id} style={{ background: '#1f2937' }}>
                                             {user.username}
                                         </option>
                                     ))}
                                 </select>
                             </div>
-                            {index < workflowStepsForForm.length - 1 && <ArrowRight size={16} style={{ color: 'rgba(255, 255, 255, 0.4)' }} />}
                         </div>
                     ))}
                 </div>

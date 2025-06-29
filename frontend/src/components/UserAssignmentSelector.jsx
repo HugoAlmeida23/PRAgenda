@@ -1,9 +1,9 @@
 // src/components/task/UserAssignmentSelector.jsx
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-    Users, User, UserPlus, X, Search, Check, 
-    AlertCircle, ChevronDown, ChevronUp 
+import {
+    Users, User, UserPlus, X, Search, Check,
+    AlertCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const glassStyle = {
@@ -39,7 +39,7 @@ const UserAssignmentSelector = ({
             ...collaborators.map(c => c.id || c.user || c)
         ].filter(Boolean);
 
-        let availableUsers = users.filter(user => 
+        let availableUsers = users.filter(user =>
             !excludedIds.includes(user.user || user.id)
         );
 
@@ -129,7 +129,7 @@ const UserAssignmentSelector = ({
                         color: 'rgba(255, 255, 255, 0.7)',
                         margin: '0.25rem 0 0 0'
                     }}>
-                        {mode === 'single' 
+                        {mode === 'single'
                             ? 'Atribua esta tarefa a um utilizador'
                             : 'Atribua esta tarefa a múltiplos utilizadores'
                         }
@@ -147,11 +147,11 @@ const UserAssignmentSelector = ({
                             style={{
                                 ...glassStyle,
                                 padding: '0.5rem 0.75rem',
-                                border: mode === 'single' 
-                                    ? '1px solid rgba(59, 130, 246, 0.6)' 
+                                border: mode === 'single'
+                                    ? '1px solid rgba(59, 130, 246, 0.6)'
                                     : '1px solid rgba(255, 255, 255, 0.2)',
-                                background: mode === 'single' 
-                                    ? 'rgba(59, 130, 246, 0.3)' 
+                                background: mode === 'single'
+                                    ? 'rgba(59, 130, 246, 0.3)'
                                     : 'rgba(255, 255, 255, 0.1)',
                                 color: 'white',
                                 cursor: 'pointer',
@@ -174,11 +174,11 @@ const UserAssignmentSelector = ({
                             style={{
                                 ...glassStyle,
                                 padding: '0.5rem 0.75rem',
-                                border: mode === 'multiple' 
-                                    ? '1px solid rgba(59, 130, 246, 0.6)' 
+                                border: mode === 'multiple'
+                                    ? '1px solid rgba(59, 130, 246, 0.6)'
                                     : '1px solid rgba(255, 255, 255, 0.2)',
-                                background: mode === 'multiple' 
-                                    ? 'rgba(59, 130, 246, 0.3)' 
+                                background: mode === 'multiple'
+                                    ? 'rgba(59, 130, 246, 0.3)'
                                     : 'rgba(255, 255, 255, 0.1)',
                                 color: 'white',
                                 cursor: 'pointer',
@@ -322,7 +322,7 @@ const UserAssignmentSelector = ({
                             }}>
                                 {collaborators.map(collaborator => (
                                     <motion.div
-                                        key={collaborator.id || collaborator.user || collaborator}
+                                        key={collaborator.id || collaborator.user || `collab-${index}`}
                                         initial={{ opacity: 0, scale: 0.8 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         exit={{ opacity: 0, scale: 0.8 }}
@@ -341,21 +341,18 @@ const UserAssignmentSelector = ({
                                         <User size={14} />
                                         <span>{getUserDisplayName(collaborator)}</span>
                                         {collaborator.first_name && (
-                                            <span style={{
-                                                fontSize: '0.75rem',
-                                                color: 'rgba(255, 255, 255, 0.7)'
-                                            }}>
+                                            <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>
                                                 ({collaborator.first_name})
                                             </span>
                                         )}
                                         <motion.button
                                             type="button"
-                                            whileHover={{ 
-                                                scale: 1.1, 
-                                                backgroundColor: 'rgba(239, 68, 68, 0.4)' 
+                                            whileHover={{
+                                                scale: 1.1,
+                                                backgroundColor: 'rgba(239, 68, 68, 0.4)'
                                             }}
                                             whileTap={{ scale: 0.9 }}
-                                            onClick={() => handleRemoveCollaborator(collaborator.id || collaborator.user || collaborator)}
+                                            onClick={() => handleRemoveCollaborator(collaborator.id || collaborator.user)}
                                             style={{
                                                 background: 'rgba(239, 68, 68, 0.3)',
                                                 border: 'none',
@@ -396,15 +393,15 @@ const UserAssignmentSelector = ({
                                 {/* Search Input */}
                                 <div style={{ marginBottom: '0.75rem' }}>
                                     <div style={{ position: 'relative' }}>
-                                        <Search 
-                                            size={16} 
-                                            style={{ 
-                                                position: 'absolute', 
-                                                left: '0.75rem', 
-                                                top: '50%', 
-                                                transform: 'translateY(-50%)', 
-                                                color: 'rgba(255, 255, 255, 0.5)' 
-                                            }} 
+                                        <Search
+                                            size={16}
+                                            style={{
+                                                position: 'absolute',
+                                                left: '0.75rem',
+                                                top: '50%',
+                                                transform: 'translateY(-50%)',
+                                                color: 'rgba(255, 255, 255, 0.5)'
+                                            }}
                                         />
                                         <input
                                             type="text"

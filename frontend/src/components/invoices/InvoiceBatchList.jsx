@@ -1,11 +1,12 @@
-// frontend/src/components/invoices/InvoiceBatchList.jsx
+// src/components/invoices/InvoiceBatchList.jsx
 
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import InvoiceBatchListItem from './InvoiceBatchListItem';
 import { FolderOpen } from 'lucide-react';
 
-const InvoiceBatchList = ({ batches, activeBatchId, setActiveBatchId }) => {
+// --- RECEBER A PROP `clients` ---
+const InvoiceBatchList = ({ batches, clients, activeBatchId, setActiveBatchId }) => {
   if (!batches || batches.length === 0) {
     return (
       <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
@@ -23,6 +24,7 @@ const InvoiceBatchList = ({ batches, activeBatchId, setActiveBatchId }) => {
             <motion.div key={batch.id} layout>
               <InvoiceBatchListItem 
                 batch={batch}
+                clients={clients} // <<< PASSAR A PROP `clients` PARA CADA ITEM
                 isExpanded={activeBatchId === batch.id}
                 onToggle={() => setActiveBatchId(activeBatchId === batch.id ? null : batch.id)}
               />

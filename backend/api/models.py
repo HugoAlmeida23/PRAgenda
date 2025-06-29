@@ -954,6 +954,16 @@ class Task(models.Model):
         help_text="Identificador único para o período desta obrigação (ex: ANO-TRIMESTRE)"
     )
 
+    source_scanned_invoice = models.ForeignKey(
+        'ScannedInvoice',
+        on_delete=models.SET_NULL,  # Se a fatura for apagada, a tarefa não é, apenas perde a ligação
+        null=True,                  # Nem todas as tarefas virão de uma fatura
+        blank=True,
+        related_name='generated_tasks',
+        verbose_name="Fatura Digitalizada de Origem",
+        help_text="A fatura que originou a criação desta tarefa de lançamento."
+    )
+
     objects = TaskManager()
     
     class Meta:

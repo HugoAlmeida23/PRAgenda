@@ -346,7 +346,8 @@ class TaskSerializer(serializers.ModelSerializer):
             'current_workflow_step', 'current_workflow_step_name', 
             'workflow_comment', 'workflow_progress', 'available_next_steps',
             'workflow_step_assignments', 'workflow_step_assignee', 
-            'has_pending_notifications', 'notifications_count', 'latest_notification'
+            'has_pending_notifications', 'notifications_count', 'latest_notification',
+            'source_scanned_invoice'
         ]
         read_only_fields = [
             'id', 'created_at', 'updated_at', 'completed_at', 
