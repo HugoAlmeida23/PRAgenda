@@ -32,6 +32,7 @@ router.register(r'generated-reports', views.GeneratedReportViewSet, basename='ge
 router.register(r'saft-files', views.SAFTFileViewSet, basename='saftfile')
 router.register(r'invoice-batches', views.InvoiceBatchViewSet, basename='invoicebatch')
 router.register(r'scanned-invoices', views.ScannedInvoiceViewSet, basename='scannedinvoice')
+router.register(r'action-logs', views.OrganizationActionLogViewSet, basename='organization-action-log')
 
 urlpatterns = [
     path("token/", TokenObtainPairView.as_view(), name="get_token"),

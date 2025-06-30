@@ -103,13 +103,16 @@ const NAVIGATION_CONFIG = {
         { path: "/clientprofitability", icon: <DollarSign size={16} />, label: "Rentabilidade" },
         { path: "/reports", icon: <FileText size={16} />, label: "Relatórios" },
       ]
+    },
+    { 
+      name: 'Administração',
+      icon: <ArchiveIcon size={16} />,
+      items: [
+        { path: "action-log", icon: <ArchiveIcon size={16} />, label: "Registo de Ações" }
+      ]
     }
   ]
 };
-
-// ============================================================================
-// STYLED COMPONENTS & UTILITIES
-// ============================================================================
 
 const getDropdownStyles = (theme) => ({
   container: {

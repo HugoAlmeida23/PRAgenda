@@ -264,13 +264,27 @@ export const useTaskStore = create((set, get) => ({
         }
     },
 
-    // UPDATED: This is now the entry point for the logic
     openFormForInvoiceLaunch: (invoice, batch, clients) => {
-        // If batch info is missing or it only contains one invoice, go straight to creation
-        if (!batch || !batch.invoices || batch.invoices.length <= 1) {
+        if (!batch || !batch.invoices) {
+            // Se não há informação do batch, criar tarefa individual
+            get().createTaskForInvoice(invoice, clients);
+            return;
+        }
+
+        // Calcular estatísticas do batch
+        const completedInvoices = batch.invoices.filter(inv => inv.status === 'COMPLETED');
+        const invoicesWithTasks = batch.invoices.filter(inv => 
+            inv.generated_task_ids && inv.generated_task_ids.length > 0
+        );
+        const completedWithoutTasks = completedInvoices.filter(inv => 
+            !inv.generated_task_ids || inv.generated_task_ids.length === 0
+        );
+
+        // Se só há uma fatura processada OU se todas exceto uma já têm tarefas, criar diretamente
+        if (completedInvoices.length <= 1 || completedWithoutTasks.length <= 1) {
             get().createTaskForInvoice(invoice, clients);
         } else {
-            // Otherwise, open the selection modal
+            // Caso contrário, mostrar modal de seleção
             get().openBatchSelectionModal(invoice, batch, clients);
         }
     },

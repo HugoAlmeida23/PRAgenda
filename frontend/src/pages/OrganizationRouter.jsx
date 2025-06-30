@@ -5,6 +5,8 @@ import OrganizationView from './OrganizationView';
 import { Loader2, Brain } from 'lucide-react';
 import BackgroundElements from '../components/HeroSection/BackgroundElements';
 import { motion } from 'framer-motion';
+import OrganizationActionLog from './OrganizationActionLog';
+import { Route } from 'react-router-dom';
 
 const LoadingScreen = () => (
   <div style={{ 

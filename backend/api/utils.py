@@ -1,7 +1,7 @@
 from django.db.models import Sum
 from django.utils import timezone
 from decimal import Decimal
-from .models import Client, TimeEntry, Expense, ClientProfitability
+from .models import Client, TimeEntry, Expense, ClientProfitability, OrganizationActionLog
 import json
 from decimal import Decimal
 import uuid # If you also have UUIDs
@@ -127,3 +127,21 @@ def update_current_month_profitability():
     """
     now = timezone.now()
     return update_profitability_for_period(now.year, now.month)
+
+def log_organization_action(request, action_type, action_description, related_object=None):
+    user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
+    org = None
+    if user and hasattr(user, 'profile') and user.profile.organization:
+        org = user.profile.organization
+    elif hasattr(request, 'organization'):
+        org = request.organization
+    if not org:
+        return  # Don't log if no organization context
+    OrganizationActionLog.objects.create(
+        organization=org,
+        user=user,
+        action_type=action_type,
+        action_description=action_description,
+        related_object_id=str(getattr(related_object, 'id', '')) if related_object else None,
+        related_object_type=related_object.__class__.__name__ if related_object else None
+    )

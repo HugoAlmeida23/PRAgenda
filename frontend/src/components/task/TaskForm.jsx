@@ -1,7 +1,8 @@
-// src/components/task/TaskForm.jsx
+// src/components/task/TaskForm.jsx - Versão atualizada para suportar modo batch
+
 import React, { useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Brain, Loader2, Users, Save, X } from 'lucide-react';
+import { Plus, Brain, Loader2, Users, Save, X, Layers, AlertTriangle } from 'lucide-react';
 import { useTaskStore } from '../../stores/useTaskStore';
 import { STATUS_OPTIONS, PRIORITY_OPTIONS } from '../../pages/TaskManagement';
 import WorkflowConfigurationForm from './WorkflowConfigurationForm';
@@ -33,7 +34,9 @@ const TaskForm = ({
     onNlpSubmit,
     isSaving,
     isNlpProcessing,
-    fetchWorkflowStepsCallback
+    fetchWorkflowStepsCallback,
+    isBatchMode = false,
+    batchInfo = null
 }) => {
     const {
         formData, setFormDataField,
@@ -139,6 +142,14 @@ const TaskForm = ({
     const handleSubmit = (e) => {
         e.preventDefault();
         const dataToSubmit = useTaskStore.getState().prepareFormDataForSubmission();
+        
+        // Adicionar informação de batch se aplicável
+        if (isBatchMode && batchInfo) {
+            dataToSubmit.batch_processing = true;
+            dataToSubmit.batch_id = batchInfo.batchId;
+            dataToSubmit.invoice_ids = batchInfo.invoiceIds;
+        }
+        
         onMainSubmit(dataToSubmit);
     };
 
@@ -151,13 +162,13 @@ const TaskForm = ({
     };
 
     const formFields = [
-        { name: "title", label: "Título *", type: "text", required: true, placeholder: "Digite o título da tarefa" },
+        { name: "title", label: "Título *", type: "text", required: true, placeholder: isBatchMode ? "Título para todas as tarefas do lote" : "Digite o título da tarefa" },
         { name: "client", label: "Cliente", type: "select", options: clients.map(c => ({ value: c.id, label: c.name })) },
         { name: "category", label: "Categoria", type: "select", options: categories.map(cat => ({ value: cat.id, label: cat.name })) },
         { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS.map(opt => ({ value: opt.value, label: opt.label })) },
         { name: "priority", label: "Prioridade", type: "select", options: PRIORITY_OPTIONS.map(opt => ({ value: opt.value, label: opt.label })) },
         { name: "deadline", label: "Prazo", type: "date" },
-        { name: "estimated_time_minutes", label: "Tempo Estimado (minutos)", type: "number", placeholder: "Ex: 120", min: "0" },
+        { name: "estimated_time_minutes", label: "Tempo Estimado (minutos)", type: "number", placeholder: isBatchMode ? "Tempo por fatura (será multiplicado)" : "Ex: 120", min: "0" },
     ];
 
     if (showNaturalLanguageForm) {
@@ -196,24 +207,61 @@ const TaskForm = ({
         >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ padding: '0.5rem', backgroundColor: 'rgba(59, 130, 246, 0.2)', borderRadius: '12px' }}>
-                        <Plus style={{ color: 'rgb(147, 197, 253)' }} size={20} />
+                    <div style={{ 
+                        padding: '0.5rem', 
+                        backgroundColor: isBatchMode ? 'rgba(52, 211, 153, 0.2)' : 'rgba(59, 130, 246, 0.2)', 
+                        borderRadius: '12px' 
+                    }}>
+                        {isBatchMode ? <Layers style={{ color: 'rgb(52, 211, 153)' }} size={20} /> : <Plus style={{ color: 'rgb(147, 197, 253)' }} size={20} />}
                     </div>
                     <div>
-                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>{selectedTask ? 'Editar Tarefa' : 'Criar Nova Tarefa'}</h3>
-                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>{selectedTask ? 'Atualize os detalhes' : 'Preencha os campos'}</p>
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '600' }}>
+                            {selectedTask ? 'Editar Tarefa' : (isBatchMode ? 'Criar Tarefas do Lote' : 'Criar Nova Tarefa')}
+                        </h3>
+                        <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgb(191, 219, 254)' }}>
+                            {selectedTask ? 'Atualize os detalhes' : (isBatchMode ? `${batchInfo?.invoiceCount || 0} faturas selecionadas` : 'Preencha os campos')}
+                        </p>
                     </div>
                 </div>
                 <motion.button type="button" whileHover={{scale:1.1}} onClick={closeForm} style={{background:'none', border:'none', color:'rgba(255,255,255,0.7)', cursor:'pointer'}}>
                     <X size={24}/>
                 </motion.button>
             </div>
+
+            {/* Aviso específico para modo batch */}
+            {isBatchMode && (
+                <div style={{
+                    marginBottom: '1.5rem',
+                    padding: '1rem',
+                    background: 'rgba(251, 191, 36, 0.1)',
+                    border: '1px solid rgba(251, 191, 36, 0.2)',
+                    borderRadius: '8px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <AlertTriangle size={16} style={{ color: 'rgb(251, 191, 36)' }} />
+                        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'rgb(251, 191, 36)' }}>
+                            Processamento em Lote
+                        </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                        Os dados inseridos serão aplicados a todas as {batchInfo?.invoiceCount || 0} faturas selecionadas. 
+                        Cada fatura receberá uma tarefa individual com as mesmas configurações.
+                    </p>
+                </div>
+            )}
             
             <form onSubmit={handleSubmit}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                     {formFields.map(field => (
                         <div key={field.name}>
-                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)' }}>{field.label}</label>
+                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                                {field.label}
+                                {isBatchMode && field.name === 'estimated_time_minutes' && (
+                                    <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.6)', fontWeight: '400' }}>
+                                        {' '}(por fatura)
+                                    </span>
+                                )}
+                            </label>
                             {field.type === "select" ? (
                                 <select name={field.name} value={formData[field.name] || ""} onChange={handleInputChange} style={inputStyle}>
                                     <option value="" style={{ background: '#1f2937' }}>Selecione</option>
@@ -226,18 +274,29 @@ const TaskForm = ({
                     ))}
                 </div>
 
-                <UserAssignmentSelector
-                    users={memoizedUsers}
-                    primaryAssignee={formData.assigned_to}
-                    collaborators={selectedCollaboratorsUi}
-                    onPrimaryAssigneeChange={(userId) => setFormDataField('assigned_to', userId)}
-                    onAddCollaborator={addCollaboratorUi}
-                    onRemoveCollaborator={removeCollaboratorUi}
-                    onModeChange={setAssignmentModeStore}
-                />
+                {/* Atribuições de usuário - Desabilitado em modo batch para simplificar */}
+                {!isBatchMode && (
+                    <UserAssignmentSelector
+                        users={memoizedUsers}
+                        primaryAssignee={formData.assigned_to}
+                        collaborators={selectedCollaboratorsUi}
+                        onPrimaryAssigneeChange={(userId) => setFormDataField('assigned_to', userId)}
+                        onAddCollaborator={addCollaboratorUi}
+                        onRemoveCollaborator={removeCollaboratorUi}
+                        onModeChange={setAssignmentModeStore}
+                    />
+                )}
 
+                {/* Workflow - Simplificado em modo batch */}
                 <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)' }}>Workflow (Opcional)</label>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                        Workflow (Opcional)
+                        {isBatchMode && (
+                            <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.6)', fontWeight: '400' }}>
+                                {' '}(aplicado a todas as tarefas)
+                            </span>
+                        )}
+                    </label>
                     <select name="workflow" value={formData.workflow || ""} onChange={handleInputChange} style={inputStyle}>
                         <option value="" style={{ background: '#1f2937' }}>Nenhum Workflow</option>
                         {workflows.map(wf => <option key={wf.id} value={wf.id} style={{ background: '#1f2937' }}>{wf.name}</option>)}
@@ -245,26 +304,43 @@ const TaskForm = ({
                 </div>
 
                 <div style={{ marginBottom: '1.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)' }}>Descrição</label>
-                    <textarea name="description" value={formData.description || ""} onChange={handleInputChange} placeholder="Descrição detalhada..." rows={4} style={{...inputStyle, resize: 'vertical', width: '100%'}} />
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                        Descrição
+                        {isBatchMode && (
+                            <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.6)', fontWeight: '400' }}>
+                                {' '}(base para todas as tarefas)
+                            </span>
+                        )}
+                    </label>
+                    <textarea 
+                        name="description" 
+                        value={formData.description || ""} 
+                        onChange={handleInputChange} 
+                        placeholder={isBatchMode ? "Descrição base que será aplicada a todas as tarefas do lote..." : "Descrição detalhada..."} 
+                        rows={4} 
+                        style={{...inputStyle, resize: 'vertical', width: '100%'}} 
+                    />
                 </div>
 
-                <AnimatePresence>
-                    {showWorkflowConfigInForm && selectedWorkflowForForm && (
-                        <WorkflowConfigurationForm
-                            workflows={workflows}
-                            users={memoizedUsers}
-                            onStepAssignmentChange={setStepAssignmentForForm}
-                        />
-                    )}
-                </AnimatePresence>
+                {/* Configuração de workflow - Desabilitada em modo batch para simplificar */}
+                {!isBatchMode && (
+                    <AnimatePresence>
+                        {showWorkflowConfigInForm && selectedWorkflowForForm && (
+                            <WorkflowConfigurationForm
+                                workflows={workflows}
+                                users={memoizedUsers}
+                                onStepAssignmentChange={setStepAssignmentForForm}
+                            />
+                        )}
+                    </AnimatePresence>
+                )}
 
                 <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
                     <motion.button type="button" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={closeForm} style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.2)', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }}>Cancelar</motion.button>
                     <motion.button type="submit" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} disabled={isSaving} style={{ ...glassStyle, padding: '0.75rem 1.5rem', border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.2)', color: 'white', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isSaving ? 0.7 : 1 }}>
                         {isSaving && <Loader2 size={16} className="animate-spin" />}
                         <Save size={16} />
-                        {selectedTask ? 'Atualizar' : 'Criar'} Tarefa
+                        {selectedTask ? 'Atualizar' : (isBatchMode ? `Criar ${batchInfo?.invoiceCount || 0} Tarefas` : 'Criar Tarefa')}
                     </motion.button>
                 </div>
             </form>

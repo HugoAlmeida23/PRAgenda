@@ -6,7 +6,8 @@ import { AlertTriangle, CheckCircle } from 'lucide-react';
 const ComplianceRiskPanel = ({ risks = [] }) => {
     if (risks.length === 0) {
         return (
-            <div style={{ padding: '1rem', background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.2)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ padding: '1rem', background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.2)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                title="Riscos de compliance: Problemas fiscais identificados, como tarefas obrigatórias em atraso. Quanto mais riscos, maior a atenção necessária.">
                 <CheckCircle size={20} style={{ color: '#34D399' }} />
                 <div>
                     <h4 style={{ margin: 0, fontWeight: 600, color: 'white' }}>Sem Riscos</h4>
@@ -17,7 +18,7 @@ const ComplianceRiskPanel = ({ risks = [] }) => {
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }} title="Riscos de compliance: Problemas fiscais identificados, como tarefas obrigatórias em atraso. Quanto mais riscos, maior a atenção necessária.">
             {risks.map((risk, index) => (
                 <motion.div
                     key={index}

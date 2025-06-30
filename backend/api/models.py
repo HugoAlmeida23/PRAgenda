@@ -981,6 +981,13 @@ class Task(models.Model):
         verbose_name = "Tarefa"
         verbose_name_plural = "Tarefas"
         ordering = ["priority", "deadline"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source_scanned_invoice'],
+                condition=models.Q(source_scanned_invoice__isnull=False),
+                name='unique_task_per_scanned_invoice'
+            )
+        ]
         unique_together = [['client', 'source_fiscal_obligation', 'obligation_period_key']]
 
     def __str__(self):
@@ -1968,9 +1975,28 @@ class InvoiceBatch(models.Model):
         verbose_name_plural = "Lotes de Faturas"
         ordering = ['-created_at']
 
+    def get_task_creation_status(self):
+        """
+        Retorna informações sobre o estado de criação de tarefas para este lote.
+        """
+        completed_invoices = self.invoices.filter(status='COMPLETED')
+        invoices_with_tasks = completed_invoices.filter(
+            generated_tasks__isnull=False
+        ).distinct()
+        invoices_without_tasks = completed_invoices.exclude(
+            generated_tasks__isnull=False
+        )
+        
+        return {
+            'completed_invoices_count': completed_invoices.count(),
+            'invoices_with_tasks_count': invoices_with_tasks.count(),
+            'invoices_without_tasks_count': invoices_without_tasks.count(),
+            'can_create_batch_tasks': invoices_without_tasks.count() > 0,
+            'all_invoices_have_tasks': invoices_without_tasks.count() == 0 and completed_invoices.count() > 0
+        }
+
     def __str__(self):
         return f"Lote de {self.created_at.strftime('%Y-%m-%d %H:%M')} por {self.uploaded_by.username if self.uploaded_by else 'Unknown'}"
-
 
 class ScannedInvoice(models.Model):
     """Stores the data for a single invoice, extracted from its QR code."""
@@ -2062,3 +2088,16 @@ class SAFTFile(models.Model):
 
     def __str__(self):
         return f"SAFT para {self.organization.name} ({self.fiscal_year or 'N/A'}) - {self.get_status_display()}"
+
+class OrganizationActionLog(models.Model):
+    organization = models.ForeignKey('Organization', on_delete=models.CASCADE, related_name='action_logs')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='action_logs')
+    action_type = models.CharField(max_length=64)
+    action_description = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    related_object_id = models.CharField(max_length=64, blank=True, null=True)
+    related_object_type = models.CharField(max_length=64, blank=True, null=True)
+
+    def __str__(self):
+        user_str = self.user.username if self.user else 'Desconhecido'
+        return f"[{self.timestamp:%Y-%m-%d %H:%M}] {self.organization.name} - {user_str}: {self.action_type}"

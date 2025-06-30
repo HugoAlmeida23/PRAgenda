@@ -1,9 +1,9 @@
-// src/components/task/TaskCreationModal.jsx
+// src/components/task/TaskCreationModal.jsx - Versão atualizada para suportar batches
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, FileText, Layers } from 'lucide-react';
 
 import api from '../../api';
 import { useTaskStore } from '../../stores/useTaskStore';
@@ -23,13 +23,19 @@ const TaskCreationModal = () => {
         isTaskCreationModalOpen,
         closeTaskCreationModal,
         showSuccessNotification,
-        showErrorNotification
+        showErrorNotification,
+        formData
     } = useTaskStore();
 
     // Debug log to see if modal state is changing
     useEffect(() => {
         console.log('TaskCreationModal - isTaskCreationModalOpen:', isTaskCreationModalOpen);
     }, [isTaskCreationModalOpen]);
+
+    // Detectar se é uma tarefa de batch
+    const isBatchTask = formData?.metadata?.batch_processing === true;
+    const batchId = formData?.metadata?.batch_id;
+    const invoiceIds = formData?.metadata?.invoice_ids || [];
 
     // Buscar os dados necessários para os dropdowns do TaskForm
     const { data: contextData, isLoading: isLoadingContext, error: contextError } = useQuery({
@@ -39,7 +45,7 @@ const TaskCreationModal = () => {
             try {
                 const [clientsRes, usersRes, categoriesRes, workflowsRes] = await Promise.all([
                     api.get("/clients/?is_active=true"),
-                    api.get("/profiles/"), // ou /users/ dependendo do seu endpoint
+                    api.get("/profiles/"),
                     api.get("/task-categories/"),
                     api.get("/workflow-definitions/?is_active=true")
                 ]);
@@ -64,33 +70,75 @@ const TaskCreationModal = () => {
                 throw error;
             }
         },
-        enabled: isTaskCreationModalOpen, // Só busca os dados quando o modal está aberto
+        enabled: isTaskCreationModalOpen,
         staleTime: 5 * 60 * 1000,
     });
 
     const createTaskMutation = useMutation({
         mutationFn: (newTaskData) => {
             console.log('Creating task with data:', newTaskData);
-            return api.post("/tasks/", newTaskData);
+            
+            // Se for uma tarefa de batch, usar endpoint específico
+            if (isBatchTask && batchId) {
+                return api.post(`/invoice-batches/${batchId}/create_batch_tasks/`, {
+                    task_data: newTaskData,
+                    invoices_to_process: invoiceIds
+                });
+            } else {
+                // Tarefa individual normal
+                return api.post("/tasks/", newTaskData);
+            }
         },
         onSuccess: (response) => {
-            console.log('Task created successfully:', response);
-            showSuccessNotification("Tarefa Criada", "A nova tarefa foi criada com sucesso.");
+            console.log('Task(s) created successfully:', response);
+            
+            if (isBatchTask) {
+                const tasksCreated = response.data.tasks_created || 0;
+                const tasksFailed = response.data.tasks_failed || 0;
+                
+                if (tasksCreated > 0) {
+                    showSuccessNotification(
+                        "Tarefas Criadas", 
+                        `${tasksCreated} tarefa(s) criada(s) com sucesso para o lote.`
+                    );
+                }
+                
+                if (tasksFailed > 0) {
+                    showErrorNotification(
+                        "Algumas Tarefas Falharam", 
+                        `${tasksFailed} tarefa(s) não puderam ser criadas. Verifique os detalhes.`
+                    );
+                }
+            } else {
+                showSuccessNotification("Tarefa Criada", "A nova tarefa foi criada com sucesso.");
+            }
+            
+            // Invalidar queries relevantes
             queryClient.invalidateQueries({ queryKey: ['tasks'] });
+            queryClient.invalidateQueries({ queryKey: ['invoiceBatches'] });
+            
             closeTaskCreationModal();
         },
         onError: (err) => {
-            console.error('Error creating task:', err);
+            console.error('Error creating task(s):', err);
             const errorMsg = err.response?.data?.detail || 
+                           err.response?.data?.error ||
                            Object.values(err.response?.data || {}).flat().join(', ') || 
                            err.message;
-            showErrorNotification("Erro ao Criar Tarefa", errorMsg);
+            
+            const title = isBatchTask ? "Erro ao Criar Tarefas do Lote" : "Erro ao Criar Tarefa";
+            showErrorNotification(title, errorMsg);
         }
     });
 
     const handleSubmit = (formData) => {
         console.log('TaskCreationModal handleSubmit called with:', formData);
-        createTaskMutation.mutate(formData);
+        
+        // Remover metadados antes de enviar (são apenas para controlo interno)
+        const cleanFormData = { ...formData };
+        delete cleanFormData.metadata;
+        
+        createTaskMutation.mutate(cleanFormData);
     };
 
     // Debug: Log when modal should be visible
@@ -99,6 +147,9 @@ const TaskCreationModal = () => {
     if (!isTaskCreationModalOpen) {
         return null;
     }
+
+    const modalTitle = isBatchTask ? "Criar Tarefas do Lote" : "Criar Nova Tarefa";
+    const modalIcon = isBatchTask ? <Layers size={24} /> : <FileText size={24} />;
 
     return (
         <AnimatePresence>
@@ -131,7 +182,7 @@ const TaskCreationModal = () => {
                     style={{
                         ...glassStyle,
                         width: '100%', 
-                        maxWidth: '800px', 
+                        maxWidth: '900px', 
                         maxHeight: '90vh',
                         overflowY: 'auto', 
                         display: 'flex', 
@@ -148,9 +199,25 @@ const TaskCreationModal = () => {
                         justifyContent: 'space-between',
                         alignItems: 'center'
                     }}>
-                        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '600' }}>
-                            Criar Nova Tarefa
-                        </h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <div style={{ 
+                                padding: '0.5rem', 
+                                background: isBatchTask ? 'rgba(52, 211, 153, 0.2)' : 'rgba(59, 130, 246, 0.2)', 
+                                borderRadius: '8px' 
+                            }}>
+                                {modalIcon}
+                            </div>
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '600' }}>
+                                    {modalTitle}
+                                </h2>
+                                {isBatchTask && (
+                                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                                        {invoiceIds.length} faturas selecionadas para processamento
+                                    </p>
+                                )}
+                            </div>
+                        </div>
                         <motion.button
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}
@@ -173,6 +240,33 @@ const TaskCreationModal = () => {
 
                     {/* Content */}
                     <div style={{ padding: '1.5rem', flex: 1 }}>
+                        {/* Informação específica para tarefas de batch */}
+                        {isBatchTask && (
+                            <div style={{
+                                marginBottom: '1.5rem',
+                                padding: '1rem',
+                                background: 'rgba(52, 211, 153, 0.1)',
+                                border: '1px solid rgba(52, 211, 153, 0.2)',
+                                borderRadius: '8px'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                    <Layers size={16} style={{ color: 'rgb(52, 211, 153)' }} />
+                                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'rgb(52, 211, 153)' }}>
+                                        Processamento em Lote
+                                    </span>
+                                </div>
+                                <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.8)' }}>
+                                    Esta tarefa será aplicada a {invoiceIds.length} faturas do mesmo lote. 
+                                    Todas as faturas selecionadas serão processadas com os mesmos parâmetros.
+                                </p>
+                                {batchId && (
+                                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+                                        ID do Lote: {batchId.substring(0, 8)}...
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
                         {isLoadingContext ? (
                             <div style={{ textAlign: 'center', padding: '2rem' }}>
                                 <Loader2 size={32} className="animate-spin" />
@@ -205,6 +299,12 @@ const TaskCreationModal = () => {
                                 onMainSubmit={handleSubmit}
                                 isSaving={createTaskMutation.isPending}
                                 fetchWorkflowStepsCallback={async () => []} // Empty for creation modal
+                                isBatchMode={isBatchTask}
+                                batchInfo={isBatchTask ? {
+                                    batchId,
+                                    invoiceCount: invoiceIds.length,
+                                    invoiceIds
+                                } : null}
                             />
                         ) : (
                             <div style={{ textAlign: 'center', padding: '2rem' }}>

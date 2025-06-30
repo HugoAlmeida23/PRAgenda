@@ -37,6 +37,7 @@ import ReportsPage from "./pages/ReportsPage";
 import SAFTManagementPage from "./pages/SAFTManagement";
 import InvoiceProcessingPage from "./pages/InvoiceProcessing";
 import TaskCreationModal from "./components/task/TaskCreationModal";
+import OrganizationActionLog from "./pages/OrganizationActionLog";
 
 // --- React Query Client Configuration ---
 const queryClient = new QueryClient({
@@ -102,6 +103,7 @@ function App() {
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="saft-management" element={<SAFTManagementPage/>} />
                 <Route path="invoice-processing" element={<InvoiceProcessingPage />} />
+                <Route path="action-log" element={<OrganizationActionLog />} />
               </Route>
               
               {/* Fallback for any route that doesn't match */}

@@ -1,7 +1,7 @@
 from django.db.models import Count
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Organization, Client,GeneratedReport,SAFTFile, NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory
+from .models import Organization, Client,GeneratedReport,SAFTFile, NotificationSettings,FiscalObligationDefinition, TaskCategory, Task, TimeEntry, NotificationDigest, NotificationTemplate,Expense, ClientProfitability, Profile, AutoTimeTracking, WorkflowDefinition, WorkflowStep, TaskApproval, WorkflowNotification, WorkflowHistory, OrganizationActionLog
 import json
 from django.db import models
 from django.db.models import Sum, Exists, OuterRef # Import Exists
@@ -41,6 +41,7 @@ class GeneratedReportSerializer(serializers.ModelSerializer):
 class ScannedInvoiceSerializer(serializers.ModelSerializer):
     original_filename = serializers.CharField(source='original_file.name', read_only=True)
     generated_task_ids = serializers.SerializerMethodField()
+    has_tasks = serializers.SerializerMethodField()
     
     class Meta:
         model = ScannedInvoice
@@ -49,19 +50,25 @@ class ScannedInvoiceSerializer(serializers.ModelSerializer):
             'raw_qr_code_data', 'nif_emitter', 'nif_acquirer', 'country_code',
             'doc_type', 'doc_date', 'doc_uid', 'atcud', 'taxable_amount',
             'vat_amount', 'gross_total', 'edited_data', 'is_reviewed', 'created_at',
-            'generated_task_ids'
+            'generated_task_ids', 'has_tasks'
         ]
-        read_only_fields = ['id', 'original_filename', 'created_at', 'generated_task_ids']
+        read_only_fields = ['id', 'original_filename', 'created_at', 'generated_task_ids', 'has_tasks']
 
     def get_generated_task_ids(self, obj):
         """Returns a list of task IDs linked to this invoice."""
-        # Check if the related manager exists and has been prefetched
         if hasattr(obj, 'generated_tasks') and obj.generated_tasks.all()._result_cache is not None:
-            # Use prefetched data
-            return [task.id for task in obj.generated_tasks.all()]
+            return [str(task.id) for task in obj.generated_tasks.all()]
         else:
-            # Fallback to a database query if not prefetched
             return list(obj.generated_tasks.values_list('id', flat=True))
+
+    def get_has_tasks(self, obj):
+        """Returns True if this invoice has any associated tasks."""
+        if hasattr(obj, 'generated_tasks'):
+            if obj.generated_tasks.all()._result_cache is not None:
+                return len(obj.generated_tasks.all()) > 0
+            else:
+                return obj.generated_tasks.exists()
+        return False
 
 class InvoiceBatchSerializer(serializers.ModelSerializer):
     invoices = ScannedInvoiceSerializer(many=True, read_only=True)
@@ -820,3 +827,11 @@ class FiscalStatsSerializer(serializers.Serializer):
     by_definition = serializers.DictField()
     by_month = serializers.DictField()
     organization_info = serializers.DictField(required=False)
+
+class OrganizationActionLogSerializer(serializers.ModelSerializer):
+    user = serializers.StringRelatedField(read_only=True)
+    organization = serializers.StringRelatedField(read_only=True)
+
+    class Meta:
+        model = OrganizationActionLog
+        fields = '__all__'

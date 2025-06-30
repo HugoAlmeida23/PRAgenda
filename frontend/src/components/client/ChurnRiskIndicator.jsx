@@ -12,18 +12,21 @@ const ChurnRiskIndicator = ({ risk = 'LOW' }) => {
     const { Icon, color, text } = config[risk] || config.LOW;
 
     return (
-        <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.25rem 0.75rem',
-            borderRadius: '9999px',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            backgroundColor: `${color}20`,
-            border: `1px solid ${color}30`,
-            color: color,
-        }}>
+        <div 
+            style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                backgroundColor: `${color}20`,
+                border: `1px solid ${color}30`,
+                color: color,
+            }}
+            title="Risco de churn: Probabilidade do cliente abandonar o serviço nos próximos meses, calculado com base em tendências de lucro, tarefas atrasadas e margem de lucro."
+        >
             <Icon size={14} />
             <span>{text}</span>
         </div>

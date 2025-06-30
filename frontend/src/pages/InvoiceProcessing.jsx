@@ -1,4 +1,4 @@
-// src/pages/InvoiceProcessing.jsx
+// src/pages/InvoiceProcessing.jsx - Atualizações para suportar a nova funcionalidade
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ import BackgroundElements from '../components/HeroSection/BackgroundElements';
 import InvoiceUploader from '../components/invoices/InvoiceUploader';
 import InvoiceBatchList from '../components/invoices/InvoiceBatchList';
 import BatchSelectionModal from '../components/task/BatchSelectionModal';
+import TaskCreationModal from '../components/task/TaskCreationModal'; // Adicionar importação
 import { useTaskStore } from '../stores/useTaskStore';
 
 const glassStyle = {
@@ -60,15 +61,29 @@ const InvoiceProcessingPage = () => {
     queryFn: async () => {
         const response = await api.get('/invoice-batches/');
         const results = response.data.results || response.data || [];
-        // Adicionar o objeto do lote completo a cada fatura para fácil acesso posterior
-        results.forEach(batch => {
-            if (batch.invoices) {
-                batch.invoices.forEach(invoice => {
-                    invoice.batch = batch;
-                });
+        
+        // Melhorar os dados do lote com informações de tarefas
+        const enhancedResults = await Promise.all(
+          results.map(async (batch) => {
+            try {
+              // Buscar estado detalhado do lote
+              const statusResponse = await api.get(`/invoice-batches/${batch.id}/batch_status/`);
+              batch.task_stats = statusResponse.data.task_stats;
+              batch.can_create_more_tasks = statusResponse.data.can_create_more_tasks;
+              batch.ready_for_batch_creation = statusResponse.data.ready_for_batch_creation;
+            } catch (error) {
+              console.warn(`Erro ao buscar estado do lote ${batch.id}:`, error);
+              // Usar valores padrão se a busca falhar
+              batch.task_stats = { pending: 0, in_progress: 0, completed: 0, cancelled: 0 };
+              batch.can_create_more_tasks = false;
+              batch.ready_for_batch_creation = false;
             }
-        });
-        return results;
+            
+            return batch;
+          })
+        );
+        
+        return enhancedResults;
     },
     refetchInterval: data => hasPendingInvoices(data) ? 3000 : false,
     staleTime: 1000,
@@ -115,8 +130,25 @@ const InvoiceProcessingPage = () => {
   const pageSubtitle = "Envie faturas em imagem ou PDF para extração automática de dados via QR Code.";
   
   const isLoading = isLoadingBatches || isLoadingClients;
-  const isError = isErrorBatches || !clients; // Considera um erro se os clientes não carregarem
+  const isError = isErrorBatches || !clients;
   const error = errorBatches || new Error("Não foi possível carregar a lista de clientes.");
+
+  // Calcular estatísticas gerais dos lotes
+  const batchStats = batches.reduce((stats, batch) => {
+    const taskStats = batch.task_stats || {};
+    stats.totalInvoices += batch.invoice_count || 0;
+    stats.totalTasks += Object.values(taskStats).reduce((sum, count) => sum + count, 0);
+    stats.pendingTasks += taskStats.pending || 0;
+    stats.completedTasks += taskStats.completed || 0;
+    stats.batchesWithTasks += Object.values(taskStats).reduce((sum, count) => sum + count, 0) > 0 ? 1 : 0;
+    return stats;
+  }, {
+    totalInvoices: 0,
+    totalTasks: 0,
+    pendingTasks: 0,
+    completedTasks: 0,
+    batchesWithTasks: 0
+  });
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', color: 'white' }}>
@@ -131,10 +163,24 @@ const InvoiceProcessingPage = () => {
           <div style={{ padding: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', borderRadius: '12px', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
             <ScanLine size={28} style={{ color: 'rgb(52, 211, 153)' }} />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <h1 style={{ fontSize: '1.8rem', fontWeight: '700', margin: 0 }}>{pageTitle}</h1>
             <p style={{ fontSize: '1rem', color: 'rgba(191, 219, 254, 1)', margin: 0 }}>{pageSubtitle}</p>
           </div>
+          
+          {/* Estatísticas rápidas */}
+          {batchStats.totalInvoices > 0 && (
+            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem' }}>
+              <div style={{ textAlign: 'center', padding: '0.5rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', minWidth: '80px' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: '600', color: 'rgb(59, 130, 246)' }}>{batchStats.totalInvoices}</div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.7)' }}>Faturas</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '0.5rem', background: 'rgba(52, 211, 153, 0.1)', borderRadius: '8px', minWidth: '80px' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: '600', color: 'rgb(52, 211, 153)' }}>{batchStats.totalTasks}</div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.7)' }}>Tarefas</div>
+              </div>
+            </div>
+          )}
         </motion.div>
 
         <motion.div variants={itemVariants} style={{ marginBottom: '2rem' }}>
@@ -144,10 +190,15 @@ const InvoiceProcessingPage = () => {
         <motion.div variants={itemVariants} style={{ ...glassStyle, padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <History size={20} style={{ color: 'rgb(196, 181, 253)' }}/>
-            <div>
+            <div style={{ flex: 1 }}>
               <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Lotes de Faturas Enviadas</h3>
               <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(191, 219, 254, 1)' }}>
                 {batches.length} lotes encontrados
+                {batchStats.batchesWithTasks > 0 && (
+                  <span style={{ marginLeft: '0.5rem', color: 'rgb(52, 211, 153)' }}>
+                    • {batchStats.batchesWithTasks} com tarefas
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -185,7 +236,7 @@ const InvoiceProcessingPage = () => {
         </motion.div>
       </motion.div>
 
-      {/* Renderizar o modal de seleção aqui */}
+      {/* Modal de seleção de batch/invoice */}
       <BatchSelectionModal
           isOpen={showBatchSelectionModal}
           onClose={closeBatchSelectionModal}
@@ -194,6 +245,9 @@ const InvoiceProcessingPage = () => {
           onSelectInvoice={() => createTaskForInvoice(selectedInvoiceForTask, availableClientsForBatch)}
           onSelectBatch={() => createTaskForBatch(selectedBatchForTask, availableClientsForBatch)}
       />
+
+      {/* Modal de criação de tarefas */}
+      <TaskCreationModal />
     </div>
   );
 };

@@ -9,9 +9,46 @@ import FinancialHealthScore from './client/FinancialHealthScore';
 import ComplianceRiskPanel from './client/ComplianceRiskPanel';
 import RevenueOpportunityPanel from './client/RevenueOpportunityPanel';
 import ChurnRiskIndicator from './client/ChurnRiskIndicator';
+// --- Custom Tooltip ---
+const Tooltip = ({ message, children }) => {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+      onFocus={() => setVisible(true)}
+      onBlur={() => setVisible(false)}
+      tabIndex={0}
+    >
+      {children}
+      {visible && (
+        <div style={{
+          position: 'absolute',
+          top: '120%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(17, 24, 39, 0.98)',
+          color: 'white',
+          border: '1px solid white',
+          borderRadius: '8px',
+          padding: '1rem',
+          minWidth: '260px',
+          maxWidth: '320px',
+          zIndex: 100,
+          fontSize: '0.95rem',
+          boxShadow: '0 4px 24px 0 rgba(0,0,0,0.25)',
+          whiteSpace: 'normal',
+          pointerEvents: 'none',
+        }}>
+          <div style={{ lineHeight: 1.5 }}>{message}</div>
+        </div>
+      )}
+    </span>
+  );
+};
 // --- Sub-componentes para um código mais limpo ---
 
-const ModalSection = ({ title, icon, children }) => (
+const ModalSection = ({ title, icon, info, children }) => (
   <div style={{ marginBottom: '1.5rem' }}>
     <h3 style={{
       margin: '0 0 1rem 0',
@@ -26,6 +63,11 @@ const ModalSection = ({ title, icon, children }) => (
     }}>
       {icon}
       {title}
+      {info && (
+        <Tooltip message={info}>
+          <Info size={16} style={{ cursor: 'pointer', opacity: 0.7, marginLeft: 2 }} />
+        </Tooltip>
+      )}
     </h3>
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {children}
@@ -248,13 +290,13 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
 
           {/* Coluna Direita */}
           <div>
-            <ModalSection title="Risco de Churn" icon={<ShieldCheck size={18} />}>
+            <ModalSection title="Risco de Churn" icon={<ShieldCheck size={18} />} info="Probabilidade do cliente abandonar o serviço nos próximos meses, calculado com base em tendências de lucro, tarefas atrasadas e margem de lucro.">
                 <ChurnRiskIndicator risk={client.churn_risk} />
             </ModalSection>
-            <ModalSection title="Análise Financeira" icon={<TrendingUp size={18} />}>
+            <ModalSection title="Análise Financeira" icon={<TrendingUp size={18} />} info="Health Score: Mede a saúde financeira do cliente com base em lucratividade, compliance e cash flow. Quanto mais alto, melhor.">
                   <FinancialHealthScore score={client.financial_health_score} placement="modal" />
             </ModalSection>
-            <ModalSection title="Riscos de Compliance" icon={<ShieldCheck size={18} />}>
+            <ModalSection title="Riscos de Compliance" icon={<ShieldCheck size={18} />} info="Riscos de compliance: Problemas fiscais identificados, como tarefas obrigatórias em atraso. Quanto mais riscos, maior a atenção necessária.">
                 <ComplianceRiskPanel risks={client.compliance_risks} />
             </ModalSection>
             <ModalSection title="Oportunidades de Receita" icon={<TrendingUp size={18} />}>

@@ -131,10 +131,22 @@ const ClientManagement = () => {
     });
     
     // For brevity, assuming mutations and handlers exist as before
-    const createClientMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeForm(); } });
-    const updateClientMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeDetailsModal(); } });
-    const toggleClientStatusMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); } });
-    const deleteClientMutation = useMutation({ mutationFn: () => {}, onSuccess: () => { queryClient.invalidateQueries(['clientsData']); } });
+    const createClientMutation = useMutation({
+        mutationFn: (formData) => api.post('/clients/', formData),
+        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeForm(); }
+    });
+    const updateClientMutation = useMutation({
+        mutationFn: ({ id, ...formData }) => api.patch(`/clients/${id}/`, formData),
+        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeDetailsModal(); }
+    });
+    const toggleClientStatusMutation = useMutation({
+        mutationFn: (clientId) => api.patch(`/clients/${clientId}/toggle_status/`),
+        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); }
+    });
+    const deleteClientMutation = useMutation({
+        mutationFn: (clientId) => api.delete(`/clients/${clientId}/`),
+        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); }
+    });
 
     const clients = data?.clients || [];
     const users = data?.users || [];

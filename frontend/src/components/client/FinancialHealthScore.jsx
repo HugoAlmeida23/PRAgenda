@@ -66,7 +66,7 @@ const FinancialHealthScore = ({ score, placement = 'card' }) => {
 
     if (placement === 'modal') {
         return (
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center' }} title="Health Score: Mede a saúde financeira do cliente com base em lucratividade, compliance e cash flow. Quanto mais alto, melhor.">
                 <ScoreCircle score={score} />
                 <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: color, fontWeight: '600' }}>
                     <Icon size={18} />
@@ -78,7 +78,7 @@ const FinancialHealthScore = ({ score, placement = 'card' }) => {
     
     // Default card placement
     return (
-         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }} title="Health Score: Mede a saúde financeira do cliente com base em lucratividade, compliance e cash flow. Quanto mais alto, melhor.">
             <div style={{ fontSize: '0.75rem', fontWeight: '500', color: 'rgba(255,255,255,0.7)' }}>Health Score</div>
             <ScoreCircle score={score} />
         </div>

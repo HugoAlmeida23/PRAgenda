@@ -36,7 +36,7 @@ from .services.notification_digest_service import NotificationDigestService
 from .services.fiscal_obligation_service import FiscalObligationGenerator
 from .services.fiscal_notification_service import FiscalNotificationService 
 from .services.ai_advisor_service import AIAdvisorService
-from .utils import CustomJSONEncoder, update_client_profitability
+from .utils import CustomJSONEncoder, update_client_profitability, log_organization_action  
 from django.db.models import ExpressionWrapper, fields
 from .services.workflow_service import WorkflowService
 from .tasks import update_profitability_for_single_organization_task # Import the new Celery task
@@ -51,6 +51,10 @@ from .tasks import process_saft_file_task
 from .models import InvoiceBatch, ScannedInvoice
 from .serializers import InvoiceBatchSerializer, ScannedInvoiceSerializer
 from .tasks import process_invoice_file_task
+from django.db import transaction
+from .models import OrganizationActionLog
+from .serializers import OrganizationActionLogSerializer
+from rest_framework import permissions
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +133,13 @@ class InvoiceBatchViewSet(viewsets.ModelViewSet):
                     invoice.processing_log = f'Erro ao iniciar processamento: {str(e)}'
                     invoice.save()
             
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='CREATE_INVOICE_BATCH',
+                action_description=f"Lote de faturas criado: {batch.description} (ID: {batch.id}) com {len(created_invoices)} faturas.",
+                related_object=batch
+            )
             # Return the created batch with all related data
             serializer = self.get_serializer(batch)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -137,74 +148,383 @@ class InvoiceBatchViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': f'Erro ao criar lote: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def create_batch_tasks(self, request, pk=None):
+        """
+        Cria tarefas para múltiplas faturas de um lote.
+        Suporta dois modos:
+        1. Criação simples (sem dados de tarefa específicos)
+        2. Criação com dados de tarefa personalizados
+        """
+        batch = self.get_object()
         
+        try:
+            profile = request.user.profile
+            if not profile.organization:
+                return Response({
+                    'error': 'Utilizador não está numa organização.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except AttributeError:
+            return Response({
+                'error': 'Perfil de utilizador não encontrado.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verificar permissões para criar tarefas
+        if not (profile.is_org_admin or profile.can_create_tasks):
+            return Response({
+                'error': 'Sem permissão para criar tarefas'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Obter dados da tarefa (se fornecidos) ou usar defaults
+        task_data = request.data.get('task_data', {})
+        invoice_ids_to_process = request.data.get('invoices_to_process', [])
+        
+        # Filtrar faturas elegíveis
+        eligible_invoices_qs = batch.invoices.filter(
+            status='COMPLETED'
+        ).exclude(
+            generated_tasks__isnull=False  # Excluir faturas que já têm tarefas
+        )
+        
+        if invoice_ids_to_process:
+            eligible_invoices_qs = eligible_invoices_qs.filter(id__in=invoice_ids_to_process)
+        
+        eligible_invoices = list(eligible_invoices_qs.select_related('batch__organization'))
+        
+        if not eligible_invoices:
+            return Response({
+                'success': False,
+                'message': 'Nenhuma fatura elegível encontrada para criação de tarefas.',
+                'tasks_created': 0,
+                'tasks_failed': 0
+            }, status=status.HTTP_200_OK)
+        
+        # Obter clientes disponíveis para matching
+        available_clients = Client.objects.filter(
+            organization=profile.organization,
+            is_active=True
+        ).select_related('organization')
+        
+        # Preparar dados base da tarefa
+        base_task_data = {
+            'status': task_data.get('status', 'pending'),
+            'priority': task_data.get('priority', 3),
+            'deadline': task_data.get('deadline'),
+            'estimated_time_minutes': task_data.get('estimated_time_minutes'),
+            'category_id': task_data.get('category'),
+            'workflow_id': task_data.get('workflow'),
+            'assigned_to_id': task_data.get('assigned_to'),
+            'description_template': task_data.get('description', ''),
+            'title_template': task_data.get('title', 'Lançar Fatura: {invoice_ref}')
+        }
+        
+        # Se um cliente específico foi selecionado, usar esse
+        default_client = None
+        if task_data.get('client'):
+            try:
+                default_client = available_clients.get(id=task_data['client'])
+                if not profile.can_access_client(default_client):
+                    return Response({
+                        'error': f'Sem acesso ao cliente selecionado: {default_client.name}'
+                    }, status=status.HTTP_403_FORBIDDEN)
+            except Client.DoesNotExist:
+                return Response({
+                    'error': 'Cliente selecionado não encontrado'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
+        tasks_created = 0
+        tasks_failed = 0
+        errors = []
+        created_task_ids = []
+        
+        with transaction.atomic():
+            try:
+                for invoice in eligible_invoices:
+                    try:
+                        # Determinar cliente para esta fatura
+                        target_client = default_client
+                        
+                        # Se não há cliente padrão, tentar encontrar por NIF
+                        if not target_client and invoice.nif_acquirer:
+                            target_client = available_clients.filter(
+                                nif=invoice.nif_acquirer
+                            ).first()
+                        
+                        # Se ainda não há cliente, usar o primeiro disponível
+                        if not target_client:
+                            target_client = available_clients.first()
+                        
+                        if not target_client:
+                            errors.append(f"Fatura {invoice.original_filename}: Nenhum cliente disponível")
+                            tasks_failed += 1
+                            continue
+                        
+                        # Verificar se utilizador tem acesso ao cliente
+                        if not profile.can_access_client(target_client):
+                            errors.append(f"Fatura {invoice.original_filename}: Sem acesso ao cliente {target_client.name}")
+                            tasks_failed += 1
+                            continue
+                        
+                        # Gerar título e descrição personalizados
+                        invoice_ref = invoice.atcud or invoice.original_filename
+                        task_title = base_task_data['title_template'].format(
+                            invoice_ref=invoice_ref,
+                            client_name=target_client.name,
+                            batch_description=batch.description or f"Lote {batch.id}"
+                        )
+                        
+                        # Criar descrição detalhada
+                        if base_task_data['description_template']:
+                            task_description = base_task_data['description_template']
+                        else:
+                            task_description = f"Lançamento contabilístico da fatura de {invoice.nif_emitter or 'N/A'}.\n"
+                            task_description += f"Data: {invoice.doc_date or 'N/A'}\n"
+                            task_description += f"Valor Total: {invoice.gross_total or '0.00'}€\n"
+                            task_description += f"IVA: {invoice.vat_amount or '0.00'}€\n"
+                            if batch.description:
+                                task_description += f"Processada em lote: {batch.description}"
+                        
+                        # Criar tarefa
+                        task_kwargs = {
+                            'title': task_title,
+                            'description': task_description,
+                            'client': target_client,
+                            'created_by': request.user,
+                            'source_scanned_invoice': invoice,
+                            'status': base_task_data['status'],
+                            'priority': base_task_data['priority']
+                        }
+                        
+                        # Adicionar campos opcionais se fornecidos
+                        if base_task_data['deadline']:
+                            task_kwargs['deadline'] = base_task_data['deadline']
+                        if base_task_data['estimated_time_minutes']:
+                            task_kwargs['estimated_time_minutes'] = base_task_data['estimated_time_minutes']
+                        if base_task_data['category_id']:
+                            try:
+                                category = TaskCategory.objects.get(id=base_task_data['category_id'])
+                                task_kwargs['category'] = category
+                            except TaskCategory.DoesNotExist:
+                                pass
+                        if base_task_data['assigned_to_id']:
+                            try:
+                                assigned_user = User.objects.get(id=base_task_data['assigned_to_id'])
+                                # Verificar se o usuário pertence à mesma organização
+                                assigned_profile = assigned_user.profile
+                                if assigned_profile.organization == profile.organization:
+                                    task_kwargs['assigned_to'] = assigned_user
+                            except (User.DoesNotExist, Profile.DoesNotExist):
+                                pass
+                        
+                        task = Task.objects.create(**task_kwargs)
+                        
+                        # Configurar workflow se especificado
+                        if base_task_data['workflow_id']:
+                            try:
+                                workflow = WorkflowDefinition.objects.get(
+                                    id=base_task_data['workflow_id'],
+                                    is_active=True
+                                )
+                                first_step = workflow.steps.order_by('order').first()
+                                if first_step:
+                                    task.workflow = workflow
+                                    task.current_workflow_step = first_step
+                                    task.save(update_fields=['workflow', 'current_workflow_step'])
+                                    
+                                    # Criar histórico de workflow
+                                    WorkflowHistory.objects.create(
+                                        task=task,
+                                        from_step=None,
+                                        to_step=first_step,
+                                        changed_by=request.user,
+                                        action='workflow_assigned',
+                                        comment=f"Workflow '{workflow.name}' atribuído na criação em lote."
+                                    )
+                            except WorkflowDefinition.DoesNotExist:
+                                pass
+                        
+                        tasks_created += 1
+                        created_task_ids.append(str(task.id))
+                        
+                        # Log da criação
+                        logger.info(f"Tarefa {task.id} criada para fatura {invoice.id} no batch {batch.id}")
+                        
+                    except Exception as e:
+                        logger.error(f"Erro ao criar tarefa para fatura {invoice.id}: {str(e)}")
+                        tasks_failed += 1
+                        errors.append(f"Fatura {invoice.original_filename}: {str(e)}")
+                
+                # Enviar notificações para tarefas criadas
+                if tasks_created > 0 and base_task_data.get('assigned_to_id'):
+                    try:
+                        assigned_user = User.objects.get(id=base_task_data['assigned_to_id'])
+                        if assigned_user.id != request.user.id:  # Não notificar o criador
+                            NotificationService.create_notification(
+                                user=assigned_user,
+                                task=None,  # Múltiplas tarefas
+                                notification_type='task_assigned_to_you',
+                                title=f"{tasks_created} Novas Tarefas Atribuídas (Lote)",
+                                message=f"Foram-lhe atribuídas {tasks_created} tarefas do lote '{batch.description or 'Sem descrição'}'. "
+                                    f"Criadas por: {request.user.username}.",
+                                created_by=request.user,
+                                metadata={
+                                    'batch_id': str(batch.id),
+                                    'task_ids': created_task_ids,
+                                    'invoice_count': len(eligible_invoices)
+                                }
+                            )
+                    except (User.DoesNotExist, Exception) as e:
+                        logger.warning(f"Erro ao enviar notificação de lote: {e}")
+                
+                response_data = {
+                    'success': True,
+                    'message': f'{tasks_created} tarefas criadas com sucesso.',
+                    'tasks_created': tasks_created,
+                    'tasks_failed': tasks_failed,
+                    'batch_id': str(batch.id),
+                    'created_task_ids': created_task_ids
+                }
+                
+                if errors:
+                    response_data['errors'] = errors
+                    response_data['message'] += f' {tasks_failed} falharam.'
+                # Log organization action for batch task creation
+                log_organization_action(
+                    request,
+                    action_type='BATCH_TASK_CREATION',
+                    action_description=f"{tasks_created} tarefas criadas em lote para batch {batch.id}.",
+                    related_object=batch
+                )
+                return Response(response_data, status=status.HTTP_201_CREATED)
+                
+            except Exception as e:
+                logger.error(f"Erro na criação em lote de tarefas para batch {batch.id}: {str(e)}")
+                return Response({
+                    'error': f'Erro interno ao criar tarefas: {str(e)}'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'])
+    def batch_status(self, request, pk=None):
+        """
+        Retorna informações detalhadas sobre o estado do lote e suas tarefas.
+        """
+        batch = self.get_object()
+        
+        try:
+            profile = request.user.profile
+            if not profile.organization:
+                return Response({'error': 'Utilizador não está numa organização.'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        except AttributeError:
+            return Response({'error': 'Perfil de utilizador não encontrado.'}, 
+                        status=status.HTTP_400_BAD_REQUEST)
+        
+        # Estatísticas das faturas
+        invoices = batch.invoices.all()
+        completed_invoices = invoices.filter(status='COMPLETED')
+        
+        # Estatísticas das tarefas
+        invoices_with_tasks = completed_invoices.filter(generated_tasks__isnull=False).distinct()
+        invoices_without_tasks = completed_invoices.exclude(generated_tasks__isnull=False)
+        
+        # Obter tarefas relacionadas
+        related_tasks = Task.objects.filter(
+            source_scanned_invoice__batch=batch
+        ).select_related('assigned_to', 'client', 'category')
+        
+        task_stats = {
+            'pending': related_tasks.filter(status='pending').count(),
+            'in_progress': related_tasks.filter(status='in_progress').count(),
+            'completed': related_tasks.filter(status='completed').count(),
+            'cancelled': related_tasks.filter(status='cancelled').count(),
+        }
+        
+        return Response({
+            'batch_id': str(batch.id),
+            'batch_description': batch.description,
+            'created_at': batch.created_at,
+            'invoice_stats': {
+                'total': invoices.count(),
+                'completed': completed_invoices.count(),
+                'with_tasks': invoices_with_tasks.count(),
+                'without_tasks': invoices_without_tasks.count(),
+                'processing': invoices.filter(status='PROCESSING').count(),
+                'pending': invoices.filter(status='PENDING').count(),
+                'error': invoices.filter(status='ERROR').count(),
+            },
+            'task_stats': task_stats,
+            'can_create_more_tasks': invoices_without_tasks.count() > 0,
+            'ready_for_batch_creation': invoices_without_tasks.count() > 1,
+        })
+
     @action(detail=True, methods=['get'])
     def generate_excel(self, request, pk=None):
-            """
-            Generates an Excel file with details of all invoices in a specific batch.
-            """
-            batch = self.get_object()
-            invoices = batch.invoices.all().order_by('created_at')
+        """
+        Generates an Excel file with details of all invoices in a specific batch.
+        """
+        batch = self.get_object()
+        invoices = batch.invoices.all().order_by('created_at')
 
-            # Create an in-memory workbook
-            buffer = io.BytesIO()
-            workbook = openpyxl.Workbook()
-            worksheet = workbook.active
-            worksheet.title = 'Faturas Processadas'
+        # Create an in-memory workbook
+        buffer = io.BytesIO()
+        workbook = openpyxl.Workbook()
+        worksheet = workbook.active
+        worksheet.title = 'Faturas Processadas'
 
-            # Define headers
-            headers = [
-                'ID Fatura', 'Ficheiro Original', 'Status', 'NIF Emissor', 'NIF Adquirente',
-                'Data Documento', 'ATCUD', 'Total Bruto', 'Total IVA', 'Base Tributável'
-            ]
-            
-            header_font = Font(bold=True, color="FFFFFF")
-            header_fill = openpyxl.styles.PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")
+        # Define headers
+        headers = [
+            'ID Fatura', 'Ficheiro Original', 'Status', 'NIF Emissor', 'NIF Adquirente',
+            'Data Documento', 'ATCUD', 'Total Bruto', 'Total IVA', 'Base Tributável'
+        ]
+        
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = openpyxl.styles.PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")
 
-            for col_num, header_title in enumerate(headers, 1):
-                cell = worksheet.cell(row=1, column=col_num, value=header_title)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.alignment = Alignment(horizontal='center', vertical='center')
+        for col_num, header_title in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num, value=header_title)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center')
 
-            # Populate rows with invoice data
-            for row_num, invoice in enumerate(invoices, 2):
-                worksheet.cell(row=row_num, column=1, value=str(invoice.id))
-                worksheet.cell(row=row_num, column=2, value=invoice.original_file.name.split('/')[-1])
-                worksheet.cell(row=row_num, column=3, value=invoice.get_status_display())
-                worksheet.cell(row=row_num, column=4, value=invoice.nif_emitter)
-                worksheet.cell(row=row_num, column=5, value=invoice.nif_acquirer)
-                worksheet.cell(row=row_num, column=6, value=invoice.doc_date)
-                worksheet.cell(row=row_num, column=7, value=invoice.atcud)
-                worksheet.cell(row=row_num, column=8, value=float(invoice.gross_total or 0)).number_format = '#,##0.00€'
-                worksheet.cell(row=row_num, column=9, value=float(invoice.vat_amount or 0)).number_format = '#,##0.00€'
-                worksheet.cell(row=row_num, column=10, value=float(invoice.taxable_amount or 0)).number_format = '#,##0.00€'
+        # Populate rows with invoice data
+        for row_num, invoice in enumerate(invoices, 2):
+            worksheet.cell(row=row_num, column=1, value=str(invoice.id))
+            worksheet.cell(row=row_num, column=2, value=invoice.original_file.name.split('/')[-1])
+            worksheet.cell(row=row_num, column=3, value=invoice.get_status_display())
+            worksheet.cell(row=row_num, column=4, value=invoice.nif_emitter)
+            worksheet.cell(row=row_num, column=5, value=invoice.nif_acquirer)
+            worksheet.cell(row=row_num, column=6, value=invoice.doc_date)
+            worksheet.cell(row=row_num, column=7, value=invoice.atcud)
+            worksheet.cell(row=row_num, column=8, value=float(invoice.gross_total or 0)).number_format = '#,##0.00€'
+            worksheet.cell(row=row_num, column=9, value=float(invoice.vat_amount or 0)).number_format = '#,##0.00€'
+            worksheet.cell(row=row_num, column=10, value=float(invoice.taxable_amount or 0)).number_format = '#,##0.00€'
 
-            # Auto-fit column widths
-            for col in worksheet.columns:
-                max_length = 0
-                column = col[0].column_letter
-                for cell in col:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = (max_length + 2)
-                worksheet.column_dimensions[column].width = adjusted_width
+        # Auto-fit column widths
+        for col in worksheet.columns:
+            max_length = 0
+            column = col[0].column_letter
+            for cell in col:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = (max_length + 2)
+            worksheet.column_dimensions[column].width = adjusted_width
 
-            # Save the workbook to the buffer
-            workbook.save(buffer)
-            buffer.seek(0)
+        # Save the workbook to the buffer
+        workbook.save(buffer)
+        buffer.seek(0)
 
-            # Create the HTTP response
-            response = HttpResponse(
-                buffer,
-                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            )
-            response['Content-Disposition'] = f'attachment; filename="faturas_lote_{batch.id}.xlsx"'
+        # Create the HTTP response
+        response = HttpResponse(
+            buffer,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="faturas_lote_{batch.id}.xlsx"'
 
-            return response
+        return response
 
 class ScannedInvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = ScannedInvoiceSerializer
@@ -243,7 +563,13 @@ class ScannedInvoiceViewSet(viewsets.ModelViewSet):
         invoice.is_reviewed = True
         invoice.status = 'COMPLETED'  # Mark as completed after review
         invoice.save()
-        
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='REVIEW_INVOICE',
+            action_description=f"Fatura revista: {invoice.original_filename} (ID: {invoice.id})",
+            related_object=invoice
+        )
         serializer = self.get_serializer(invoice)
         return Response(serializer.data)
     
@@ -295,6 +621,13 @@ class SAFTFileViewSet(viewsets.ModelViewSet):
             # Dispatch the background task
             process_saft_file_task.delay(saft_instance.id)
 
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='UPLOAD_SAFT_FILE',
+                action_description=f"SAFT carregado: {saft_instance.original_filename} (ID: {saft_instance.id})",
+                related_object=saft_instance
+            )
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -482,16 +815,39 @@ class FiscalObligationDefinitionViewSet(viewsets.ModelViewSet):
         # If permission check passes, save with the user's organization
         organization = self.request.user.profile.organization
         serializer.save(organization=organization)
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_FISCAL_OBLIGATION_DEFINITION',
+            action_description=f"Definição de obrigação fiscal criada: {serializer.instance.name} (ID: {serializer.instance.id})",
+            related_object=serializer.instance
+        )
 
     def perform_update(self, serializer):
         self._check_permission(self.request, instance=serializer.instance)
-        serializer.save()
+        instance = serializer.save()
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='UPDATE_FISCAL_OBLIGATION_DEFINITION',
+            action_description=f"Definição de obrigação fiscal atualizada: {instance.name} (ID: {instance.id})",
+            related_object=instance
+        )
 
     def perform_destroy(self, instance):
         self._check_permission(self.request, instance=instance)
         if Task.objects.filter(source_fiscal_obligation=instance).exists():
             raise ValidationError("Esta definição está em uso e não pode ser excluída. Considere desativá-la.")
+        instance_id = instance.id
+        instance_name = instance.name
         instance.delete()
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='DELETE_FISCAL_OBLIGATION_DEFINITION',
+            action_description=f"Definição de obrigação fiscal excluída: {instance_name} (ID: {instance_id})",
+            related_object=None
+        )
                 
 class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
@@ -521,6 +877,13 @@ class ProfileViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_PROFILE',
+            action_description=f"Perfil criado para usuário: {self.request.user.username}",
+            related_object=self.request.user.profile if hasattr(self.request.user, 'profile') else None
+        )
 
 class AutoTimeTrackingViewSet(viewsets.ModelViewSet):
     serializer_class = AutoTimeTrackingSerializer
@@ -533,6 +896,13 @@ class AutoTimeTrackingViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_AUTOTIMETRACKING',
+            action_description=f"AutoTimeTracking criado para usuário: {self.request.user.username}",
+            related_object=self.request.user
+        )
         
 class ClientViewSet(viewsets.ModelViewSet):
     serializer_class = ClientSerializer
@@ -571,9 +941,24 @@ class ClientViewSet(viewsets.ModelViewSet):
             profile = self.request.user.profile
             if not profile.organization:
                 raise ValidationError("Usuário não pertence a nenhuma organização.")
-            
-            # The CanManageClients permission class already checked if the user can create.
-            serializer.save(organization=profile.organization)
+            instance = serializer.save(organization=profile.organization)
+            # Log the action
+            log_organization_action(
+                self.request,
+                action_type='CREATE_CLIENT',
+                action_description=f"Cliente criado: {instance.name} (NIF: {instance.nif})",
+                related_object=instance
+            )
+            # Notify all org admins
+            org_admins = Profile.objects.filter(organization=profile.organization, is_org_admin=True).select_related('user')
+            for admin_profile in org_admins:
+                NotificationService.create_notification(
+                    user=admin_profile.user,
+                    notification_type='client_created',
+                    title=f"Novo cliente criado",
+                    message=f"O cliente {instance.name} (NIF: {instance.nif}) foi criado.",
+                    created_by=self.request.user
+                )
         except Profile.DoesNotExist:
             raise PermissionDenied("Perfil de usuário não encontrado.")
 
@@ -593,12 +978,36 @@ class ClientViewSet(viewsets.ModelViewSet):
             if not (profile.is_org_admin or profile.can_view_all_clients):
                 if not profile.visible_clients.filter(id=client_instance.id).exists():
                     raise PermissionDenied("Você não tem acesso a este cliente para edição")
-            
-            return super().update(request, *args, **kwargs)
-            
+            response = super().update(request, *args, **kwargs)
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='UPDATE_CLIENT',
+                action_description=f"Cliente atualizado: {client_instance.name} (NIF: {client_instance.nif})",
+                related_object=client_instance
+            )
+            # Notify all org admins
+            org_admins = Profile.objects.filter(organization=client_instance.organization, is_org_admin=True).select_related('user')
+            for admin_profile in org_admins:
+                NotificationService.create_notification(
+                    user=admin_profile.user,
+                    notification_type='client_updated',
+                    title=f"Cliente atualizado",
+                    message=f"O cliente {client_instance.name} (NIF: {client_instance.nif}) foi atualizado.",
+                    created_by=request.user
+                )
+            return response
         except Profile.DoesNotExist:
             if self.request.user.is_superuser: # Allow superuser to update if no profile
-                return super().update(request, *args, **kwargs)
+                response = super().update(request, *args, **kwargs)
+                # Log organization action
+                log_organization_action(
+                    request,
+                    action_type='UPDATE_CLIENT',
+                    action_description=f"Cliente atualizado (superuser): {self.get_object().name}",
+                    related_object=self.get_object()
+                )
+                return response
             raise PermissionDenied("Perfil de usuário não encontrado")
 
     def destroy(self, request, *args, **kwargs):
@@ -613,10 +1022,36 @@ class ClientViewSet(viewsets.ModelViewSet):
             if client_instance.organization != profile.organization and not request.user.is_superuser:
                  raise PermissionDenied("Não pode excluir clientes de outra organização.")
 
-            return super().destroy(request, *args, **kwargs)
+            response = super().destroy(request, *args, **kwargs)
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='DELETE_CLIENT',
+                action_description=f"Cliente excluído: {client_instance.name} (NIF: {client_instance.nif})",
+                related_object=client_instance
+            )
+            # Notify all org admins
+            org_admins = Profile.objects.filter(organization=client_instance.organization, is_org_admin=True).select_related('user')
+            for admin_profile in org_admins:
+                NotificationService.create_notification(
+                    user=admin_profile.user,
+                    notification_type='client_deleted',
+                    title=f"Cliente excluído",
+                    message=f"O cliente {client_instance.name} (NIF: {client_instance.nif}) foi excluído.",
+                    created_by=request.user
+                )
+            return response
         except Profile.DoesNotExist:
             if self.request.user.is_superuser:
-                return super().destroy(request, *args, **kwargs)
+                response = super().destroy(request, *args, **kwargs)
+                # Log organization action
+                log_organization_action(
+                    request,
+                    action_type='DELETE_CLIENT',
+                    action_description=f"Cliente excluído (superuser): {self.get_object().name}",
+                    related_object=self.get_object()
+                )
+                return response
             raise PermissionDenied("Perfil de usuário não encontrado")
     
     @action(detail=True, methods=['patch'])
@@ -634,7 +1069,23 @@ class ClientViewSet(viewsets.ModelViewSet):
                 
             client.is_active = not client.is_active
             client.save()
-            
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='TOGGLE_CLIENT_STATUS',
+                action_description=f"Status do cliente alterado: {client.name} (NIF: {client.nif}) para {'Ativo' if client.is_active else 'Inativo'}",
+                related_object=client
+            )
+            # Send notification to all org admins
+            org_admins = Profile.objects.filter(organization=client.organization, is_org_admin=True).select_related('user')
+            for admin_profile in org_admins:
+                NotificationService.create_notification(
+                    user=admin_profile.user,
+                    notification_type='client_status_changed',
+                    title=f"Status do cliente alterado",
+                    message=f"O status do cliente {client.name} (NIF: {client.nif}) foi alterado para {'Ativo' if client.is_active else 'Inativo'}.",
+                    created_by=request.user
+                )
             serializer = self.get_serializer(client)
             return Response(serializer.data)
             
@@ -642,6 +1093,13 @@ class ClientViewSet(viewsets.ModelViewSet):
             if self.request.user.is_superuser: # Superuser can toggle if client exists
                 client.is_active = not client.is_active
                 client.save()
+                # Log organization action
+                log_organization_action(
+                    request,
+                    action_type='TOGGLE_CLIENT_STATUS',
+                    action_description=f"Status do cliente alterado (superuser): {client.name}",
+                    related_object=client
+                )
                 serializer = self.get_serializer(client)
                 return Response(serializer.data)
             raise PermissionDenied("Perfil de usuário não encontrado")
@@ -1097,6 +1555,13 @@ class TaskViewSet(viewsets.ModelViewSet):
             
             # Return updated task data
             serializer = self.get_serializer(task)
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='ASSIGN_USERS_TO_TASK',
+                action_description=f"Atribuição de usuários na tarefa: {task.title} (ID: {task.id}) - ação: {action_type}",
+                related_object=task
+            )
             return Response(serializer.data)
             
         except Profile.DoesNotExist:
@@ -1342,6 +1807,13 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         # The processing logic can be moved here from the serializer or called from a service
         # For now, let's assume it's called via a signal or remains in the serializer's save.
         self._process_workflow_and_status_for_time_entry(time_entry)
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_TIME_ENTRY',
+            action_description=f"Registo de tempo criado: {time_entry.description} (ID: {time_entry.id}) para tarefa {time_entry.task.id if time_entry.task else 'N/A'}",
+            related_object=time_entry
+        )
 
     def _process_workflow_and_status_for_time_entry(self, time_entry: TimeEntry):
         """
@@ -1524,7 +1996,24 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             response_payload["errors"] = errors
             response_payload["message"] = "Alguns registros não puderam ser criados."
             status_code = status.HTTP_207_MULTI_STATUS if created_entries_data else status.HTTP_400_BAD_REQUEST
-        
+        # Log organization action for bulk time entry creation
+        log_organization_action(
+            request,
+            action_type='BULK_CREATE_TIME_ENTRIES',
+            action_description=f"{len(created_entries_data)} registros de tempo criados em lote. Erros: {len(errors)}.",
+            related_object=None
+        )
+        # Notify all org admins
+        if profile and profile.organization:
+            org_admins = Profile.objects.filter(organization=profile.organization, is_org_admin=True).select_related('user')
+            for admin_profile in org_admins:
+                NotificationService.create_notification(
+                    user=admin_profile.user,
+                    notification_type='bulk_time_entry_created',
+                    title=f"Registros de tempo criados em lote",
+                    message=f"{len(created_entries_data)} registros de tempo foram criados em lote por {request.user.username}.",
+                    created_by=request.user
+                )
         return Response(response_payload, status=status_code)
     
 class ExpenseViewSet(viewsets.ModelViewSet):
@@ -1588,6 +2077,23 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                  raise ValidationError({"client": "Cliente para despesa não encontrado."})
 
         serializer.save(created_by=user)
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_EXPENSE',
+            action_description=f"Despesa criada: {serializer.instance.description} (ID: {serializer.instance.id}) para cliente {serializer.instance.client.name if serializer.instance.client else 'N/A'}",
+            related_object=serializer.instance
+        )
+        # Notify all org admins
+        org_admins = Profile.objects.filter(organization=serializer.instance.client.organization, is_org_admin=True).select_related('user')
+        for admin_profile in org_admins:
+            NotificationService.create_notification(
+                user=admin_profile.user,
+                notification_type='expense_created',
+                title=f"Nova despesa criada",
+                message=f"Uma nova despesa foi criada para o cliente {serializer.instance.client.name if serializer.instance.client else 'N/A'}.",
+                created_by=user
+            )
 
 class ClientProfitabilityViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ClientProfitabilitySerializer
@@ -1689,6 +2195,13 @@ class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
         # If WorkflowDefinition model gets an 'organization' field:
         # serializer.save(created_by=user, organization=organization_to_assign)
         serializer.save(created_by=user) 
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_WORKFLOW_DEFINITION',
+            action_description=f"Workflow criado: {serializer.instance.name} (ID: {serializer.instance.id})",
+            related_object=serializer.instance
+        )
     
     def update(self, request, *args, **kwargs):
         user = request.user
@@ -1703,7 +2216,15 @@ class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
         except Profile.DoesNotExist:
             if not user.is_superuser:
                 raise PermissionDenied("Perfil de usuário não encontrado e sem permissão.")
-        return super().update(request, *args, **kwargs)
+        response = super().update(request, *args, **kwargs)
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='UPDATE_WORKFLOW_DEFINITION',
+            action_description=f"Workflow atualizado: {workflow_def.name} (ID: {workflow_def.id})",
+            related_object=workflow_def
+        )
+        return response
     
     def destroy(self, request, *args, **kwargs):
         user = request.user
@@ -1725,7 +2246,15 @@ class WorkflowDefinitionViewSet(viewsets.ModelViewSet):
                 {"error": "Este workflow está em uso por uma ou mais tarefas e não pode ser excluído."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        return super().destroy(request, *args, **kwargs)
+        response = super().destroy(request, *args, **kwargs)
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='DELETE_WORKFLOW_DEFINITION',
+            action_description=f"Workflow excluído: {workflow_def.name} (ID: {workflow_def.id})",
+            related_object=workflow_def
+        )
+        return response
     
     @action(detail=True, methods=['get'])
     def analyze(self, request, pk=None):
@@ -1833,6 +2362,13 @@ class WorkflowStepViewSet(viewsets.ModelViewSet):
         except WorkflowDefinition.DoesNotExist:
             raise ValidationError({"workflow": "WorkflowDefinition não encontrado."})
         serializer.save()
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_WORKFLOW_STEP',
+            action_description=f"Passo de workflow criado: {serializer.instance.name} (ID: {serializer.instance.id})",
+            related_object=serializer.instance
+        )
 
     def update(self, request, *args, **kwargs):
         user = request.user
@@ -1846,7 +2382,15 @@ class WorkflowStepViewSet(viewsets.ModelViewSet):
         except Profile.DoesNotExist:
             if not user.is_superuser:
                 raise PermissionDenied("Perfil não encontrado e sem permissão.")
-        return super().update(request, *args, **kwargs)
+        response = super().update(request, *args, **kwargs)
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='UPDATE_WORKFLOW_STEP',
+            action_description=f"Passo de workflow atualizado: {step_instance.name} (ID: {step_instance.id})",
+            related_object=step_instance
+        )
+        return response
 
     def destroy(self, request, *args, **kwargs):
         user = request.user
@@ -1867,7 +2411,15 @@ class WorkflowStepViewSet(viewsets.ModelViewSet):
                 {"error": "Este passo está ativo em uma ou mais tarefas e não pode ser excluído."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        return super().destroy(request, *args, **kwargs)
+        response = super().destroy(request, *args, **kwargs)
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='DELETE_WORKFLOW_STEP',
+            action_description=f"Passo de workflow excluído: {step_instance.name} (ID: {step_instance.id})",
+            related_object=step_instance
+        )
+        return response
 
 
 class TaskApprovalViewSet(viewsets.ModelViewSet):
@@ -2072,7 +2624,7 @@ class WorkflowStepDetailViewSet(viewsets.ReadOnlyModelViewSet):
             except Profile.DoesNotExist:
                  return Task.objects.none()
         
-        serializer = TaskSerializer(current_tasks_qs, many=True)
+        serializer = TaskSerializer(current_tasks_qs.distinct(), many=True)
         return Response(serializer.data)
         
 class OrganizationViewSet(viewsets.ModelViewSet):
@@ -2134,6 +2686,13 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         profile.save()
         
         logger.info(f"Organização '{organization.name}' criada por {user.username}. Usuário definido como administrador.")
+        # Log organization action
+        log_organization_action(
+            self.request,
+            action_type='CREATE_ORGANIZATION',
+            action_description=f"Organização criada: {organization.name} (ID: {organization.id})",
+            related_object=organization
+        )
 
     def get_permissions(self):
         """
@@ -2202,10 +2761,31 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 setattr(profile_to_add, field.name, request.data[field.name])
 
         profile_to_add.save()
-        
-        # Note: Handling `visible_clients` is better done in `update_member` action
-        # after the user is fully part of the organization.
-
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='ADD_MEMBER_BY_CODE',
+            action_description=f"Membro adicionado à organização {organization.name} (ID: {organization.id}) via código de convite: {profile_to_add.user.username}",
+            related_object=organization
+        )
+        # Notify the new member
+        NotificationService.create_notification(
+            user=profile_to_add.user,
+            notification_type='added_to_organization',
+            title=f"Bem-vindo à organização {organization.name}",
+            message=f"Você foi adicionado à organização '{organization.name}' como {profile_to_add.role}.",
+            created_by=request.user
+        )
+        # Notify all org admins (except the new member)
+        org_admins = Profile.objects.filter(organization=organization, is_org_admin=True).exclude(user=profile_to_add.user).select_related('user')
+        for admin_profile in org_admins:
+            NotificationService.create_notification(
+                user=admin_profile.user,
+                notification_type='organization_member_added',
+                title=f"Novo membro adicionado",
+                message=f"{profile_to_add.user.username} foi adicionado à organização como {profile_to_add.role}.",
+                created_by=request.user
+            )
         return Response(ProfileSerializer(profile_to_add, context={'request': request}).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'])
@@ -2238,7 +2818,31 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                     setattr(profile_to_remove, field.name, False)
             profile_to_remove.visible_clients.clear()
             profile_to_remove.save()
-            
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='REMOVE_MEMBER',
+                action_description=f"Membro removido da organização {organization.name} (ID: {organization.id}): {profile_to_remove.user.username}",
+                related_object=organization
+            )
+            # Notify the removed member
+            NotificationService.create_notification(
+                user=profile_to_remove.user,
+                notification_type='removed_from_organization',
+                title=f"Removido da organização {organization.name}",
+                message=f"Você foi removido da organização '{organization.name}'. Se acredita que isso foi um erro, contate um administrador.",
+                created_by=request.user
+            )
+            # Notify all org admins (except the removed member)
+            org_admins = Profile.objects.filter(organization=organization, is_org_admin=True).exclude(user=profile_to_remove.user).select_related('user')
+            for admin_profile in org_admins:
+                NotificationService.create_notification(
+                    user=admin_profile.user,
+                    notification_type='organization_member_removed',
+                    title=f"Membro removido",
+                    message=f"{profile_to_remove.user.username} foi removido da organização.",
+                    created_by=request.user
+                )
             return Response({"success": "Membro removido da organização."}, status=status.HTTP_200_OK)
         except Profile.DoesNotExist:
             return Response({"error": "Perfil não encontrado nesta organização."}, status=status.HTTP_404_NOT_FOUND)
@@ -2275,7 +2879,21 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                     profile_to_update.visible_clients.set(valid_clients)
                 else:
                     profile_to_update.visible_clients.clear()
-
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='UPDATE_MEMBER',
+                action_description=f"Permissões/atribuições de membro atualizadas na organização {organization.name} (ID: {organization.id}): {profile_to_update.user.username}",
+                related_object=organization
+            )
+            # Notify the updated member
+            NotificationService.create_notification(
+                user=profile_to_update.user,
+                notification_type='organization_member_updated',
+                title=f"Permissões atualizadas na organização {organization.name}",
+                message=f"Suas permissões ou atribuições na organização '{organization.name}' foram atualizadas.",
+                created_by=request.user
+            )
             return Response(ProfileSerializer(profile_to_update, context={'request': request}).data, status=status.HTTP_200_OK)
             
         except Profile.DoesNotExist:
@@ -2541,6 +3159,13 @@ class WorkflowNotificationViewSet(viewsets.ModelViewSet):
                 task=task, target_users=target_users, title=title, message=message,
                 created_by=request.user, priority=priority, scheduled_for=scheduled_for
             )
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='CREATE_MANUAL_REMINDER',
+                action_description=f"Lembrete manual criado para tarefa {task.title} (ID: {task.id}) para usuários: {[u.username for u in target_users]}",
+                related_object=task
+            )
             return Response({
                 'status': 'created', 
                 'count': len(notifications), 
@@ -2727,6 +3352,13 @@ def check_deadlines_and_notify_view(request):
                 notifications = NotificationService.notify_deadline_approaching(task, days_ahead)
                 notifications_created_total += len(notifications)
         
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='CHECK_DEADLINES_AND_NOTIFY',
+            action_description=f"Verificação de deadlines e notificações executada para organização {organization.name} (ID: {organization.id}) - {tasks_checked_total} tarefas verificadas, {notifications_created_total} notificações criadas.",
+            related_object=organization
+        )
         return Response({
             'success': True,
             'message': f'Verificação de deadlines concluída para a organização {organization.name}.',
@@ -2788,6 +3420,13 @@ def check_overdue_steps_and_notify_view(request):
                 notifications = NotificationService.notify_step_overdue(task, task.current_workflow_step, days_on_current_step)
                 notifications_created_total += len(notifications)
         
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='CHECK_OVERDUE_STEPS_AND_NOTIFY',
+            action_description=f"Verificação de passos atrasados executada para organização {organization.name} (ID: {organization.id}) - {tasks_processed_total} tarefas processadas, {notifications_created_total} notificações criadas.",
+            related_object=organization
+        )
         return Response({
             'success': True,
             'message': f'Verificação de passos atrasados ({overdue_threshold_days} dias) concluída para {organization.name}.',
@@ -2853,6 +3492,13 @@ def check_pending_approvals_and_notify_view(request):
                     )
                     notifications_sent_total += len(reminders)
         
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='CHECK_PENDING_APPROVALS_AND_NOTIFY',
+            action_description=f"Verificação de aprovações pendentes executada para organização {organization.name} (ID: {organization.id}) - {tasks_checked_count} tarefas verificadas, {notifications_sent_total} notificações enviadas.",
+            related_object=organization
+        )
         return Response({
             'success': True,
             'message': f'Verificação de aprovações pendentes ({reminder_threshold_days} dias) concluída para {organization.name}.',
@@ -4216,6 +4862,13 @@ def start_ai_advisor_session(request):
         if session_id is None: # Indicates an error occurred within the service
             return Response({"error": initial_message or "Não foi possível iniciar a sessão com o Consultor AI."}, status=status.HTTP_502_BAD_GATEWAY)
 
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='START_AI_ADVISOR_SESSION',
+            action_description=f"Sessão do Consultor AI iniciada pelo usuário {request.user.username} (ID: {request.user.id}) com contexto: {str(context_data)[:200]}",
+            related_object=None
+        )
         return Response({
             "session_id": session_id,
             "initial_message": initial_message
@@ -4247,12 +4900,18 @@ def query_ai_advisor(request):
         advisor_service = AIAdvisorService()
         ai_response_text, error_message = advisor_service.process_query(session_id, user_query_text, request.user)
 
+        # Log organization action
+        log_organization_action(
+            request,
+            action_type='QUERY_AI_ADVISOR',
+            action_description=f"Usuário {request.user.username} (ID: {request.user.id}) consultou o Consultor AI (sessão: {session_id}) com query: {user_query_text[:200]}",
+            related_object=None
+        )
         if error_message:
             # Check if it's a session not found error specifically
             if "Sessão inválida ou expirada" in error_message:
                  return Response({"error": error_message}, status=status.HTTP_404_NOT_FOUND)
             return Response({"error": error_message or "Não foi possível obter resposta do Consultor AI."}, status=status.HTTP_502_BAD_GATEWAY)
-        
         return Response({"response": ai_response_text})
 
     except Profile.DoesNotExist:
@@ -4524,3 +5183,17 @@ def time_entry_context(request):
     except Exception as e:
         logger.error(f"Erro ao construir contexto de registo de tempo: {e}", exc_info=True)
         return Response({"error": "Erro interno ao buscar contexto."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class OrganizationActionLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = OrganizationActionLog.objects.all().order_by('-timestamp')
+    serializer_class = OrganizationActionLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if user.is_superuser:
+            return qs
+        if hasattr(user, 'profile') and user.profile.organization:
+            return qs.filter(organization=user.profile.organization)
+        return qs.none()

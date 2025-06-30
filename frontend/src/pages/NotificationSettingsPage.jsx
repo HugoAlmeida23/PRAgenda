@@ -117,19 +117,20 @@ const NotificationSettingsPage = () => {
             title: 'Geral',
             icon: BellRing,
             settings: [
-                { key: 'email_notifications_enabled', label: 'Notificações por Email', description: 'Receber um resumo por email (se configurado).' },
-                { key: 'notify_report_generated', label: 'Relatório Gerado', description: 'Quando um novo relatório é gerado.' }, // NEW SETTING
+                { key: 'email_notifications_enabled', label: 'Notificações por Email', description: 'Receber notificações e resumos por email (se configurado).' },
+                { key: 'push_notifications_enabled', label: 'Notificações Push', description: 'Receber notificações push no navegador ou app (se suportado).' },
             ]
         },
         {
-            title: 'Eventos de Tarefas e Workflows', // Combined for brevity
+            title: 'Tarefas e Workflows',
             icon: Workflow,
             settings: [
-                { key: 'notify_task_assigned_to_you', label: 'Tarefa Atribuída a Si', description: 'Quando uma nova tarefa é atribuída a si diretamente.'},
+                { key: 'notify_task_assigned_to_you', label: 'Tarefa Atribuída a Si', description: 'Quando uma nova tarefa é atribuída a si diretamente.' },
                 { key: 'notify_workflow_assigned', label: 'Workflow Atribuído', description: 'Quando um workflow é atribuído a uma tarefa.' },
                 { key: 'notify_step_ready', label: 'Passo Pronto', description: 'Quando um passo está pronto para ser trabalhado.' },
                 { key: 'notify_step_completed', label: 'Passo Concluído', description: 'Quando um colega completa um passo.' },
                 { key: 'notify_task_completed', label: 'Tarefa Concluída', description: 'Quando uma tarefa é marcada como concluída.' },
+                { key: 'notify_manual_advance_needed', label: 'Avanço Manual Necessário', description: 'Quando é necessário avançar manualmente um passo do workflow.' },
             ]
         },
         {
@@ -148,6 +149,13 @@ const NotificationSettingsPage = () => {
                 { key: 'notify_deadline_approaching', label: 'Prazo a Expirar', description: 'Lembretes automáticos quando o prazo de uma tarefa está próximo.' },
                 { key: 'notify_step_overdue', label: 'Passo Atrasado', description: 'Alertas quando um passo excede o tempo esperado.' },
                 { key: 'notify_manual_reminders', label: 'Lembretes Manuais', description: 'Receber lembretes enviados por outros colegas.' },
+            ]
+        },
+        {
+            title: 'Relatórios',
+            icon: FileText,
+            settings: [
+                { key: 'notify_report_generated', label: 'Relatório Gerado', description: 'Quando um novo relatório é gerado e está disponível para download.' },
             ]
         }
     ];

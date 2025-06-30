@@ -6,8 +6,7 @@ import { Save, Edit2, AlertTriangle, CheckCircle, PlusSquare, Eye } from 'lucide
 import api from '../../api';
 import { useTaskStore } from '../../stores/useTaskStore';
 
-// Receber a nova prop `batch`
-const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
+const ScannedInvoiceEditor = ({ invoice, batch, clients, batchHasTasks }) => {
   const queryClient = useQueryClient();
   const { openFormForInvoiceLaunch } = useTaskStore();
   const navigate = useNavigate();
@@ -44,7 +43,6 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
     updateMutation.mutate(formData);
   }, [updateMutation, formData]);
 
-  // Atualizar a chamada e as dependências
   const handleCreateTaskClick = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -60,6 +58,7 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
 
       setTimeout(() => {
         try {
+          // Passar informação se deve criar apenas para esta fatura ou para o lote todo
           openFormForInvoiceLaunch(invoice, batch, safeClients);
 
           setTimeout(() => {
@@ -80,13 +79,16 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
   const handleViewTaskClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const taskId = invoice.generated_task_ids[0]; // Assume a primeira tarefa é a relevante
+    const taskId = invoice.generated_task_ids[0];
     navigate(`/task-workflow/${taskId}`);
   };
 
   const hasError = invoice.status === 'ERROR';
   const isCompleted = invoice.status === 'COMPLETED';
   const hasTask = invoice.generated_task_ids && invoice.generated_task_ids.length > 0;
+
+  // Lógica para quando mostrar o botão "Criar Tarefa"
+  const shouldShowCreateTaskButton = isCompleted && !hasTask;
 
   return (
     <div style={{
@@ -101,7 +103,20 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
         alignItems: 'center',
         marginBottom: isEditing ? '1rem' : 0
       }}>
-        <p style={{ margin: 0, fontWeight: '500' }}>{invoice.original_filename}</p>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontWeight: '500' }}>{invoice.original_filename}</p>
+          {hasTask && (
+            <p style={{ 
+              margin: '0.25rem 0 0 0', 
+              fontSize: '0.75rem', 
+              color: 'rgb(52, 211, 153)',
+              fontWeight: '500' 
+            }}>
+              ✓ Tarefa criada
+            </p>
+          )}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {hasError && (
             <span style={{
@@ -129,78 +144,80 @@ const ScannedInvoiceEditor = ({ invoice, batch, clients }) => {
             </span>
           )}
 
-          {isCompleted && !hasTask && (
-            <div style={{
-              marginTop: '0.75rem',
-              padding: '0.75rem',
-              background: 'rgba(52, 211, 153, 0.05)',
-              border: '1px solid rgba(52, 211, 153, 0.15)',
-              borderRadius: '8px',
-              fontSize: '0.8rem',
-              color: 'rgba(255, 255, 255, 0.8)'
-            }}>
-              <p style={{ margin: 0, fontWeight: '500', color: '#86efac' }}>
-                Automação Concluída:
-              </p>
-              <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0, listStyleType: 'disc' }}>
-                <li>Despesa registada e categorizada.</li>
-                <li>Tarefa de lançamento contabilístico criada.</li>
-              </ul>
-            </div>
+          {/* Botão para ver tarefa existente */}
+          {hasTask && (
+            <motion.button
+              onClick={handleViewTaskClick}
+              whileHover={{ scale: 1.1, color: '#60a5fa' }}
+              whileTap={{ scale: 0.95 }}
+              title="Ver a tarefa associada"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#93c5fd',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                fontSize: '0.8rem',
+                fontWeight: '500',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '4px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <Eye size={16} />
+              Ver Tarefa
+            </motion.button>
           )}
 
-          {isCompleted && (
-            hasTask ? (
-              <motion.button
-                onClick={handleViewTaskClick}
-                whileHover={{ scale: 1.1, color: '#60a5fa' }}
-                whileTap={{ scale: 0.95 }}
-                title="Ver a tarefa associada"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#93c5fd',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  fontSize: '0.8rem',
-                  fontWeight: '500',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '4px',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <Eye size={16} />
-                Ver Tarefa
-              </motion.button>
-            ) : (
-              <motion.button
-                onClick={handleCreateTaskClick}
-                disabled={isCreatingTask}
-                whileHover={!isCreatingTask ? { scale: 1.1, color: '#34d399' } : {}}
-                whileTap={!isCreatingTask ? { scale: 0.95 } : {}}
-                title="Criar tarefa a partir desta fatura"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: isCreatingTask ? '#6b7280' : '#86efac',
-                  cursor: isCreatingTask ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  fontSize: '0.8rem',
-                  fontWeight: '500',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '4px',
-                  transition: 'all 0.2s ease',
-                  opacity: isCreatingTask ? 0.6 : 1
-                }}
-              >
-                <PlusSquare size={16} />
-                {isCreatingTask ? 'A criar...' : 'Criar Tarefa'}
-              </motion.button>
-            )
+          {/* Botão para criar tarefa individual - apenas se não há tarefa E se o lote não tem uma estratégia geral */}
+          {shouldShowCreateTaskButton && (
+            <motion.button
+              onClick={handleCreateTaskClick}
+              disabled={isCreatingTask}
+              whileHover={!isCreatingTask ? { scale: 1.1, color: '#34d399' } : {}}
+              whileTap={!isCreatingTask ? { scale: 0.95 } : {}}
+              title="Criar tarefa para esta fatura específica"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: isCreatingTask ? '#6b7280' : '#86efac',
+                cursor: isCreatingTask ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                fontSize: '0.8rem',
+                fontWeight: '500',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '4px',
+                transition: 'all 0.2s ease',
+                opacity: isCreatingTask ? 0.6 : 1
+              }}
+            >
+              <PlusSquare size={16} />
+              {isCreatingTask ? 'A criar...' : 'Criar Tarefa'}
+            </motion.button>
+          )}
+
+          {/* Automação concluída - mostrar apenas se for relevante */}
+          {isCompleted && !hasTask && !batchHasTasks && (
+            <div style={{
+              padding: '0.5rem 0.75rem',
+              background: 'rgba(52, 211, 153, 0.05)',
+              border: '1px solid rgba(52, 211, 153, 0.15)',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              color: 'rgba(255, 255, 255, 0.8)',
+              maxWidth: '200px'
+            }}>
+              <p style={{ margin: 0, fontWeight: '500', color: '#86efac' }}>
+                Processamento concluído
+              </p>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.7rem' }}>
+                Pronta para criação de tarefa
+              </p>
+            </div>
           )}
 
           <button
