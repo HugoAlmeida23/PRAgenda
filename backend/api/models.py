@@ -13,6 +13,8 @@ import logging
 from django.db.models import OuterRef, Exists, Q
 from django.db.models.expressions import RawSQL
 from django.db.models import Subquery
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 
 class Organization(models.Model):
@@ -646,10 +648,6 @@ class ClientProfitability(models.Model):
         return self.profit  
     
 # Add this at the end of your models.py file
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.core.cache import cache
-
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
     if created:
@@ -1360,6 +1358,17 @@ class WorkflowNotification(models.Model):
         verbose_name="Criado por"
     )
     
+    # --- Analytics/Feedback fields ---
+    FEEDBACK_ACTIONS = [
+        ('none', 'Nenhuma'),
+        ('read', 'Lida'),
+        ('dismissed', 'Descartada'),
+        ('acted', 'Ação Tomada'),
+    ]
+    action_type = models.CharField(max_length=16, choices=FEEDBACK_ACTIONS, default='none', null=True, blank=True)
+    dismissed_at = models.DateTimeField(null=True, blank=True)
+    acted_at = models.DateTimeField(null=True, blank=True)
+    
     class Meta:
         # Your existing Meta class is already good.
         verbose_name = "Notificação de Workflow"
@@ -1659,6 +1668,21 @@ class NotificationSettings(models.Model):
             # Ex: 22:00 - 08:00 (atravessa meia-noite)
             return now_time >= self.quiet_start_time or now_time <= self.quiet_end_time
         
+    # Preferred channels (in_app, email, sms, slack, etc.)
+    preferred_channels = models.JSONField(
+        default=list,
+        help_text="Canais preferidos para notificações (ex: ['in_app', 'email'])"
+    )
+    # Notification types enabled/disabled (per type)
+    notification_types_enabled = models.JSONField(
+        default=dict,
+        help_text="Quais tipos de notificação o usuário deseja receber (ex: {'step_ready': True, ...})"
+    )
+    # Digest enabled
+    digest_enabled = models.BooleanField(default=True)
+    # Quiet hours enabled
+    quiet_hours_enabled = models.BooleanField(default=False)
+
 class NotificationTemplate(models.Model):
     """
     Templates personalizáveis para diferentes tipos de notificação
@@ -2101,3 +2125,21 @@ class OrganizationActionLog(models.Model):
     def __str__(self):
         user_str = self.user.username if self.user else 'Desconhecido'
         return f"[{self.timestamp:%Y-%m-%d %H:%M}] {self.organization.name} - {user_str}: {self.action_type}"
+
+@receiver(post_save, sender=Task)
+def auto_dismiss_notifications_on_task_completion(sender, instance, created, **kwargs):
+    """
+    When a Task is completed, auto-mark related notifications as read/archived.
+    """
+    if not created and instance.status == 'completed':
+        related_notifs = WorkflowNotification.objects.filter(
+            task=instance,
+            is_read=False,
+            notification_type__in=['deadline_approaching', 'step_overdue', 'manual_reminder']
+        )
+        now = timezone.now()
+        for notif in related_notifs:
+            notif.is_read = True
+            notif.is_archived = True
+            notif.read_at = now
+            notif.save(update_fields=['is_read', 'is_archived', 'read_at'])

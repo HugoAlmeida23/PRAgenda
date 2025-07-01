@@ -23,15 +23,43 @@ class NotificationService:
         """
         Método central para criar um registo de WorkflowNotification no banco de dados.
         Verifica as configurações do usuário antes de criar.
+        Agora respeita notification_types_enabled, preferred_channels, digest_enabled, quiet_hours_enabled.
         """
         try:
             settings = user.notification_settings
-            if not settings.should_notify(notification_type):
+            # --- 1. Notification type enabled? ---
+            if hasattr(settings, 'notification_types_enabled') and settings.notification_types_enabled:
+                enabled_types = settings.notification_types_enabled
+                if notification_type in enabled_types and not enabled_types[notification_type]:
+                    logger.info(f"Notificação {notification_type} desabilitada para {user.username} via notification_types_enabled")
+                    return None
+            elif not settings.should_notify(notification_type):
                 logger.info(f"Notificação {notification_type} desabilitada para {user.username}")
                 return None
-            
-            if settings.is_quiet_time() and not scheduled_for:
-                logger.info(f"Horário de silêncio ativo para {user.username}, notificação {notification_type} será agendada")
+
+            # --- 2. Quiet hours logic ---
+            if getattr(settings, 'quiet_hours_enabled', False) and settings.is_quiet_time() and not scheduled_for:
+                logger.info(f"Horário de silêncio ativo para {user.username}, notificação {notification_type} será agendada para digest ou após quiet hours")
+                if getattr(settings, 'digest_enabled', True):
+                    # Schedule for digest
+                    digest_hour = settings.digest_time.hour if settings.digest_time else 9
+                    digest_minute = settings.digest_time.minute if settings.digest_time else 0
+                    now = timezone.now()
+                    scheduled_time_today = now.replace(hour=digest_hour, minute=digest_minute, second=0, microsecond=0)
+                    if scheduled_time_today <= now:
+                        scheduled_for = scheduled_time_today + timedelta(days=1)
+                    else:
+                        scheduled_for = scheduled_time_today
+                else:
+                    # Schedule for after quiet hours
+                    end_time = settings.quiet_end_time
+                    now = timezone.now()
+                    scheduled_for = now.replace(hour=end_time.hour, minute=end_time.minute, second=0, microsecond=0)
+                    if scheduled_for <= now:
+                        scheduled_for += timedelta(days=1)
+
+            # --- 3. Digest logic ---
+            if getattr(settings, 'digest_enabled', True) and getattr(settings, 'digest_frequency', 'immediate') != 'immediate' and not scheduled_for:
                 digest_hour = settings.digest_time.hour if settings.digest_time else 9
                 digest_minute = settings.digest_time.minute if settings.digest_time else 0
                 now = timezone.now()
@@ -40,7 +68,14 @@ class NotificationService:
                     scheduled_for = scheduled_time_today + timedelta(days=1)
                 else:
                     scheduled_for = scheduled_time_today
-                    
+
+            # --- 4. Channel logic (for frontend integration) ---
+            # Save preferred_channels in metadata for frontend to use (e.g., ['in_app', 'email'])
+            if hasattr(settings, 'preferred_channels') and settings.preferred_channels:
+                if metadata is None:
+                    metadata = {}
+                metadata['preferred_channels'] = settings.preferred_channels
+
         except NotificationSettings.DoesNotExist:
             pass
         except AttributeError:

@@ -649,9 +649,26 @@ class NotificationSettingsSerializer(serializers.ModelSerializer):
             'notify_report_generated',
             'digest_frequency', 'digest_time', 'deadline_days_notice',
             'overdue_threshold_days', 'approval_reminder_days',
-            'quiet_start_time', 'quiet_end_time'
+            'quiet_start_time', 'quiet_end_time',
+            'preferred_channels', 'notification_types_enabled', 'digest_enabled', 'quiet_hours_enabled',
         ]
 
+    def validate_preferred_channels(self, value):
+        allowed = {'in_app', 'email', 'sms', 'slack'}
+        if not isinstance(value, list):
+            raise serializers.ValidationError("preferred_channels deve ser uma lista")
+        for v in value:
+            if v not in allowed:
+                raise serializers.ValidationError(f"Canal não suportado: {v}")
+        return value
+
+    def validate_notification_types_enabled(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("notification_types_enabled deve ser um dicionário")
+        for k, v in value.items():
+            if not isinstance(v, bool):
+                raise serializers.ValidationError(f"O valor para {k} deve ser booleano")
+        return value
 
 class WorkflowNotificationSerializer(serializers.ModelSerializer):
     user_name = serializers.ReadOnlyField(source='user.username')
@@ -671,7 +688,8 @@ class WorkflowNotificationSerializer(serializers.ModelSerializer):
             'priority', 'title', 'message', 'is_read', 'is_archived',
             'email_sent', 'created_at', 'read_at', 'scheduled_for',
             'metadata', 'created_by', 'created_by_name',
-            'time_since_created', 'is_urgent'
+            'time_since_created', 'is_urgent',
+            'action_type', 'dismissed_at', 'acted_at',
         ]
         read_only_fields = [
             'id', 'created_at', 'read_at', 'time_since_created', 'is_urgent'

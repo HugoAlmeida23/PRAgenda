@@ -44,6 +44,13 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+       'TITLE': 'PRAgenda API',
+       'DESCRIPTION': 'Full API documentation for PRAgenda',
+       'VERSION': '1.0.0',
 }
 
 if DEBUG:
@@ -77,6 +84,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     'django_celery_beat',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [

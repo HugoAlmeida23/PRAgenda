@@ -84,6 +84,36 @@ app.conf.beat_schedule = {
         'task': 'api.tasks.notification_escalate_task',
         'schedule': crontab(minute=30), # Every hour at minute 30
     },
+    'check-client-health-scores-daily': {
+        'task': 'api.tasks.check_client_health_scores_and_notify',
+        'schedule': crontab(hour=5, minute=0),
+        'options': {'expires': 3600},
+    },
+    'check-compliance-risks-daily': {
+        'task': 'api.tasks.check_compliance_risks_and_notify',
+        'schedule': crontab(hour=5, minute=10),
+        'options': {'expires': 3600},
+    },
+    'check-revenue-opportunities-daily': {
+        'task': 'api.tasks.check_revenue_opportunities_and_notify',
+        'schedule': crontab(hour=5, minute=20),
+        'options': {'expires': 3600},
+    },
+    'send-smart-daily-digest': {
+        'task': 'api.tasks.send_smart_daily_digest',
+        'schedule': crontab(hour=7, minute=0),
+        'options': {'expires': 3600},
+    },
+    'escalate-unread-urgent-notifications': {
+        'task': 'api.tasks.escalate_unread_urgent_notifications',
+        'schedule': crontab(hour=8, minute=0),
+        'options': {'expires': 3600},
+    },
+    'detect-anomalies-daily': {
+        'task': 'api.tasks.detect_anomalies_and_notify',
+        'schedule': crontab(hour=6, minute=0),
+        'options': {'expires': 3600},
+    },
 }
 
 app.conf.timezone = 'Europe/Lisbon' # Or your project's timezone

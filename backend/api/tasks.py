@@ -944,6 +944,269 @@ def notification_escalate_task():
         return {'status': 'error', 'message': str(e)}
     return {'status': 'success', 'notifications_escalated': escalated_count}
 
+@shared_task
+def check_client_health_scores_and_notify():
+    """
+    Calculates health scores and churn risk for all active clients, notifies if risk is high or medium.
+    """
+    from .services.financial_health_service import FinancialHealthService
+    from .models import Client, Profile
+    updated_count = 0
+    for client in Client.objects.filter(is_active=True):
+        score = FinancialHealthService.calculate_for_client(client)
+        churn_risk = FinancialHealthService.calculate_churn_risk(client)
+        client.financial_health_score = score
+        client.churn_risk = churn_risk
+        client.save(update_fields=['financial_health_score', 'churn_risk'])
+        updated_count += 1
+        if churn_risk in ['HIGH', 'MEDIUM']:
+            # Prefer account manager, fallback to org admins
+            notified = False
+            if client.account_manager and client.account_manager.is_active:
+                NotificationService.create_notification(
+                    user=client.account_manager,
+                    task=None,
+                    notification_type='client_churn_risk',
+                    title=f"Alerta: Risco de churn {churn_risk.lower()} para {client.name}",
+                    message=f"O cliente {client.name} apresenta risco {churn_risk.lower()} de churn.",
+                    check_existing_recent=True,
+                    recent_threshold_hours=24
+                )
+                notified = True
+            if not notified and client.organization:
+                org_admins = Profile.objects.filter(organization=client.organization, is_org_admin=True, user__is_active=True)
+                for admin in org_admins:
+                    NotificationService.create_notification(
+                        user=admin.user,
+                        task=None,
+                        notification_type='client_churn_risk',
+                        title=f"Alerta: Risco de churn {churn_risk.lower()} para {client.name}",
+                        message=f"O cliente {client.name} apresenta risco {churn_risk.lower()} de churn.",
+                        check_existing_recent=True,
+                        recent_threshold_hours=24
+                    )
+
+@shared_task
+def check_compliance_risks_and_notify():
+    """
+    Checks compliance risks for all active clients and notifies account manager or org admins if high severity risks are found.
+    """
+    from .services.compliance_monitor_service import ComplianceMonitor
+    from .models import Client, Profile
+    for client in Client.objects.filter(is_active=True):
+        risks = ComplianceMonitor.check_for_client(client)
+        for risk in risks:
+            if risk.get('severity') == 'high':
+                notified = False
+                if client.account_manager and client.account_manager.is_active:
+                    NotificationService.create_notification(
+                        user=client.account_manager,
+                        task=None,
+                        notification_type='client_compliance_risk',
+                        title=risk.get('title', f"Risco de compliance para {client.name}"),
+                        message=risk.get('details', ''),
+                        check_existing_recent=True,
+                        recent_threshold_hours=24
+                    )
+                    notified = True
+                if not notified and client.organization:
+                    org_admins = Profile.objects.filter(organization=client.organization, is_org_admin=True, user__is_active=True)
+                    for admin in org_admins:
+                        NotificationService.create_notification(
+                            user=admin.user,
+                            task=None,
+                            notification_type='client_compliance_risk',
+                            title=risk.get('title', f"Risco de compliance para {client.name}"),
+                            message=risk.get('details', ''),
+                            check_existing_recent=True,
+                            recent_threshold_hours=24
+                        )
+
+@shared_task
+def check_revenue_opportunities_and_notify():
+    """
+    Identifies revenue opportunities for all active clients and notifies account manager or org admins if found.
+    """
+    from .services.revenue_service import RevenueService
+    from .models import Client, Profile
+    for client in Client.objects.filter(is_active=True):
+        opportunities = RevenueService.identify_for_client(client)
+        for opp in opportunities:
+            notified = False
+            if client.account_manager and client.account_manager.is_active:
+                NotificationService.create_notification(
+                    user=client.account_manager,
+                    task=None,
+                    notification_type='client_revenue_opportunity',
+                    title=opp.get('title', f"Oportunidade de receita para {client.name}"),
+                    message=opp.get('details', ''),
+                    check_existing_recent=True,
+                    recent_threshold_hours=24
+                )
+                notified = True
+            if not notified and client.organization:
+                org_admins = Profile.objects.filter(organization=client.organization, is_org_admin=True, user__is_active=True)
+                for admin in org_admins:
+                    NotificationService.create_notification(
+                        user=admin.user,
+                        task=None,
+                        notification_type='client_revenue_opportunity',
+                        title=opp.get('title', f"Oportunidade de receita para {client.name}"),
+                        message=opp.get('details', ''),
+                        check_existing_recent=True,
+                        recent_threshold_hours=24
+                    )
+
+@shared_task
+def send_smart_daily_digest():
+    """
+    Sends a daily digest notification to each user summarizing all relevant unread notifications from the last 24h.
+    """
+    from .models import Profile, WorkflowNotification
+    from django.utils import timezone
+    from datetime import timedelta
+    from collections import defaultdict
+
+    since = timezone.now() - timedelta(hours=24)
+    for profile in Profile.objects.filter(user__is_active=True):
+        user = profile.user
+        notifications = WorkflowNotification.objects.filter(
+            user=user, is_read=False, created_at__gte=since, is_archived=False
+        ).order_by('priority', '-created_at')
+        if notifications.exists():
+            grouped = defaultdict(list)
+            for n in notifications:
+                grouped[n.notification_type].append(n)
+            summary_lines = []
+            for notif_type, notifs in grouped.items():
+                count = len(notifs)
+                titles = ', '.join([n.title for n in notifs[:3]])
+                more = f" (+{count-3} mais)" if count > 3 else ""
+                summary_lines.append(f"[{notif_type}] {titles}{more}")
+            summary = "\n".join(summary_lines)
+            NotificationService.create_notification(
+                user=user,
+                task=None,
+                notification_type='daily_digest',
+                title="Resumo Diário de Alertas",
+                message=summary,
+                check_existing_recent=True,
+                recent_threshold_hours=20
+            )
+
+@shared_task
+def escalate_unread_urgent_notifications():
+    """
+    Escalates urgent notifications that remain unread for over 24h to org admins (except the original user), with anti-spam logic.
+    """
+    from .models import WorkflowNotification, Profile
+    from django.utils import timezone
+    from datetime import timedelta
+
+    threshold = timezone.now() - timedelta(hours=24)
+    for notif in WorkflowNotification.objects.filter(priority='urgent', is_read=False, created_at__lt=threshold, is_archived=False):
+        user = notif.user
+        # Escalate to org admin if not already done
+        if hasattr(user, 'profile') and user.profile.organization:
+            org_admins = Profile.objects.filter(organization=user.profile.organization, is_org_admin=True, user__is_active=True).exclude(user=user)
+            for admin in org_admins:
+                NotificationService.create_notification(
+                    user=admin.user,
+                    task=notif.task,
+                    notification_type='escalated_urgent',
+                    title=f"Escalado: {notif.title}",
+                    message=f"O alerta urgente para {user.username} não foi lido em 24h: {notif.message}",
+                    check_existing_recent=True,
+                    recent_threshold_hours=24
+                )
+
+@shared_task
+def detect_anomalies_and_notify():
+    """
+    Detects anomalies in client metrics (e.g., sudden drop in profit margin, spike in overdue tasks) and notifies account manager or org admins.
+    """
+    from .models import Client, Profile, ClientProfitability, Task
+    from django.utils import timezone
+    from datetime import timedelta
+    import statistics
+
+    for client in Client.objects.filter(is_active=True):
+        # --- Profit Margin Anomaly ---
+        profit_margins = list(ClientProfitability.objects.filter(client=client).order_by('-year', '-month').values_list('profit_margin', flat=True)[:12])
+        if len(profit_margins) >= 6:
+            recent = profit_margins[:3]
+            past = profit_margins[3:]
+            if past:
+                avg_past = statistics.mean(past)
+                avg_recent = statistics.mean(recent)
+                if avg_past > 0 and avg_recent < avg_past * 0.7:  # >30% drop
+                    message = f"A margem de lucro média caiu de {avg_past:.1f}% para {avg_recent:.1f}% nos últimos meses para o cliente {client.name}."
+                    notified = False
+                    if client.account_manager and client.account_manager.is_active:
+                        NotificationService.create_notification(
+                            user=client.account_manager,
+                            task=None,
+                            notification_type='client_anomaly_detected',
+                            title=f"Alerta preditivo: Queda de margem de lucro em {client.name}",
+                            message=message,
+                            check_existing_recent=True,
+                            recent_threshold_hours=24
+                        )
+                        notified = True
+                    if not notified and client.organization:
+                        org_admins = Profile.objects.filter(organization=client.organization, is_org_admin=True, user__is_active=True)
+                        for admin in org_admins:
+                            NotificationService.create_notification(
+                                user=admin.user,
+                                task=None,
+                                notification_type='client_anomaly_detected',
+                                title=f"Alerta preditivo: Queda de margem de lucro em {client.name}",
+                                message=message,
+                                check_existing_recent=True,
+                                recent_threshold_hours=24
+                            )
+        # --- Overdue Tasks Spike ---
+        now = timezone.now()
+        overdue_counts = []
+        for weeks_ago in range(1, 5):
+            week_start = now - timedelta(weeks=weeks_ago)
+            week_end = week_start + timedelta(days=7)
+            count = Task.objects.filter(
+                client=client,
+                status__in=['pending', 'in_progress'],
+                deadline__lt=week_end,
+                deadline__gte=week_start
+            ).count()
+            overdue_counts.append(count)
+        if len(overdue_counts) >= 3:
+            avg_past = statistics.mean(overdue_counts[1:])
+            recent = overdue_counts[0]
+            if avg_past > 0 and recent > avg_past * 2:  # Spike: more than double
+                message = f"O número de tarefas atrasadas para {client.name} subiu de média {avg_past:.1f} para {recent} na última semana."
+                notified = False
+                if client.account_manager and client.account_manager.is_active:
+                    NotificationService.create_notification(
+                        user=client.account_manager,
+                        task=None,
+                        notification_type='client_anomaly_detected',
+                        title=f"Alerta preditivo: Pico de tarefas atrasadas em {client.name}",
+                        message=message,
+                        check_existing_recent=True,
+                        recent_threshold_hours=24
+                    )
+                    notified = True
+                if not notified and client.organization:
+                    org_admins = Profile.objects.filter(organization=client.organization, is_org_admin=True, user__is_active=True)
+                    for admin in org_admins:
+                        NotificationService.create_notification(
+                            user=admin.user,
+                            task=None,
+                            notification_type='client_anomaly_detected',
+                            title=f"Alerta preditivo: Pico de tarefas atrasadas em {client.name}",
+                            message=message,
+                            check_existing_recent=True,
+                            recent_threshold_hours=24
+                        )
 
 # Re-export all tasks for Celery worker and beat to find easily
 __all__ = [
@@ -959,5 +1222,11 @@ __all__ = [
     'clean_old_fiscal_obligations_task',
     'check_fiscal_deadlines_task', 
     'generate_weekly_fiscal_report_task',
-    'generate_fiscal_obligations_for_organization_task'
+    'generate_fiscal_obligations_for_organization_task',
+    'check_client_health_scores_and_notify',
+    'check_compliance_risks_and_notify',
+    'check_revenue_opportunities_and_notify',
+    'send_smart_daily_digest',
+    'escalate_unread_urgent_notifications',
+    'detect_anomalies_and_notify'
 ]

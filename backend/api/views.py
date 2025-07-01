@@ -2902,6 +2902,30 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             logger.error(f"Error updating member: {str(e)}")
             return Response({"error": f"Erro ao atualizar membro: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['post'])
+    def dismiss(self, request, pk=None):
+        notification = self.get_object()
+        if notification.user != request.user:
+            raise PermissionDenied("Você não pode modificar notificações de outro usuário.")
+        notification.action_type = 'dismissed'
+        notification.dismissed_at = timezone.now()
+        notification.is_read = True
+        notification.read_at = notification.dismissed_at
+        notification.save(update_fields=['action_type', 'dismissed_at', 'is_read', 'read_at'])
+        return Response({'status': 'dismissed'})
+
+    @action(detail=True, methods=['post'])
+    def mark_acted(self, request, pk=None):
+        notification = self.get_object()
+        if notification.user != request.user:
+            raise PermissionDenied("Você não pode modificar notificações de outro usuário.")
+        notification.action_type = 'acted'
+        notification.acted_at = timezone.now()
+        notification.is_read = True
+        notification.read_at = notification.acted_at
+        notification.save(update_fields=['action_type', 'acted_at', 'is_read', 'read_at'])
+        return Response({'status': 'acted'})
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_summary(request):

@@ -4,6 +4,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 router = DefaultRouter()
 router.register(r'profiles', views.ProfileViewSet, basename='profile')
@@ -76,4 +77,8 @@ urlpatterns = [
     path('reports/generate/', views.generate_report, name='generate-report'),
     path('reports/context/', views.get_report_generation_context, name='report-generation-context'),
     path('reports/download/<uuid:report_id>/', views.download_report, name='download-report'),
+
+    #documentation
+    path('schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
 ]

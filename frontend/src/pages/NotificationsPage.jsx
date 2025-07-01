@@ -20,10 +20,14 @@ import {
     Trash2,
     MoreVertical,
     Eye,
-    EyeOff
+    EyeOff,
+    Mail,
+    Smartphone,
+    UserCheck
 } from 'lucide-react';
 import api from "../api";
 import { toast } from 'react-toastify';
+import dayjs from 'dayjs';
 
 const NotificationsPage = () => {
     const [filters, setFilters] = useState({
@@ -105,12 +109,30 @@ const NotificationsPage = () => {
         },
     });
 
+    // Dismiss mutation
+    const dismissMutation = useMutation({
+        mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/dismiss/`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        },
+    });
+
+    // Mark as acted mutation
+    const markActedMutation = useMutation({
+        mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/mark_acted/`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        },
+    });
+
     // Bulk actions
     const handleBulkAction = (action) => {
         selectedNotifications.forEach(id => {
             if (action === 'markRead') markAsReadMutation.mutate(id);
             else if (action === 'markUnread') markAsUnreadMutation.mutate(id);
             else if (action === 'archive') archiveMutation.mutate(id);
+            else if (action === 'dismiss') dismissMutation.mutate(id);
+            else if (action === 'acted') markActedMutation.mutate(id);
         });
         setSelectedNotifications([]);
     };
@@ -156,6 +178,23 @@ const NotificationsPage = () => {
         interval = seconds / 60;
         if (interval > 1) return Math.floor(interval) + " min";
         return "agora";
+    };
+
+    // --- New helper for channel icons ---
+    const channelIcon = (channel) => {
+        if (channel === 'email') return <Mail size={14} style={{ color: '#3b82f6', marginRight: 2 }} title="Email" />;
+        if (channel === 'in_app') return <Bell size={14} style={{ color: '#22d3ee', marginRight: 2 }} title="In-App" />;
+        if (channel === 'sms') return <Smartphone size={14} style={{ color: '#f59e42', marginRight: 2 }} title="SMS" />;
+        if (channel === 'slack') return <UserCheck size={14} style={{ color: '#a855f7', marginRight: 2 }} title="Slack" />;
+        return null;
+    };
+
+    // --- New helper for action type tags ---
+    const actionTypeTag = (type, actedAt, dismissedAt) => {
+        if (type === 'acted') return <span style={{ background: '#22c55e22', color: '#22c55e', fontSize: 11, borderRadius: 4, padding: '2px 6px', marginLeft: 8 }}>Ação tomada {actedAt && `em ${dayjs(actedAt).format('DD/MM HH:mm')}`}</span>;
+        if (type === 'dismissed') return <span style={{ background: '#ef444422', color: '#ef4444', fontSize: 11, borderRadius: 4, padding: '2px 6px', marginLeft: 8 }}>Descartada {dismissedAt && `em ${dayjs(dismissedAt).format('DD/MM HH:mm')}`}</span>;
+        if (type === 'read') return <span style={{ background: '#3b82f622', color: '#3b82f6', fontSize: 11, borderRadius: 4, padding: '2px 6px', marginLeft: 8 }}>Lida</span>;
+        return null;
     };
 
     const pageVariants = {
@@ -536,6 +575,34 @@ const NotificationsPage = () => {
                                 Arquivar
                             </button>
                             <button
+                                onClick={() => handleBulkAction('dismiss')}
+                                style={{
+                                    padding: '0.5rem 1rem',
+                                    background: 'rgba(239, 68, 68, 0.2)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    borderRadius: '8px',
+                                    color: 'rgb(239, 68, 68)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.875rem'
+                                }}
+                            >
+                                Descartar
+                            </button>
+                            <button
+                                onClick={() => handleBulkAction('acted')}
+                                style={{
+                                    padding: '0.5rem 1rem',
+                                    background: 'rgba(34, 197, 94, 0.2)',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    borderRadius: '8px',
+                                    color: 'rgb(34, 197, 94)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.875rem'
+                                }}
+                            >
+                                Ação tomada
+                            </button>
+                            <button
                                 onClick={() => setSelectedNotifications([])}
                                 style={{
                                     padding: '0.5rem',
@@ -693,6 +760,21 @@ const NotificationsPage = () => {
                                                     Tarefa: {notification.task_title}
                                                 </div>
                                             )}
+
+                                            {/* Channel icons */}
+                                            {notification.metadata?.preferred_channels && (
+                                                <div style={{ display: 'flex', gap: 2, marginBottom: 2 }}>
+                                                    {notification.metadata.preferred_channels.map(channelIcon)}
+                                                </div>
+                                            )}
+                                            {/* Digest/quiet hour info */}
+                                            {notification.scheduled_for && new Date(notification.scheduled_for) > new Date() && (
+                                                <span style={{ fontSize: 11, color: '#f59e42', marginLeft: 8 }} title="Esta notificação está agendada para ser entregue após horário de silêncio ou em resumo.">
+                                                    <Clock size={12} style={{ marginRight: 2 }} />Agendada para {dayjs(notification.scheduled_for).format('DD/MM HH:mm')}
+                                                </span>
+                                            )}
+                                            {/* Action type tag */}
+                                            {actionTypeTag(notification.action_type, notification.acted_at, notification.dismissed_at)}
                                         </div>
 
                                         {/* Actions */}
@@ -738,6 +820,13 @@ const NotificationsPage = () => {
                                             >
                                                 <Archive size={14} />
                                             </motion.button>
+
+                                            {/* Feedback actions */}
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                                                {!notification.is_read && <button onClick={e => { e.stopPropagation(); markAsReadMutation.mutate(notification.id); }} style={{ fontSize: 12, color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer' }}>Marcar como lida</button>}
+                                                {notification.action_type !== 'dismissed' && <button onClick={e => { e.stopPropagation(); dismissMutation.mutate(notification.id); }} style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}>Descartar</button>}
+                                                {notification.action_type !== 'acted' && <button onClick={e => { e.stopPropagation(); markActedMutation.mutate(notification.id); }} style={{ fontSize: 12, color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}>Ação tomada</button>}
+                                            </div>
                                         </div>
 
                                         {/* Unread indicator */}

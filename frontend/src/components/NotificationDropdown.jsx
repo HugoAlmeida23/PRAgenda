@@ -6,9 +6,11 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; // Import useQuery
 import { 
   Bell, CheckCircle, Clock, AlertTriangle, Sparkles, X, Eye,
-  ChevronRight, PlayCircle, HelpCircle, GitPullRequest, Loader2, FileText
+  ChevronRight, PlayCircle, HelpCircle, GitPullRequest, Loader2, FileText,
+  Mail, Smartphone, UserCheck
 } from 'lucide-react';
 import api from '../api'; // Your api instance
+import dayjs from 'dayjs';
 
 const NotificationDropdown = ({ onNavigate }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -49,6 +51,37 @@ const NotificationDropdown = ({ onNavigate }) => {
   // Mutações para interagir com as notificações
   const markAsReadMutation = useMutation({
     mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/mark_as_read/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notificationList'] });
+      queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
+    },
+  });
+
+  // --- New helpers ---
+  const channelIcon = (channel) => {
+    if (channel === 'email') return <Mail size={13} style={{ color: '#3b82f6', marginRight: 2 }} title="Email" />;
+    if (channel === 'in_app') return <Bell size={13} style={{ color: '#22d3ee', marginRight: 2 }} title="In-App" />;
+    if (channel === 'sms') return <Smartphone size={13} style={{ color: '#f59e42', marginRight: 2 }} title="SMS" />;
+    if (channel === 'slack') return <UserCheck size={13} style={{ color: '#a855f7', marginRight: 2 }} title="Slack" />;
+    return null;
+  };
+  const actionTypeTag = (type, actedAt, dismissedAt) => {
+    if (type === 'acted') return <span style={{ background: '#22c55e22', color: '#22c55e', fontSize: 10, borderRadius: 4, padding: '1px 5px', marginLeft: 6 }}>Ação tomada {actedAt && `em ${dayjs(actedAt).format('DD/MM HH:mm')}`}</span>;
+    if (type === 'dismissed') return <span style={{ background: '#ef444422', color: '#ef4444', fontSize: 10, borderRadius: 4, padding: '1px 5px', marginLeft: 6 }}>Descartada {dismissedAt && `em ${dayjs(dismissedAt).format('DD/MM HH:mm')}`}</span>;
+    if (type === 'read') return <span style={{ background: '#3b82f622', color: '#3b82f6', fontSize: 10, borderRadius: 4, padding: '1px 5px', marginLeft: 6 }}>Lida</span>;
+    return null;
+  };
+
+  // --- New feedback mutations ---
+  const dismissMutation = useMutation({
+    mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/dismiss/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notificationList'] });
+      queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
+    },
+  });
+  const markActedMutation = useMutation({
+    mutationFn: (notificationId) => api.post(`/workflow-notifications/${notificationId}/mark_acted/`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notificationList'] });
       queryClient.invalidateQueries({ queryKey: ['unreadNotificationCount'] });
@@ -238,6 +271,25 @@ const NotificationDropdown = ({ onNavigate }) => {
                                   {notification.notification_type === 'report_generated' ? `Relatório: ${notification.metadata?.report_name || notification.title}` : `${notification.task_client_name || 'Tarefa'}: ${notification.task_title}`}
                               </span>)}
                               <span style={{ fontSize: '0.625rem', color: 'rgba(255, 255, 255, 0.5)' }}>{timeSince(notification.created_at)}</span>
+                          </div>
+                          {/* Channel icons */}
+                          {notification.metadata?.preferred_channels && (
+                              <div style={{ display: 'flex', gap: 2, marginBottom: 2 }}>
+                                  {notification.metadata.preferred_channels.map(channelIcon)}
+                              </div>
+                          )}
+                          {/* Digest/quiet hour info */}
+                          {notification.scheduled_for && new Date(notification.scheduled_for) > new Date() && (
+                              <span style={{ fontSize: 10, color: '#f59e42', marginLeft: 6 }} title="Esta notificação está agendada para ser entregue após horário de silêncio ou em resumo.">
+                                  <Clock size={11} style={{ marginRight: 2 }} />Agendada para {dayjs(notification.scheduled_for).format('DD/MM HH:mm')}
+                              </span>
+                          )}
+                          {/* Action type tag */}
+                          {actionTypeTag(notification.action_type, notification.acted_at, notification.dismissed_at)}
+                          {/* Feedback actions */}
+                          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                              {notification.action_type !== 'dismissed' && <button onClick={e => { e.stopPropagation(); dismissMutation.mutate(notification.id); }} style={{ fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}>Descartar</button>}
+                              {notification.action_type !== 'acted' && <button onClick={e => { e.stopPropagation(); markActedMutation.mutate(notification.id); }} style={{ fontSize: 11, color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}>Ação tomada</button>}
                           </div>
                       </div>
                       {!notification.is_read && (<div style={{ width: '6px', height: '6px', background: 'rgb(59, 130, 246)', borderRadius: '50%', marginTop: '0.5rem', flexShrink: 0 }} />)}
