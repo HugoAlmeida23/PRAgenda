@@ -4634,318 +4634,470 @@ def fiscal_upcoming_deadlines(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_ai_advisor_initial_context(request):
+    """Get initial context data for AI Advisor with better error handling"""
     try:
-        profile = Profile.objects.select_related('organization').get(user=request.user) # Fetch organization along with profile
+        profile = Profile.objects.select_related('organization').get(user=request.user)
         if not profile.organization:
-            return Response({"error": "Usuário não está associado a uma organização."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "error": "Usuário não está associado a uma organização.",
+                "error_code": "NO_ORGANIZATION"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        if not profile.is_org_admin: # Or a more specific 'can_use_ai_advisor' permission
-            return Response({"error": "Sem permissão para aceder ao consultor AI."}, status=status.HTTP_403_FORBIDDEN)
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para aceder ao consultor AI.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
 
         organization = profile.organization
-        context_data = {
-            "organization_name": organization.name,
-            "current_date": timezone.now().strftime("%Y-%m-%d"),
-            "data_summary_period": "Últimos 90 dias e dados atuais relevantes" # Clarify the scope
-        }
         
-        # --- Timeframe for aggregations ---
-        ninety_days_ago = timezone.now().date() - timedelta(days=90)
-        today = timezone.now().date() # Use today consistently
-
-        # 1. Clients Overview
-        # ... (Client overview logic remains the same) ...
-        active_clients = Client.objects.filter(organization=organization, is_active=True)
-        client_details_sample = []
-        top_clients = active_clients.order_by('-monthly_fee')[:5]
-        low_fee_clients = active_clients.filter(monthly_fee__lte=0).order_by('name')[:3]
+        # Add timeout protection for data gathering
+        from django.db import transaction
         
-        clients_for_sample = list(top_clients) + list(low_fee_clients)
-        clients_for_sample_ids = {c.id for c in clients_for_sample}
-        
-        if len(clients_for_sample_ids) < 8:
-            additional_clients_needed = 8 - len(clients_for_sample_ids)
-            other_clients = active_clients.exclude(id__in=clients_for_sample_ids).order_by('?')[:additional_clients_needed]
-            clients_for_sample.extend(other_clients)
-            clients_for_sample_ids.update(c.id for c in other_clients)
-            
-        unique_sample_clients = {c.id: c for c in clients_for_sample}.values()
+        try:
+            with transaction.atomic():
+                context_data = {
+                    "organization_name": organization.name,
+                    "current_date": timezone.now().strftime("%Y-%m-%d"),
+                    "data_summary_period": "Últimos 90 dias e dados atuais relevantes"
+                }
+                
+                # Timeframe for aggregations
+                ninety_days_ago = timezone.now().date() - timedelta(days=90)
+                today = timezone.now().date()
 
-        for client in unique_sample_clients:
-            profit_record = ClientProfitability.objects.filter(
-                client=client
-            ).order_by('-year', '-month').first()
-            client_details_sample.append({
-                "name": client.name,
-                "monthly_fee": float(client.monthly_fee or 0),
-                "fiscal_tags": client.fiscal_tags or [],
-                "recent_profit_margin": float(profit_record.profit_margin) if profit_record and profit_record.profit_margin is not None else None,
-                "active_tasks_count": Task.objects.filter(client=client, status__in=['pending', 'in_progress']).count(),
-            })
-        context_data['clients_overview'] = {
-            "total_active_clients": active_clients.count(),
-            "clients_sample_details": client_details_sample,
-            "clients_with_no_fee": active_clients.filter(monthly_fee__lte=0).count()
-        }
+                # 1. Clients Overview with error handling
+                try:
+                    active_clients = Client.objects.filter(organization=organization, is_active=True)
+                    client_details_sample = []
+                    
+                    # Limit to prevent timeout
+                    top_clients = active_clients.order_by('-monthly_fee')[:5]
+                    
+                    for client in top_clients:
+                        try:
+                            profit_record = ClientProfitability.objects.filter(
+                                client=client
+                            ).order_by('-year', '-month').first()
+                            
+                            client_details_sample.append({
+                                "name": client.name,
+                                "monthly_fee": float(client.monthly_fee or 0),
+                                "fiscal_tags": client.fiscal_tags or [],
+                                "recent_profit_margin": float(profit_record.profit_margin) if profit_record and profit_record.profit_margin is not None else None,
+                                "active_tasks_count": Task.objects.filter(client=client, status__in=['pending', 'in_progress']).count(),
+                            })
+                        except Exception as e:
+                            logger.warning(f"Error processing client {client.id}: {str(e)}")
+                            # Continue with other clients
+                            continue
+                    
+                    context_data['clients_overview'] = {
+                        "total_active_clients": active_clients.count(),
+                        "clients_sample_details": client_details_sample,
+                        "clients_with_no_fee": active_clients.filter(monthly_fee__lte=0).count()
+                    }
+                except Exception as e:
+                    logger.error(f"Error gathering client data: {str(e)}")
+                    context_data['clients_overview'] = {
+                        "total_active_clients": 0,
+                        "clients_sample_details": [],
+                        "error": "Erro ao carregar dados de clientes"
+                    }
 
-        # 2. Profitability Snapshot (Organization Level for last 90 days)
-        # ... (Profitability snapshot logic remains the same) ...
-        profitability_snapshot = ClientProfitability.objects.filter(
-            client__organization=organization,
-            last_updated__gte=ninety_days_ago 
-        ).aggregate(
-            avg_profit_margin_org=Avg('profit_margin', filter=Q(profit_margin__isnull=False)),
-            total_profit_org=Sum('profit', filter=Q(profit__isnull=False)),
-            count_profitable_periods=Count('id', filter=Q(is_profitable=True)),
-            count_unprofitable_periods=Count('id', filter=Q(is_profitable=False))
-        )
-        context_data['profitability_snapshot_organization'] = {
-            "average_profit_margin": profitability_snapshot.get('avg_profit_margin_org'),
-            "total_profit_last_90_days_approx": profitability_snapshot.get('total_profit_org'),
-            "profitable_client_months_count": profitability_snapshot.get('count_profitable_periods'),
-            "unprofitable_client_months_count": profitability_snapshot.get('count_unprofitable_periods'),
-        }
+                # 2. Profitability Snapshot with error handling
+                try:
+                    profitability_snapshot = ClientProfitability.objects.filter(
+                        client__organization=organization,
+                        last_updated__gte=ninety_days_ago 
+                    ).aggregate(
+                        avg_profit_margin_org=Avg('profit_margin', filter=Q(profit_margin__isnull=False)),
+                        total_profit_org=Sum('profit', filter=Q(profit__isnull=False)),
+                        count_profitable_periods=Count('id', filter=Q(is_profitable=True)),
+                        count_unprofitable_periods=Count('id', filter=Q(is_profitable=False))
+                    )
+                    
+                    context_data['profitability_snapshot_organization'] = {
+                        "average_profit_margin": profitability_snapshot.get('avg_profit_margin_org'),
+                        "total_profit_last_90_days_approx": profitability_snapshot.get('total_profit_org'),
+                        "profitable_client_months_count": profitability_snapshot.get('count_profitable_periods'),
+                        "unprofitable_client_months_count": profitability_snapshot.get('count_unprofitable_periods'),
+                    }
+                except Exception as e:
+                    logger.error(f"Error gathering profitability data: {str(e)}")
+                    context_data['profitability_snapshot_organization'] = {
+                        "error": "Erro ao carregar dados de rentabilidade"
+                    }
 
-        # 3. Tasks Overview
-        org_tasks = Task.objects.filter(client__organization=organization)
-        active_org_tasks = org_tasks.filter(status__in=['pending', 'in_progress'])
-        
-        duration_expression = ExpressionWrapper(F('completed_at') - F('created_at'), output_field=fields.DurationField())
-        completed_tasks_recent = org_tasks.filter(
-            status='completed',
-            completed_at__gte=ninety_days_ago,
-            created_at__isnull=False,
-            completed_at__isnull=False
-        )
-        avg_completion_duration_data = completed_tasks_recent.annotate(duration=duration_expression).aggregate(avg_duration=Avg('duration'))
-        
-        avg_completion_days = None
-        if avg_completion_duration_data and avg_completion_duration_data.get('avg_duration') is not None:
-            avg_duration_value = avg_completion_duration_data['avg_duration']
-            # Add an explicit check for timedelta, though Avg(DurationField) should return this or None
-            if isinstance(avg_duration_value, timedelta):
-                avg_completion_days = avg_duration_value.total_seconds() / (60*60*24)
-            else:
-                # This case is unexpected with standard Django ORM usage but good for logging
-                logger.warning(
-                    f"Unexpected type for avg_duration: {type(avg_duration_value)}. Value: {avg_duration_value}. Org: {organization.id}"
-                )
-                avg_completion_days = None # Ensure it's None if not a timedelta
+                # 3. Tasks Overview with error handling
+                try:
+                    org_tasks = Task.objects.filter(client__organization=organization)
+                    active_org_tasks = org_tasks.filter(status__in=['pending', 'in_progress'])
+                    
+                    context_data['tasks_overview'] = {
+                        "total_tasks": org_tasks.count(),
+                        "active_tasks": active_org_tasks.count(),
+                        "overdue_tasks": active_org_tasks.filter(deadline__lt=today).count(),
+                        "completed_last_90_days": org_tasks.filter(
+                            status='completed',
+                            completed_at__gte=ninety_days_ago
+                        ).count(),
+                    }
+                except Exception as e:
+                    logger.error(f"Error gathering task data: {str(e)}")
+                    context_data['tasks_overview'] = {
+                        "error": "Erro ao carregar dados de tarefas"
+                    }
 
-        context_data['tasks_overview'] = {
-            "total_tasks": org_tasks.count(),
-            "active_tasks": active_org_tasks.count(),
-            "overdue_tasks": active_org_tasks.filter(deadline__lt=today).count(),
-            "completed_last_90_days": completed_tasks_recent.count(),
-            # This line was already robust:
-            "avg_task_completion_days_last_90_days": round(avg_completion_days, 1) if avg_completion_days is not None else None,
-        }
+                # 4. Fiscal Obligations Snapshot with error handling
+                try:
+                    upcoming_fiscal_days = 30
+                    future_date_fiscal = today + timedelta(days=upcoming_fiscal_days)
+                    
+                    upcoming_fiscal_tasks = Task.objects.filter(
+                        client__organization=organization,
+                        source_fiscal_obligation__isnull=False,
+                        deadline__gte=today,
+                        deadline__lte=future_date_fiscal,
+                        status__in=['pending', 'in_progress']
+                    ).select_related('source_fiscal_obligation', 'client').order_by('deadline')[:5]
 
-        tasks_per_category = TaskCategory.objects.annotate(
-            active_task_count=Count('tasks', filter=Q(tasks__client__organization=organization, tasks__status__in=['pending', 'in_progress']))
-        ).filter(active_task_count__gt=0).order_by('-active_task_count')[:5]
-        
-        context_data['tasks_overview']['active_tasks_per_category_top_5'] = [
-            {"category_name": cat.name, "count": cat.active_task_count} for cat in tasks_per_category
-        ]
+                    context_data['fiscal_obligations_snapshot'] = {
+                        "total_active_fiscal_definitions": FiscalObligationDefinition.objects.filter(
+                            Q(organization=organization) | Q(organization__isnull=True), is_active=True
+                        ).count(),
+                        "upcoming_deadlines_next_30_days_count": upcoming_fiscal_tasks.count(),
+                        "upcoming_deadlines_sample": [
+                            {
+                                "obligation_name": task.source_fiscal_obligation.name if task.source_fiscal_obligation else task.title,
+                                "client_name": task.client.name,
+                                "deadline": task.deadline.strftime("%Y-%m-%d")
+                            } for task in upcoming_fiscal_tasks
+                        ]
+                    }
+                except Exception as e:
+                    logger.error(f"Error gathering fiscal data: {str(e)}")
+                    context_data['fiscal_obligations_snapshot'] = {
+                        "error": "Erro ao carregar dados fiscais"
+                    }
 
-        # --- START: NEW SECTION FOR DETAILED TASK SAMPLE ---
-        detailed_tasks_sample = []
-        sample_task_ids = set()
-        MAX_SAMPLE_TASKS = 15 # Max tasks to include in the detailed sample
+                # 5. Team Performance Snippet with error handling
+                try:
+                    active_users_count = Profile.objects.filter(organization=organization, user__is_active=True).count()
+                    if active_users_count > 0:
+                        tasks_completed_last_month_org = org_tasks.filter(
+                            status='completed', 
+                            completed_at__gte=today - timedelta(days=30)
+                        ).count()
+                        avg_tasks_per_user = tasks_completed_last_month_org / active_users_count if active_users_count > 0 else 0
+                        context_data['team_performance_snippet'] = {
+                            "active_team_members": active_users_count,
+                            "avg_tasks_completed_per_member_last_30_days": round(avg_tasks_per_user, 1)
+                        }
+                    else:
+                        context_data['team_performance_snippet'] = {
+                             "active_team_members": 0,
+                             "avg_tasks_completed_per_member_last_30_days": 0
+                        }
+                except Exception as e:
+                    logger.error(f"Error gathering team data: {str(e)}")
+                    context_data['team_performance_snippet'] = {
+                        "error": "Erro ao carregar dados da equipa"
+                    }
 
-        # a. Overdue tasks (up to 5)
-        overdue_sample = active_org_tasks.filter(
-            deadline__lt=today
-        ).select_related('assigned_to', 'client').order_by('deadline', '-priority')[:5]
-        for task in overdue_sample:
-            if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS and task.id not in sample_task_ids:
-                detailed_tasks_sample.append({
-                    "title": task.title,
-                    "client_name": task.client.name if task.client else "N/A",
-                    "status": task.get_status_display(),
-                    "priority": task.get_priority_display(),
-                    "deadline": task.deadline.strftime("%Y-%m-%d") if task.deadline else "N/A",
-                    "assigned_to": task.assigned_to.username if task.assigned_to else "Não atribuído"
-                })
-                sample_task_ids.add(task.id)
+                logger.info(f"Generated AI advisor context for org {organization.id}, user {request.user.username}")
+                return Response(context_data)
 
-        # b. Tasks due today or tomorrow (up to 5, excluding already added overdue)
-        if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS:
-            due_soon_sample = active_org_tasks.filter(
-                deadline__gte=today,
-                deadline__lte=today + timedelta(days=1)
-            ).exclude(id__in=sample_task_ids).select_related('assigned_to', 'client').order_by('deadline', 'priority')[:5]
-            for task in due_soon_sample:
-                if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS and task.id not in sample_task_ids:
-                    detailed_tasks_sample.append({
-                        "title": task.title,
-                        "client_name": task.client.name if task.client else "N/A",
-                        "status": task.get_status_display(),
-                        "priority": task.get_priority_display(),
-                        "deadline": task.deadline.strftime("%Y-%m-%d") if task.deadline else "N/A",
-                        "assigned_to": task.assigned_to.username if task.assigned_to else "Não atribuído"
-                    })
-                    sample_task_ids.add(task.id)
-        
-        # c. Other active high priority tasks or recently updated active tasks (to fill up to MAX_SAMPLE_TASKS)
-        if len(detailed_tasks_sample) < MAX_SAMPLE_TASKS:
-            remaining_needed = MAX_SAMPLE_TASKS - len(detailed_tasks_sample)
-            other_active_sample = active_org_tasks.exclude(
-                id__in=sample_task_ids
-            ).select_related('assigned_to', 'client').order_by('-priority', '-updated_at')[:remaining_needed]
-            for task in other_active_sample:
-                # No need to check MAX_SAMPLE_TASKS again due to slice, but keep id check
-                if task.id not in sample_task_ids:
-                    detailed_tasks_sample.append({
-                        "title": task.title,
-                        "client_name": task.client.name if task.client else "N/A",
-                        "status": task.get_status_display(),
-                        "priority": task.get_priority_display(),
-                        "deadline": task.deadline.strftime("%Y-%m-%d") if task.deadline else "N/A",
-                        "assigned_to": task.assigned_to.username if task.assigned_to else "Não atribuído"
-                    })
-                    sample_task_ids.add(task.id)
-
-        context_data['tasks_overview']['detailed_tasks_sample'] = detailed_tasks_sample
-        # --- END: NEW SECTION FOR DETAILED TASK SAMPLE ---
-
-
-        # 4. Fiscal Obligations Snapshot
-        # ... (Fiscal obligations logic remains the same) ...
-        upcoming_fiscal_days = 30
-        future_date_fiscal = today + timedelta(days=upcoming_fiscal_days) # Corrected: today
-        
-        upcoming_fiscal_tasks = Task.objects.filter(
-            client__organization=organization,
-            source_fiscal_obligation__isnull=False,
-            deadline__gte=today, # Corrected: today
-            deadline__lte=future_date_fiscal,
-            status__in=['pending', 'in_progress']
-        ).select_related('source_fiscal_obligation', 'client').order_by('deadline')
-
-        context_data['fiscal_obligations_snapshot'] = {
-            "total_active_fiscal_definitions": FiscalObligationDefinition.objects.filter(
-                Q(organization=organization) | Q(organization__isnull=True), is_active=True
-            ).count(),
-            "upcoming_deadlines_next_30_days_count": upcoming_fiscal_tasks.count(),
-            "upcoming_deadlines_sample": [
-                {
-                    "obligation_name": task.source_fiscal_obligation.name if task.source_fiscal_obligation else task.title,
-                    "client_name": task.client.name,
-                    "deadline": task.deadline.strftime("%Y-%m-%d")
-                } for task in upcoming_fiscal_tasks[:3]
-            ]
-        }
-
-        # 5. Team Performance Snippet (Corrected field names based on previous implementation)
-        # ... (Team performance logic remains the same) ...
-        active_users_count = Profile.objects.filter(organization=organization, user__is_active=True).count()
-        if active_users_count > 0:
-            tasks_completed_last_month_org = org_tasks.filter(status='completed', completed_at__gte=today - timedelta(days=30)).count() # Corrected: today
-            avg_tasks_per_user = tasks_completed_last_month_org / active_users_count if active_users_count > 0 else 0
-            context_data['team_performance_snippet'] = {
-                "active_team_members": active_users_count,
-                "avg_tasks_completed_per_member_last_30_days": round(avg_tasks_per_user,1)
-            }
-        else:
-            context_data['team_performance_snippet'] = {
-                 "active_team_members": 0,
-                 "avg_tasks_completed_per_member_last_30_days": 0
-            }
-
-
-        logger.info(f"Generated AI advisor context for org {organization.id}, user {request.user.username}. Size approx {len(json.dumps(context_data, cls=CustomJSONEncoder))} bytes.")
-
-        return Response(context_data)
+        except Exception as e:
+            logger.error(f"Database transaction error in AI context: {str(e)}")
+            return Response({
+                "error": "Erro ao recolher dados do escritório. Tente novamente.",
+                "error_code": "DATA_COLLECTION_ERROR"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     except Profile.DoesNotExist:
-        return Response({"error": "Perfil de usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Error generating AI advisor initial context: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return Response({"error": "Erro ao preparar dados para o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Error generating AI advisor initial context: {str(e)}", exc_info=True)
+        return Response({
+            "error": "Erro interno ao preparar dados para o Consultor AI.",
+            "error_code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def start_ai_advisor_session(request):
+    """Start a new AI Advisor session with comprehensive error handling"""
     try:
         profile = Profile.objects.get(user=request.user)
-        if not profile.is_org_admin: # Or your specific permission check
-            return Response({"error": "Sem permissão para iniciar sessão com o Consultor AI."}, status=status.HTTP_403_FORBIDDEN)
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para iniciar sessão com o Consultor AI.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
 
         context_data = request.data.get('context', {})
-        if not context_data: # This context comes from the /ai-advisor/get-initial-context/ call
-            return Response({"error": "Dados de contexto são necessários para iniciar a sessão."}, status=status.HTTP_400_BAD_REQUEST)
+        if not context_data:
+            return Response({
+                "error": "Dados de contexto são necessários para iniciar a sessão.",
+                "error_code": "MISSING_CONTEXT"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        advisor_service = AIAdvisorService()
-        session_id, initial_message = advisor_service.start_session(context_data, request.user)
+        try:
+            # Import here to avoid circular imports
+            from .services.ai_advisor_service import AIAdvisorService, AIAdvisorServiceError
+            
+            advisor_service = AIAdvisorService()
+            
+            # Perform health check first
+            health = advisor_service.health_check()
+            if health['status'] == 'unhealthy':
+                return Response({
+                    "error": f"Serviço AI não disponível: {health['message']}",
+                    "error_code": "SERVICE_UNHEALTHY"
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            
+            session_id, initial_message = advisor_service.start_session(context_data, request.user)
 
-        if session_id is None: # Indicates an error occurred within the service
-            return Response({"error": initial_message or "Não foi possível iniciar a sessão com o Consultor AI."}, status=status.HTTP_502_BAD_GATEWAY)
+            if session_id is None:
+                # Determine appropriate error code based on message
+                error_code = "API_ERROR"
+                if "configurado" in initial_message:
+                    error_code = "CONFIGURATION_ERROR"
+                elif "indisponível" in initial_message:
+                    error_code = "SERVICE_UNAVAILABLE"
+                elif "API key" in initial_message:
+                    error_code = "AUTHENTICATION_ERROR"
+                
+                return Response({
+                    "error": initial_message or "Não foi possível iniciar a sessão com o Consultor AI.",
+                    "error_code": error_code
+                }, status=status.HTTP_502_BAD_GATEWAY)
 
-        # Log organization action
-        log_organization_action(
-            request,
-            action_type='START_AI_ADVISOR_SESSION',
-            action_description=f"Sessão do Consultor AI iniciada pelo usuário {request.user.username} (ID: {request.user.id}) com contexto: {str(context_data)[:200]}",
-            related_object=None
-        )
-        return Response({
-            "session_id": session_id,
-            "initial_message": initial_message
-        }, status=status.HTTP_201_CREATED)
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='START_AI_ADVISOR_SESSION',
+                action_description=f"Sessão do Consultor AI iniciada pelo usuário {request.user.username}",
+                related_object=None
+            )
+            
+            return Response({
+                "session_id": session_id,
+                "initial_message": initial_message,
+                "health_status": health['status']
+            }, status=status.HTTP_201_CREATED)
+
+        except AIAdvisorServiceError as ve:
+            # Configuration or service-specific error
+            logger.error(f"AI Advisor service error: {str(ve)}")
+            return Response({
+                "error": str(ve),
+                "error_code": "SERVICE_ERROR"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     except Profile.DoesNotExist:
-        return Response({"error": "Perfil de usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Error in start_ai_advisor_session view: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return Response({"error": "Erro interno ao iniciar a sessão com o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Error in start_ai_advisor_session view: {str(e)}", exc_info=True)
+        return Response({
+            "error": "Erro interno ao iniciar a sessão com o Consultor AI.",
+            "error_code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def query_ai_advisor(request):
+    """Process a query in an existing AI Advisor session with improved error handling"""
     try:
         profile = Profile.objects.get(user=request.user)
-        if not profile.is_org_admin: # Or your specific permission check
-            return Response({"error": "Sem permissão para consultar o Consultor AI."}, status=status.HTTP_403_FORBIDDEN)
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para consultar o Consultor AI.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
 
         session_id = request.data.get('session_id')
         user_query_text = request.data.get('query')
 
         if not session_id or not user_query_text:
-            return Response({"error": "session_id e query são obrigatórios."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "error": "session_id e query são obrigatórios.",
+                "error_code": "MISSING_PARAMETERS"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        advisor_service = AIAdvisorService()
-        ai_response_text, error_message = advisor_service.process_query(session_id, user_query_text, request.user)
+        try:
+            from .services.ai_advisor_service import AIAdvisorService, AIAdvisorServiceError
+            
+            advisor_service = AIAdvisorService()
+            ai_response_text, error_message = advisor_service.process_query(session_id, user_query_text, request.user)
 
-        # Log organization action
-        log_organization_action(
-            request,
-            action_type='QUERY_AI_ADVISOR',
-            action_description=f"Usuário {request.user.username} (ID: {request.user.id}) consultou o Consultor AI (sessão: {session_id}) com query: {user_query_text[:200]}",
-            related_object=None
-        )
-        if error_message:
-            # Check if it's a session not found error specifically
-            if "Sessão inválida ou expirada" in error_message:
-                 return Response({"error": error_message}, status=status.HTTP_404_NOT_FOUND)
-            return Response({"error": error_message or "Não foi possível obter resposta do Consultor AI."}, status=status.HTTP_502_BAD_GATEWAY)
-        return Response({"response": ai_response_text})
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='QUERY_AI_ADVISOR',
+                action_description=f"Consulta ao Consultor AI: {user_query_text[:100]}...",
+                related_object=None
+            )
+            
+            if error_message:
+                # Determine error code based on message content
+                error_code = "QUERY_ERROR"
+                if "Sessão inválida ou expirada" in error_message:
+                    error_code = "SESSION_EXPIRED"
+                elif "temporariamente indisponível" in error_message:
+                    error_code = "SERVICE_UNAVAILABLE"
+                elif "corrompida" in error_message:
+                    error_code = "SESSION_CORRUPTED"
+                
+                status_code = status.HTTP_404_NOT_FOUND if error_code == "SESSION_EXPIRED" else status.HTTP_502_BAD_GATEWAY
+                
+                return Response({
+                    "error": error_message,
+                    "error_code": error_code
+                }, status=status_code)
+                
+            return Response({
+                "response": ai_response_text
+            })
+
+        except AIAdvisorServiceError as ve:
+            # Configuration error
+            logger.error(f"AI Advisor configuration error: {str(ve)}")
+            return Response({
+                "error": str(ve),
+                "error_code": "SERVICE_ERROR"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     except Profile.DoesNotExist:
-        return Response({"error": "Perfil de usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Error in query_ai_advisor view: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return Response({"error": "Erro interno ao consultar o Consultor AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Error in query_ai_advisor view: {str(e)}", exc_info=True)
+        return Response({
+            "error": "Erro interno ao consultar o Consultor AI.",
+            "error_code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ai_advisor_health_check(request):
+    """Health check endpoint for AI Advisor service"""
+    try:
+        from .services.ai_advisor_service import AIAdvisorService
+        
+        advisor_service = AIAdvisorService()
+        health = advisor_service.health_check()
+        
+        status_code = status.HTTP_200_OK
+        if health['status'] == 'degraded':
+            status_code = status.HTTP_206_PARTIAL_CONTENT
+        elif health['status'] == 'unhealthy':
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            
+        return Response(health, status=status_code)
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return Response({
+            "status": "unhealthy",
+            "message": f"Health check failed: {str(e)}",
+            "timestamp": timezone.now().isoformat()
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def test_ai_advisor_context(request):
+    """Enhanced test endpoint with more detailed diagnostics"""
+    try:
+        profile = Profile.objects.select_related('organization').get(user=request.user)
+        
+        diagnostics = {
+            "user_info": {
+                "username": request.user.username,
+                "user_id": request.user.id,
+                "is_active": request.user.is_active
+            },
+            "profile_info": {
+                "has_profile": True,
+                "role": profile.role,
+                "is_org_admin": profile.is_org_admin,
+                "organization_id": profile.organization.id if profile.organization else None,
+                "organization_name": profile.organization.name if profile.organization else None
+            },
+            "ai_service_status": None
+        }
+        
+        # Test AI service if user has access
+        if profile.organization and profile.is_org_admin:
+            try:
+                from .services.ai_advisor_service import AIAdvisorService
+                advisor_service = AIAdvisorService()
+                health = advisor_service.health_check()
+                diagnostics["ai_service_status"] = health
+            except Exception as e:
+                diagnostics["ai_service_status"] = {
+                    "status": "error",
+                    "message": str(e)
+                }
+        
+        # Determine overall status
+        if not profile.organization:
+            return Response({
+                "success": False,
+                "error": "No organization",
+                "diagnostics": diagnostics
+            }, status=400)
+
+        if not profile.is_org_admin:
+            return Response({
+                "success": False,
+                "error": "Not admin",
+                "diagnostics": diagnostics
+            }, status=403)
+
+        return Response({
+            "success": True,
+            "message": "AI Advisor system is accessible",
+            "diagnostics": diagnostics
+        })
+
+    except Profile.DoesNotExist:
+        return Response({
+            "success": False,
+            "error": "Profile not found",
+            "diagnostics": {
+                "user_info": {
+                    "username": request.user.username,
+                    "user_id": request.user.id,
+                    "is_active": request.user.is_active
+                },
+                "profile_info": {
+                    "has_profile": False
+                }
+            }
+        }, status=404)
+    except Exception as e:
+        return Response({
+            "success": False,
+            "error": "Unexpected error",
+            "diagnostics": {
+                "error_details": str(e)
+            }
+        }, status=500)
+        
 from .services.report_generation_service import ReportGenerationService
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage

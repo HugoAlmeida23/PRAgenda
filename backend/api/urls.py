@@ -70,10 +70,10 @@ urlpatterns = [
     path('fiscal/upcoming-deadlines/', views.fiscal_upcoming_deadlines, name='fiscal-upcoming-deadlines'), 
 
     path('ai-advisor/get-initial-context/', views.get_ai_advisor_initial_context, name='ai-get-initial-context'),
-
-    path('ai-advisor/start-session/', views.start_ai_advisor_session, name='ai-start-session'), # ADDED
-    path('ai-advisor/query/', views.query_ai_advisor, name='ai-query-session'), # ADDED
-
+    path('ai-advisor/start-session/', views.start_ai_advisor_session, name='ai-start-session'),
+    path('ai-advisor/query/', views.query_ai_advisor, name='ai-query-advisor'),
+    path('ai-advisor/test/', views.test_ai_advisor_context, name='ai-test-context'),
+    
     path('reports/generate/', views.generate_report, name='generate-report'),
     path('reports/context/', views.get_report_generation_context, name='report-generation-context'),
     path('reports/download/<uuid:report_id>/', views.download_report, name='download-report'),

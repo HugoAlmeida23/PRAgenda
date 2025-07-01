@@ -1,37 +1,11 @@
+// AIAdvisorPage.jsx - Versão melhorada com tratamento robusto de erros
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Loader2, Brain, Sparkles, AlertTriangle, HelpCircle, User, RefreshCw } from 'lucide-react';
+import { Send, Loader2, Brain, Sparkles, AlertTriangle, HelpCircle, User, RefreshCw, WifiOff, Settings, CheckCircle } from 'lucide-react';
 import BackgroundElements from '../components/HeroSection/BackgroundElements';
-
-// Helper custom hook for polling the AI query result
-const usePollAIResult = (taskId, onComplete) => {
-    return useQuery({
-        queryKey: ['aiQueryStatus', taskId],
-        queryFn: async () => {
-            const { data } = await api.get(`/ai-advisor/query-status/${taskId}/`);
-            return data;
-        },
-        refetchInterval: (query) => {
-            if (query.state.data?.status === 'SUCCESS' || query.state.data?.status === 'FAILURE') {
-                return false; // Stop polling
-            }
-            return 3000; // Poll every 3 seconds
-        },
-        refetchOnWindowFocus: false,
-        enabled: !!taskId, // Only run this query if a taskId is provided
-        onSuccess: (data) => {
-            if (data.status === 'SUCCESS' || data.status === 'FAILURE') {
-                onComplete(data);
-            }
-        },
-        onError: (error) => {
-            onComplete({ status: 'FAILURE', result: error.response?.data?.error || 'Polling failed' });
-        }
-    });
-};
-
 
 const glassStyle = {
     background: 'rgba(255, 255, 255, 0.05)',
@@ -41,12 +15,28 @@ const glassStyle = {
     color: 'white',
 };
 
+// Error messages mapping
+const ERROR_MESSAGES = {
+    NO_ORGANIZATION: "Você precisa estar associado a uma organização para usar o Consultor AI.",
+    INSUFFICIENT_PERMISSIONS: "Apenas administradores podem aceder ao Consultor AI.",
+    SERVICE_UNHEALTHY: "O serviço AI está temporariamente indisponível.",
+    CONFIGURATION_ERROR: "O Consultor AI não está configurado corretamente. Contacte o administrador.",
+    SERVICE_UNAVAILABLE: "O serviço AI está temporariamente indisponível. Tente novamente em alguns minutos.",
+    AUTHENTICATION_ERROR: "Problema de autenticação com o serviço AI. Contacte o administrador.",
+    SESSION_EXPIRED: "A sua sessão expirou. A página será recarregada automaticamente.",
+    SESSION_CORRUPTED: "A sessão foi corrompida. A página será recarregada automaticamente.",
+    API_ERROR: "Erro de comunicação com o serviço AI. Tente novamente.",
+    NETWORK_ERROR: "Erro de conectividade. Verifique a sua ligação à internet.",
+    TIMEOUT_ERROR: "O pedido demorou muito tempo. Tente novamente.",
+    INTERNAL_ERROR: "Erro interno do sistema. Tente novamente ou contacte o suporte."
+};
+
 const parseMarkdown = (text) => {
     if (!text) return '';
 
     const lines = text.split('\n');
     const elements = [];
-    let currentListType = null; // 'ul' or 'ol'
+    let currentListType = null;
     let listItems = [];
 
     const flushList = () => {
@@ -54,7 +44,7 @@ const parseMarkdown = (text) => {
             if (currentListType === 'ul') {
                 elements.push(<ul key={`ul-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ul>);
             } else if (currentListType === 'ol') {
-                elements.push(<ul key={`ol-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ul>);
+                elements.push(<ol key={`ol-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ol>);
             }
             listItems = [];
             currentListType = null;
@@ -139,6 +129,157 @@ const parseMarkdown = (text) => {
     return elements;
 };
 
+const ErrorDisplay = ({ error, onRetry, onGoToSettings }) => {
+    const getErrorInfo = (error) => {
+        const errorCode = error?.error_code || 'UNKNOWN_ERROR';
+        const errorMessage = error?.error || error?.message || 'Erro desconhecido';
+        const friendlyMessage = ERROR_MESSAGES[errorCode] || errorMessage;
+        
+        return {
+            code: errorCode,
+            message: friendlyMessage,
+            canRetry: !['NO_ORGANIZATION', 'INSUFFICIENT_PERMISSIONS', 'CONFIGURATION_ERROR'].includes(errorCode),
+            needsSettings: ['CONFIGURATION_ERROR', 'AUTHENTICATION_ERROR'].includes(errorCode),
+            autoReload: ['SESSION_EXPIRED', 'SESSION_CORRUPTED'].includes(errorCode)
+        };
+    };
+
+    const errorInfo = getErrorInfo(error);
+
+    // Auto-reload for certain errors
+    useEffect(() => {
+        if (errorInfo.autoReload) {
+            const timer = setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [errorInfo.autoReload]);
+
+    const getErrorIcon = () => {
+        switch (errorInfo.code) {
+            case 'SERVICE_UNAVAILABLE':
+            case 'NETWORK_ERROR':
+                return <WifiOff size={24} />;
+            case 'CONFIGURATION_ERROR':
+            case 'AUTHENTICATION_ERROR':
+                return <Settings size={24} />;
+            default:
+                return <AlertTriangle size={24} />;
+        }
+    };
+
+    const getErrorColor = () => {
+        switch (errorInfo.code) {
+            case 'SERVICE_UNAVAILABLE':
+            case 'NETWORK_ERROR':
+                return 'rgb(251, 191, 36)'; // amber
+            case 'CONFIGURATION_ERROR':
+            case 'AUTHENTICATION_ERROR':
+                return 'rgb(239, 68, 68)'; // red
+            default:
+                return 'rgb(245, 101, 101)'; // red-400
+        }
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            style={{
+                ...glassStyle,
+                background: `rgba(239, 68, 68, 0.1)`,
+                border: `1px solid rgba(239, 68, 68, 0.3)`,
+                padding: '2rem',
+                textAlign: 'center',
+                margin: '2rem'
+            }}
+        >
+            <div style={{ color: getErrorColor(), marginBottom: '1rem' }}>
+                {getErrorIcon()}
+            </div>
+            
+            <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: 'white' }}>
+                Consultor AI Indisponível
+            </h3>
+            
+            <p style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '2rem', lineHeight: '1.6' }}>
+                {errorInfo.message}
+            </p>
+
+            {errorInfo.autoReload && (
+                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                    A recarregar automaticamente em 3 segundos...
+                </p>
+            )}
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                {errorInfo.canRetry && onRetry && (
+                    <motion.button
+                        onClick={onRetry}
+                        style={{
+                            ...glassStyle,
+                            padding: '0.75rem 1.5rem',
+                            background: 'rgba(59, 130, 246, 0.2)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                        }}
+                        whileHover={{ background: 'rgba(59, 130, 246, 0.3)' }}
+                        whileTap={{ scale: 0.95 }}
+                    >
+                        <RefreshCw size={16} />
+                        Tentar Novamente
+                    </motion.button>
+                )}
+
+                {errorInfo.needsSettings && onGoToSettings && (
+                    <motion.button
+                        onClick={onGoToSettings}
+                        style={{
+                            ...glassStyle,
+                            padding: '0.75rem 1.5rem',
+                            background: 'rgba(251, 191, 36, 0.2)',
+                            border: '1px solid rgba(251, 191, 36, 0.3)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                        }}
+                        whileHover={{ background: 'rgba(251, 191, 36, 0.3)' }}
+                        whileTap={{ scale: 0.95 }}
+                    >
+                        <Settings size={16} />
+                        Configurações
+                    </motion.button>
+                )}
+            </div>
+
+            {/* Debug info (only show in development) */}
+            {process.env.NODE_ENV === 'development' && (
+                <details style={{ marginTop: '2rem', textAlign: 'left' }}>
+                    <summary style={{ cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
+                        Debug Info
+                    </summary>
+                    <pre style={{ 
+                        fontSize: '0.75rem', 
+                        color: 'rgba(255,255,255,0.7)', 
+                        marginTop: '0.5rem',
+                        background: 'rgba(0,0,0,0.3)',
+                        padding: '0.5rem',
+                        borderRadius: '4px',
+                        overflow: 'auto'
+                    }}>
+                        {JSON.stringify(error, null, 2)}
+                    </pre>
+                </details>
+            )}
+        </motion.div>
+    );
+};
+
 const SuggestedQuestions = ({ onQuestionClick, isLoading }) => {
     const questions = [
         "Quais são os meus clientes menos rentáveis este mês?",
@@ -165,10 +306,11 @@ const SuggestedQuestions = ({ onQuestionClick, isLoading }) => {
                             padding: '0.5rem 1rem',
                             fontSize: '0.8rem',
                             cursor: isLoading ? 'not-allowed' : 'pointer',
-                            border: '1px solid rgba(255,255,255,0.2)'
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            opacity: isLoading ? 0.6 : 1
                         }}
-                        whileHover={{ background: 'rgba(255, 255, 255, 0.2)' }}
-                        whileTap={{ scale: 0.95 }}
+                        whileHover={!isLoading ? { background: 'rgba(255, 255, 255, 0.2)' } : {}}
+                        whileTap={!isLoading ? { scale: 0.95 } : {}}
                     >
                         {q}
                     </motion.button>
@@ -178,23 +320,8 @@ const SuggestedQuestions = ({ onQuestionClick, isLoading }) => {
     );
 };
 
-// ======================================================================
-// NEW COMPONENT: AIMessage
-// This component manages its own polling to get the final result.
-// ======================================================================
-const AIMessage = ({ message, onUpdateMessage }) => {
-    const { status, taskId, text } = message;
-
-    const handlePollingComplete = useCallback((data) => {
-        if (data.status === 'SUCCESS') {
-            onUpdateMessage(taskId, 'completed', data.result);
-        } else {
-            onUpdateMessage(taskId, 'error', data.error || 'An unknown error occurred.');
-        }
-    }, [taskId, onUpdateMessage]);
-
-    // This hook will only run if taskId is present and status is 'pending'
-    usePollAIResult(status === 'pending' ? taskId : null, handlePollingComplete);
+const AIMessage = ({ message }) => {
+    const { status, text } = message;
 
     const renderContent = () => {
         if (status === 'pending') {
@@ -213,7 +340,6 @@ const AIMessage = ({ message, onUpdateMessage }) => {
                  </div>
             );
         }
-        // If status is 'completed'
         return parseMarkdown(text);
     };
 
@@ -243,17 +369,55 @@ const AIMessage = ({ message, onUpdateMessage }) => {
     );
 };
 
-// ======================================================================
+const ServiceStatus = ({ health }) => {
+    if (!health) return null;
+
+    const getStatusColor = () => {
+        switch (health.status) {
+            case 'healthy': return 'rgb(34, 197, 94)'; // green
+            case 'degraded': return 'rgb(251, 191, 36)'; // amber
+            case 'unhealthy': return 'rgb(239, 68, 68)'; // red
+            default: return 'rgb(156, 163, 175)'; // gray
+        }
+    };
+
+    const getStatusIcon = () => {
+        switch (health.status) {
+            case 'healthy': return <CheckCircle size={14} />;
+            case 'degraded': return <AlertTriangle size={14} />;
+            case 'unhealthy': return <WifiOff size={14} />;
+            default: return <HelpCircle size={14} />;
+        }
+    };
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 1rem',
+            background: 'rgba(0,0,0,0.2)',
+            borderRadius: '8px',
+            fontSize: '0.75rem',
+            color: getStatusColor()
+        }}>
+            {getStatusIcon()}
+            <span>Serviço: {health.status}</span>
+        </div>
+    );
+};
+
 // Main Component: AIAdvisorPage
-// ======================================================================
 const AIAdvisorPage = () => {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [sessionId, setSessionId] = useState(null);
-    const [initialDataContext, setInitialDataContext] = useState(null);
     const [initializationStep, setInitializationStep] = useState('idle');
+    const [systemError, setSystemError] = useState(null);
+    const [serviceHealth, setServiceHealth] = useState(null);
     
     const messagesEndRef = useRef(null);
+    const queryClient = useQueryClient();
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -261,90 +425,182 @@ const AIAdvisorPage = () => {
 
     useEffect(scrollToBottom, [messages]);
 
-    // 1. Fetch initial data to send to AI
-    const { refetch: refetchInitialContext } = useQuery({
-        queryKey: ['aiAdvisorInitialData'],
-        queryFn: () => {
-            setInitializationStep('fetching_context');
-            return api.get('/ai-advisor/get-initial-context/');
+    // Helper function to handle errors consistently
+    const handleError = useCallback((error, context = '') => {
+        console.error(`${context} error:`, error);
+        
+        let errorInfo = {
+            error: 'Erro desconhecido',
+            error_code: 'INTERNAL_ERROR'
+        };
+
+        if (error?.response?.data) {
+            errorInfo = error.response.data;
+        } else if (error?.code === 'NETWORK_ERROR' || error?.message?.includes('Network Error')) {
+            errorInfo = {
+                error: 'Erro de conectividade',
+                error_code: 'NETWORK_ERROR'
+            };
+        } else if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
+            errorInfo = {
+                error: 'Timeout na comunicação',
+                error_code: 'TIMEOUT_ERROR'
+            };
+        } else if (error?.message) {
+            errorInfo = {
+                error: error.message,
+                error_code: 'API_ERROR'
+            };
+        }
+
+        setSystemError(errorInfo);
+        setInitializationStep('error');
+    }, []);
+
+    // 1. Health check query
+    const { data: healthData } = useQuery({
+        queryKey: ['aiAdvisorHealth'],
+        queryFn: async () => {
+            const response = await api.get('/ai-advisor/health-check/');
+            return response.data;
         },
-        enabled: initializationStep === 'idle', // Only fetch on initial load or retry
+        refetchInterval: 30000, // Check every 30 seconds
         retry: 1,
         refetchOnWindowFocus: false,
-        onSuccess: (response) => {
-            setInitialDataContext(response.data);
-            setInitializationStep('context_ready');
+        onSuccess: (data) => {
+            setServiceHealth(data);
         },
-        onError: (err) => {
-            const errorMsg = err.response?.data?.error || err.message || "Erro ao carregar dados iniciais.";
-            setMessages([{ id: `err-${Date.now()}`, text: errorMsg, sender: 'ai', status: 'error' }]);
-            setInitializationStep('error');
+        onError: (error) => {
+            console.warn('Health check failed:', error);
+            setServiceHealth({
+                status: 'unhealthy',
+                message: 'Health check failed'
+            });
         }
     });
 
-    // 2. Start AI session mutation (when context is ready)
+    // 2. Fetch initial context data
+    const { data: contextData, isLoading: isContextLoading, error: contextError, refetch: refetchInitialContext } = useQuery({
+        queryKey: ['aiAdvisorInitialData'],
+        queryFn: async () => {
+            console.log('Fetching initial context...');
+            setInitializationStep('fetching_context');
+            setSystemError(null);
+            const response = await api.get('/ai-advisor/get-initial-context/');
+            console.log('API response received:', response);
+            return response.data;
+        },
+        enabled: initializationStep === 'idle',
+        retry: (failureCount, error) => {
+            // Don't retry for permission/config errors
+            const errorCode = error?.response?.data?.error_code;
+            if (['NO_ORGANIZATION', 'INSUFFICIENT_PERMISSIONS', 'CONFIGURATION_ERROR'].includes(errorCode)) {
+                return false;
+            }
+            return failureCount < 2;
+        },
+        refetchOnWindowFocus: false,
+        staleTime: 0,
+        gcTime: 0,
+        onError: (error) => {
+            handleError(error, 'Context fetch');
+        }
+    });
+
+    // Handle context data success
+    useEffect(() => {
+        if (contextData && !isContextLoading && !contextError) {
+            console.log('Fetched initial context (useEffect):', contextData);
+            setInitializationStep('context_ready');
+        }
+    }, [contextData, isContextLoading, contextError]);
+
+    // 3. Start AI session mutation
     const { mutate: startSession, isPending: isStartingSession } = useMutation({
-        mutationFn: (contextData) => api.post('/ai-advisor/start-session/', { context: contextData }),
+        mutationFn: (contextData) => {
+            console.log('Starting AI session with context:', contextData);
+            return api.post('/ai-advisor/start-session/', { context: contextData });
+        },
         onSuccess: (response) => {
+            console.log('AI session started successfully:', response);
             const data = response.data;
             setSessionId(data.session_id);
-            setMessages([{ id: `ai-${Date.now()}`, text: data.initial_message, sender: 'ai', status: 'completed' }]);
+            setMessages([{ 
+                id: `ai-${Date.now()}`, 
+                text: data.initial_message, 
+                sender: 'ai', 
+                status: 'completed' 
+            }]);
             setInitializationStep('ready');
+            
+            // Update health status if provided
+            if (data.health_status) {
+                setServiceHealth(prev => prev ? { ...prev, status: data.health_status } : null);
+            }
         },
-        onError: (err) => {
-            const errorMsg = err.response?.data?.error || err.message || "Erro desconhecido ao iniciar sessão.";
-            setMessages(prev => [...prev, { id: `err-${Date.now()}`, text: `Erro: ${errorMsg}`, sender: 'ai', status: 'error' }]);
-            setInitializationStep('error');
+        onError: (error) => {
+            handleError(error, 'Session start');
         }
     });
 
-    // Effect to trigger session start automatically
+    // Auto-start session when context is ready
     useEffect(() => {
-        if (initializationStep === 'context_ready' && initialDataContext) {
+        if (initializationStep === 'context_ready' && contextData) {
+            console.log('Triggering session start...');
             setInitializationStep('starting_session');
-            startSession(initialDataContext);
+            startSession(contextData);
         }
-    }, [initializationStep, initialDataContext, startSession]);
+    }, [initializationStep, contextData, startSession]);
 
-    // 3. Start the AI query task (asynchronous)
-    const { mutate: startQueryTask, isPending: isStartingQueryTask } = useMutation({
-        mutationFn: (queryData) => api.post('/ai-advisor/start-query/', queryData),
-        onSuccess: (response, variables) => {
-            const { task_id } = response.data;
+    // 4. Query AI mutation
+    const { mutate: queryAI, isPending: isQuerying } = useMutation({
+        mutationFn: async ({ session_id, query }) => {
+            const response = await api.post('/ai-advisor/query/', { session_id, query });
+            return response.data;
+        },
+        onSuccess: (data, variables) => {
             const { placeholderId } = variables;
-            // Update placeholder with the real task ID to trigger polling
             setMessages(prev =>
                 prev.map(msg =>
-                    msg.id === placeholderId ? { ...msg, taskId: task_id } : msg
+                    msg.id === placeholderId 
+                        ? { ...msg, status: 'completed', text: data.response }
+                        : msg
                 )
             );
         },
-        onError: (err, variables) => {
+        onError: (error, variables) => {
             const { placeholderId } = variables;
-            const errorMessage = err.response?.data?.error || 'Não foi possível enviar o seu pedido.';
+            const errorInfo = error?.response?.data || { 
+                error: 'Erro ao processar pergunta',
+                error_code: 'QUERY_ERROR'
+            };
+            
+            // Handle session expiry
+            if (errorInfo.error_code === 'SESSION_EXPIRED' || errorInfo.error_code === 'SESSION_CORRUPTED') {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
+            
+            const errorMessage = ERROR_MESSAGES[errorInfo.error_code] || errorInfo.error;
+            
             setMessages(prev =>
                 prev.map(msg =>
-                    msg.id === placeholderId ? { ...msg, status: 'error', text: errorMessage } : msg
+                    msg.id === placeholderId 
+                        ? { ...msg, status: 'error', text: errorMessage }
+                        : msg
                 )
             );
         }
     });
-    
-    // Callback to update a message in the state (e.g., when polling finishes)
-    const handleUpdateMessage = useCallback((taskId, newStatus, newText) => {
-        setMessages(prev =>
-            prev.map(msg =>
-                msg.taskId === taskId ? { ...msg, status: newStatus, text: newText } : msg
-            )
-        );
-    }, []);
 
     const handleSendMessage = (e, questionOverride = null) => {
         if (e) e.preventDefault();
         const queryText = questionOverride || inputValue.trim();
         const isAiBusy = messages.some(m => m.sender === 'ai' && m.status === 'pending');
 
-        if (!queryText || !sessionId || isAiBusy || isStartingQueryTask) {
+        if (!queryText || !sessionId || isAiBusy || isQuerying) {
+            console.log('Cannot send message:', { queryText: !!queryText, sessionId: !!sessionId, isAiBusy, isQuerying });
             return;
         }
 
@@ -354,25 +610,50 @@ const AIAdvisorPage = () => {
             id: aiPlaceholderId,
             sender: 'ai',
             status: 'pending',
-            text: 'Iniciando...',
-            taskId: null
+            text: 'A processar...',
         };
 
         setMessages(prev => [...prev, userMessage, aiPlaceholderMessage]);
         setInputValue('');
-        startQueryTask({ session_id: sessionId, query: queryText, placeholderId: aiPlaceholderId });
+        
+        queryAI({ 
+            session_id: sessionId, 
+            query: queryText, 
+            placeholderId: aiPlaceholderId 
+        });
     };
     
     const handleRetryInitialization = () => {
+        console.log('Retrying initialization...');
         setMessages([]);
-        setInitialDataContext(null);
         setSessionId(null);
+        setSystemError(null);
         setInitializationStep('idle');
-        // This will trigger the useQuery to run again due to `enabled: initializationStep === 'idle'`
+        queryClient.invalidateQueries(['aiAdvisorInitialData']);
+        refetchInitialContext();
+    };
+
+    const handleGoToSettings = () => {
+        // Navigate to settings page - adjust route as needed
+        window.location.href = '/settings';
     };
     
     const isAiBusy = messages.some(m => m.sender === 'ai' && m.status === 'pending');
     const isChatInterfaceDisabled = initializationStep !== 'ready' || isAiBusy;
+
+    // Show error screen for system errors
+    if (systemError) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', color: 'white', position: 'relative' }}>
+                <BackgroundElements />
+                <ErrorDisplay 
+                    error={systemError} 
+                    onRetry={handleRetryInitialization}
+                    onGoToSettings={handleGoToSettings}
+                />
+            </div>
+        );
+    }
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', color: 'white', position: 'relative' }}>
@@ -387,24 +668,43 @@ const AIAdvisorPage = () => {
             }}>
                 <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }} style={{ padding: '0.5rem', background: 'rgba(147, 51, 234, 0.2)', borderRadius: '12px' }}>
+                        <motion.div 
+                            animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }} 
+                            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }} 
+                            style={{ padding: '0.5rem', background: 'rgba(147, 51, 234, 0.2)', borderRadius: '12px' }}
+                        >
                             <Brain size={28} style={{ color: 'rgb(196, 181, 253)' }} />
                         </motion.div>
                         <div>
                             <h1 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>Consultor AI TarefAI</h1>
-                            <p style={{ color: 'rgba(255,255,255,0.7)', margin: 0, fontSize: '0.875rem' }}>Seu assistente inteligente para otimização de negócios.</p>
+                            <p style={{ color: 'rgba(255,255,255,0.7)', margin: 0, fontSize: '0.875rem' }}>
+                                Seu assistente inteligente para otimização de negócios.
+                            </p>
                         </div>
                     </div>
-                    {initializationStep === 'error' && (
-                         <motion.button
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <ServiceStatus health={serviceHealth} />
+                        
+                        <motion.button
                             onClick={handleRetryInitialization}
-                            style={{...glassStyle, padding: '0.5rem 1rem', background: 'rgba(251, 191, 36, 0.2)', border: '1px solid rgba(251, 191, 36, 0.3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'}}
-                            whileHover={{ background: 'rgba(251, 191, 36, 0.3)'}}
+                            style={{
+                                ...glassStyle, 
+                                padding: '0.5rem 1rem', 
+                                background: 'rgba(59, 130, 246, 0.2)', 
+                                border: '1px solid rgba(59, 130, 246, 0.3)', 
+                                cursor: 'pointer', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '0.5rem',
+                                fontSize: '0.875rem'
+                            }}
+                            whileHover={{ background: 'rgba(59, 130, 246, 0.3)'}}
                             whileTap={{ scale: 0.95 }}
                         >
-                            <RefreshCw size={16} /> Tentar Novamente
+                            <RefreshCw size={16} /> Reiniciar
                         </motion.button>
-                    )}
+                    </div>
                 </header>
 
                 <div style={{ flexGrow: 1, overflowY: 'auto', marginBottom: '1rem', paddingRight: '0.5rem' }} className="custom-scrollbar-dark">
@@ -413,13 +713,20 @@ const AIAdvisorPage = () => {
                             msg.sender === 'user' ? (
                                 <motion.div
                                     key={msg.id}
-                                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} layout
+                                    initial={{ opacity: 0, y: 10 }} 
+                                    animate={{ opacity: 1, y: 0 }} 
+                                    exit={{ opacity: 0 }} 
+                                    layout
                                     style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}
                                 >
                                     <div style={{
-                                        maxWidth: '75%', padding: '0.75rem 1rem', borderRadius: '12px 12px 0 12px',
+                                        maxWidth: '75%', 
+                                        padding: '0.75rem 1rem', 
+                                        borderRadius: '12px 12px 0 12px',
                                         background: 'linear-gradient(135deg, rgb(59, 130, 246), rgb(96, 165, 250))',
-                                        color: 'white', fontSize: '0.9rem', lineHeight: '1.5',
+                                        color: 'white', 
+                                        fontSize: '0.9rem', 
+                                        lineHeight: '1.5',
                                         boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
                                     }}>
                                         {msg.text}
@@ -427,50 +734,78 @@ const AIAdvisorPage = () => {
                                     <User size={18} style={{ color: 'rgb(96, 165, 250)', marginLeft: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
                                 </motion.div>
                             ) : (
-                                <AIMessage key={msg.id} message={msg} onUpdateMessage={handleUpdateMessage} />
+                                <AIMessage key={msg.id} message={msg} />
                             )
                         )}
                     </AnimatePresence>
                     
                     {initializationStep === 'fetching_context' && (
-                        <motion.div layout className="ai-message-loading"><Loader2 className="animate-spin" size={18} />A recolher e analisar dados do seu escritório...</motion.div>
+                        <motion.div layout className="ai-message-loading">
+                            <Loader2 className="animate-spin" size={18} />
+                            A recolher e analisar dados do seu escritório...
+                        </motion.div>
                     )}
                     {initializationStep === 'starting_session' && (
-                        <motion.div layout className="ai-message-loading"><Sparkles size={18} />A iniciar sessão com o Consultor AI e a preparar os seus insights...</motion.div>
+                        <motion.div layout className="ai-message-loading">
+                            <Sparkles size={18} />
+                            A iniciar sessão com o Consultor AI e a preparar os seus insights...
+                        </motion.div>
                     )}
                     <div ref={messagesEndRef} />
                 </div>
                 
-                {initializationStep === 'ready' && <SuggestedQuestions onQuestionClick={(q) => handleSendMessage(null, q)} isLoading={isAiBusy} />}
+                {initializationStep === 'ready' && (
+                    <SuggestedQuestions 
+                        onQuestionClick={(q) => handleSendMessage(null, q)} 
+                        isLoading={isAiBusy} 
+                    />
+                )}
 
                 <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
                     <input
-                        type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-                        placeholder={initializationStep !== 'ready' ? "Aguarde o Consultor AI..." : "Faça uma pergunta sobre seus dados..."}
+                        type="text" 
+                        value={inputValue} 
+                        onChange={(e) => setInputValue(e.target.value)}
+                        placeholder={isChatInterfaceDisabled ? "Aguarde o Consultor AI..." : "Faça uma pergunta sobre seus dados..."}
                         disabled={isChatInterfaceDisabled}
                         style={{
-                            flexGrow: 1, padding: '0.85rem 1.15rem', background: 'rgba(0,0,0,0.25)',
-                            border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px',
-                            color: 'white', fontSize: '0.95rem', outline: 'none',
+                            flexGrow: 1, 
+                            padding: '0.85rem 1.15rem', 
+                            background: 'rgba(0,0,0,0.25)',
+                            border: '1px solid rgba(255,255,255,0.15)', 
+                            borderRadius: '10px',
+                            color: 'white', 
+                            fontSize: '0.95rem', 
+                            outline: 'none',
                             opacity: isChatInterfaceDisabled ? 0.6 : 1,
                         }}
                     />
                     <motion.button
-                        type="submit" disabled={isChatInterfaceDisabled || !inputValue.trim()}
+                        type="submit" 
+                        disabled={isChatInterfaceDisabled || !inputValue.trim()}
                         style={{
-                            padding: '0.85rem 1.5rem', background: 'linear-gradient(135deg, rgb(59, 130, 246), rgb(96, 165, 250))',
-                            border: 'none', borderRadius: '10px', color: 'white', fontSize: '0.95rem',
-                            fontWeight: '500', cursor: (isChatInterfaceDisabled || !inputValue.trim()) ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            padding: '0.85rem 1.5rem', 
+                            background: 'linear-gradient(135deg, rgb(59, 130, 246), rgb(96, 165, 250))',
+                            border: 'none', 
+                            borderRadius: '10px', 
+                            color: 'white', 
+                            fontSize: '0.95rem',
+                            fontWeight: '500', 
+                            cursor: (isChatInterfaceDisabled || !inputValue.trim()) ? 'not-allowed' : 'pointer',
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '0.5rem',
                             opacity: (isChatInterfaceDisabled || !inputValue.trim()) ? 0.6 : 1,
                         }}
-                        whileHover={{ filter: 'brightness(1.15)' }} whileTap={{ scale: 0.97 }}
+                        whileHover={!isChatInterfaceDisabled && inputValue.trim() ? { filter: 'brightness(1.15)' } : {}} 
+                        whileTap={!isChatInterfaceDisabled && inputValue.trim() ? { scale: 0.97 } : {}}
                     >
                         <Send size={18} /> Enviar
                     </motion.button>
                 </form>
             </div>
-             <style jsx global>{`
+            
+            <style jsx global>{`
                 .custom-scrollbar-dark::-webkit-scrollbar { width: 6px; }
                 .custom-scrollbar-dark::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 3px; }
                 .custom-scrollbar-dark::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
