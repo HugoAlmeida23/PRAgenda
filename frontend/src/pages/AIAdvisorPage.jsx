@@ -1,11 +1,9 @@
-// AIAdvisorPage.jsx - Versão melhorada com tratamento robusto de erros
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Loader2, Brain, Sparkles, AlertTriangle, HelpCircle, User, RefreshCw, WifiOff, Settings, CheckCircle } from 'lucide-react';
-import BackgroundElements from '../components/HeroSection/BackgroundElements';
+import { Send, Loader2, Brain, Sparkles, AlertTriangle, HelpCircle, User, RefreshCw, WifiOff, Settings, CheckCircle, Database, BarChart3, Users, Calendar } from 'lucide-react';
+import api from '../api';
+
 
 const glassStyle = {
     background: 'rgba(255, 255, 255, 0.05)',
@@ -38,6 +36,9 @@ const parseMarkdown = (text) => {
     const elements = [];
     let currentListType = null;
     let listItems = [];
+    let inTable = false;
+    let tableHeaders = [];
+    let tableRows = [];
 
     const flushList = () => {
         if (listItems.length > 0) {
@@ -49,6 +50,54 @@ const parseMarkdown = (text) => {
             listItems = [];
             currentListType = null;
         }
+    };
+
+    const flushTable = () => {
+        if (tableHeaders.length > 0 && tableRows.length > 0) {
+            elements.push(
+                <div key={`table-${elements.length}`} style={{ margin: '1rem 0', overflowX: 'auto' }}>
+                    <table style={{ 
+                        width: '100%', 
+                        borderCollapse: 'collapse',
+                        background: 'rgba(255,255,255,0.05)',
+                        borderRadius: '8px',
+                        overflow: 'hidden'
+                    }}>
+                        <thead>
+                            <tr style={{ background: 'rgba(255,255,255,0.1)' }}>
+                                {tableHeaders.map((header, i) => (
+                                    <th key={i} style={{ 
+                                        padding: '0.75rem', 
+                                        textAlign: 'left', 
+                                        borderBottom: '1px solid rgba(255,255,255,0.2)',
+                                        fontWeight: '600'
+                                    }}>
+                                        {header}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {tableRows.map((row, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                    {row.map((cell, j) => (
+                                        <td key={j} style={{ 
+                                            padding: '0.75rem',
+                                            fontSize: '0.9rem'
+                                        }}>
+                                            {parseInline(cell, `table-${i}-${j}`)}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        }
+        tableHeaders = [];
+        tableRows = [];
+        inTable = false;
     };
 
     const parseInline = (lineContent, keyPrefix) => {
@@ -100,6 +149,49 @@ const parseMarkdown = (text) => {
 
     lines.forEach((line, lineIndex) => {
         const key = `line-${lineIndex}`;
+
+        // Handle table rows
+        if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+            const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+            
+            if (!inTable) {
+                flushList();
+                inTable = true;
+                tableHeaders = cells;
+            } else if (cells.every(cell => cell.match(/^[-:\s]+$/))) {
+                // Table separator row, skip
+                return;
+            } else {
+                tableRows.push(cells);
+            }
+            return;
+        } else if (inTable) {
+            flushTable();
+        }
+
+        // Handle headers
+        const headerMatch = line.match(/^(#{1,6})\s+(.*)/);
+        if (headerMatch) {
+            flushList();
+            const level = headerMatch[1].length;
+            const text = headerMatch[2];
+            const HeaderTag = `h${Math.min(level + 2, 6)}`;
+            
+            elements.push(
+                React.createElement(HeaderTag, {
+                    key: key,
+                    style: { 
+                        fontSize: level === 1 ? '1.25rem' : level === 2 ? '1.1rem' : '1rem',
+                        fontWeight: '600',
+                        margin: '1rem 0 0.5rem 0',
+                        color: level === 1 ? 'rgb(96, 165, 250)' : level === 2 ? 'rgb(129, 140, 248)' : 'white'
+                    }
+                }, parseInline(text, `${key}-header`))
+            );
+            return;
+        }
+
+        // Handle lists
         const ulMatch = line.match(/^(\s*)(?:[-*+])\s+(.*)/);
         if (ulMatch) {
             if (currentListType !== 'ul') { flushList(); currentListType = 'ul'; }
@@ -126,7 +218,52 @@ const parseMarkdown = (text) => {
     });
 
     flushList();
+    flushTable();
+    
     return elements;
+};
+
+const ContextIndicator = ({ contextTypes, isLoading }) => {
+    const contextIcons = {
+        clients: <Users size={14} />,
+        tasks: <Calendar size={14} />,
+        profitability: <BarChart3 size={14} />,
+        specific_client: <User size={14} />
+    };
+
+    const contextLabels = {
+        clients: 'Clientes',
+        tasks: 'Tarefas', 
+        profitability: 'Rentabilidade',
+        specific_client: 'Cliente Específico'
+    };
+
+    if (!contextTypes || contextTypes.length === 0) return null;
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem',
+            background: 'rgba(59, 130, 246, 0.1)',
+            borderRadius: '8px',
+            fontSize: '0.75rem',
+            color: 'rgba(96, 165, 250, 0.8)',
+            border: '1px solid rgba(59, 130, 246, 0.2)'
+        }}>
+            <Database size={12} />
+            <span>Dados carregados:</span>
+            {contextTypes.map((type, i) => (
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    {contextIcons[type]}
+                    <span>{contextLabels[type]}</span>
+                    {i < contextTypes.length - 1 && <span>,</span>}
+                </div>
+            ))}
+            {isLoading && <Loader2 size={12} className="animate-spin" />}
+        </div>
+    );
 };
 
 const ErrorDisplay = ({ error, onRetry, onGoToSettings }) => {
@@ -146,41 +283,15 @@ const ErrorDisplay = ({ error, onRetry, onGoToSettings }) => {
 
     const errorInfo = getErrorInfo(error);
 
-    // Auto-reload for certain errors
     useEffect(() => {
-        if (errorInfo.autoReload) {
-            const timer = setTimeout(() => {
-                window.location.reload();
-            }, 3000);
-            return () => clearTimeout(timer);
-        }
+        // Remove automatic reload on error
+        // if (errorInfo.autoReload) {
+        //     const timer = setTimeout(() => {
+        //         window.location.reload();
+        //     }, 3000);
+        //     return () => clearTimeout(timer);
+        // }
     }, [errorInfo.autoReload]);
-
-    const getErrorIcon = () => {
-        switch (errorInfo.code) {
-            case 'SERVICE_UNAVAILABLE':
-            case 'NETWORK_ERROR':
-                return <WifiOff size={24} />;
-            case 'CONFIGURATION_ERROR':
-            case 'AUTHENTICATION_ERROR':
-                return <Settings size={24} />;
-            default:
-                return <AlertTriangle size={24} />;
-        }
-    };
-
-    const getErrorColor = () => {
-        switch (errorInfo.code) {
-            case 'SERVICE_UNAVAILABLE':
-            case 'NETWORK_ERROR':
-                return 'rgb(251, 191, 36)'; // amber
-            case 'CONFIGURATION_ERROR':
-            case 'AUTHENTICATION_ERROR':
-                return 'rgb(239, 68, 68)'; // red
-            default:
-                return 'rgb(245, 101, 101)'; // red-400
-        }
-    };
 
     return (
         <motion.div
@@ -195,8 +306,8 @@ const ErrorDisplay = ({ error, onRetry, onGoToSettings }) => {
                 margin: '2rem'
             }}
         >
-            <div style={{ color: getErrorColor(), marginBottom: '1rem' }}>
-                {getErrorIcon()}
+            <div style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }}>
+                <AlertTriangle size={24} />
             </div>
             
             <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: 'white' }}>
@@ -206,12 +317,6 @@ const ErrorDisplay = ({ error, onRetry, onGoToSettings }) => {
             <p style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '2rem', lineHeight: '1.6' }}>
                 {errorInfo.message}
             </p>
-
-            {errorInfo.autoReload && (
-                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                    A recarregar automaticamente em 3 segundos...
-                </p>
-            )}
 
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                 {errorInfo.canRetry && onRetry && (
@@ -234,48 +339,7 @@ const ErrorDisplay = ({ error, onRetry, onGoToSettings }) => {
                         Tentar Novamente
                     </motion.button>
                 )}
-
-                {errorInfo.needsSettings && onGoToSettings && (
-                    <motion.button
-                        onClick={onGoToSettings}
-                        style={{
-                            ...glassStyle,
-                            padding: '0.75rem 1.5rem',
-                            background: 'rgba(251, 191, 36, 0.2)',
-                            border: '1px solid rgba(251, 191, 36, 0.3)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem'
-                        }}
-                        whileHover={{ background: 'rgba(251, 191, 36, 0.3)' }}
-                        whileTap={{ scale: 0.95 }}
-                    >
-                        <Settings size={16} />
-                        Configurações
-                    </motion.button>
-                )}
             </div>
-
-            {/* Debug info (only show in development) */}
-            {process.env.NODE_ENV === 'development' && (
-                <details style={{ marginTop: '2rem', textAlign: 'left' }}>
-                    <summary style={{ cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
-                        Debug Info
-                    </summary>
-                    <pre style={{ 
-                        fontSize: '0.75rem', 
-                        color: 'rgba(255,255,255,0.7)', 
-                        marginTop: '0.5rem',
-                        background: 'rgba(0,0,0,0.3)',
-                        padding: '0.5rem',
-                        borderRadius: '4px',
-                        overflow: 'auto'
-                    }}>
-                        {JSON.stringify(error, null, 2)}
-                    </pre>
-                </details>
-            )}
         </motion.div>
     );
 };
@@ -320,15 +384,20 @@ const SuggestedQuestions = ({ onQuestionClick, isLoading }) => {
     );
 };
 
-const AIMessage = ({ message }) => {
+const AIMessage = ({ message, contextTypes }) => {
     const { status, text } = message;
 
     const renderContent = () => {
         if (status === 'pending') {
             return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Loader2 size={18} className="animate-spin" />
-                    <span>Consultor AI a processar o seu pedido...</span>
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <Loader2 size={18} className="animate-spin" />
+                        <span>Consultor AI a processar o seu pedido...</span>
+                    </div>
+                    {contextTypes && contextTypes.length > 0 && (
+                        <ContextIndicator contextTypes={contextTypes} isLoading={true} />
+                    )}
                 </div>
             );
         }
@@ -340,7 +409,17 @@ const AIMessage = ({ message }) => {
                  </div>
             );
         }
-        return parseMarkdown(text);
+        
+        return (
+            <div>
+                {contextTypes && contextTypes.length > 0 && (
+                    <div style={{ marginBottom: '0.75rem' }}>
+                        <ContextIndicator contextTypes={contextTypes} />
+                    </div>
+                )}
+                {parseMarkdown(text)}
+            </div>
+        );
     };
 
     return (
@@ -354,7 +433,7 @@ const AIMessage = ({ message }) => {
         >
             <Sparkles size={18} style={{ color: 'rgb(196, 181, 253)', marginRight: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
             <div style={{
-                maxWidth: '75%',
+                maxWidth: '85%',
                 padding: '0.75rem 1rem',
                 borderRadius: '12px 12px 12px 0',
                 background: status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.1)',
@@ -374,10 +453,10 @@ const ServiceStatus = ({ health }) => {
 
     const getStatusColor = () => {
         switch (health.status) {
-            case 'healthy': return 'rgb(34, 197, 94)'; // green
-            case 'degraded': return 'rgb(251, 191, 36)'; // amber
-            case 'unhealthy': return 'rgb(239, 68, 68)'; // red
-            default: return 'rgb(156, 163, 175)'; // gray
+            case 'healthy': return 'rgb(34, 197, 94)';
+            case 'degraded': return 'rgb(251, 191, 36)';
+            case 'unhealthy': return 'rgb(239, 68, 68)';
+            default: return 'rgb(156, 163, 175)';
         }
     };
 
@@ -390,24 +469,37 @@ const ServiceStatus = ({ health }) => {
         }
     };
 
+    const features = health.features || {};
+
     return (
         <div style={{
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: 'column',
             gap: '0.5rem',
-            padding: '0.5rem 1rem',
+            padding: '0.75rem',
             background: 'rgba(0,0,0,0.2)',
             borderRadius: '8px',
-            fontSize: '0.75rem',
-            color: getStatusColor()
+            fontSize: '0.75rem'
         }}>
-            {getStatusIcon()}
-            <span>Serviço: {health.status}</span>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                color: getStatusColor()
+            }}>
+                {getStatusIcon()}
+                <span>Serviço: {health.status}</span>
+            </div>
+            {features.progressive_context && (
+                <div style={{ color: 'rgba(96, 165, 250, 0.8)', fontSize: '0.7rem' }}>
+                    🚀 Contexto Progressivo Ativo
+                </div>
+            )}
         </div>
     );
 };
 
-// Main Component: AIAdvisorPage
+// Main Component: EnhancedAIAdvisorPage
 const AIAdvisorPage = () => {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
@@ -415,6 +507,7 @@ const AIAdvisorPage = () => {
     const [initializationStep, setInitializationStep] = useState('idle');
     const [systemError, setSystemError] = useState(null);
     const [serviceHealth, setServiceHealth] = useState(null);
+    const [contextTypesUsed, setContextTypesUsed] = useState([]);
     
     const messagesEndRef = useRef(null);
     const queryClient = useQueryClient();
@@ -425,7 +518,6 @@ const AIAdvisorPage = () => {
 
     useEffect(scrollToBottom, [messages]);
 
-    // Helper function to handle errors consistently
     const handleError = useCallback((error, context = '') => {
         console.error(`${context} error:`, error);
         
@@ -441,11 +533,6 @@ const AIAdvisorPage = () => {
                 error: 'Erro de conectividade',
                 error_code: 'NETWORK_ERROR'
             };
-        } else if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
-            errorInfo = {
-                error: 'Timeout na comunicação',
-                error_code: 'TIMEOUT_ERROR'
-            };
         } else if (error?.message) {
             errorInfo = {
                 error: error.message,
@@ -457,14 +544,14 @@ const AIAdvisorPage = () => {
         setInitializationStep('error');
     }, []);
 
-    // 1. Health check query
+    // Health check query
     const { data: healthData } = useQuery({
-        queryKey: ['aiAdvisorHealth'],
+        queryKey: ['enhancedAiAdvisorHealth'],
         queryFn: async () => {
-            const response = await api.get('/ai-advisor/health-check/');
+            const response = await api.get('/ai-advisor/enhanced/health/');
             return response.data;
         },
-        refetchInterval: 30000, // Check every 30 seconds
+        refetchInterval: 30000,
         retry: 1,
         refetchOnWindowFocus: false,
         onSuccess: (data) => {
@@ -479,20 +566,19 @@ const AIAdvisorPage = () => {
         }
     });
 
-    // 2. Fetch initial context data
+    // Fetch optimized initial context
     const { data: contextData, isLoading: isContextLoading, error: contextError, refetch: refetchInitialContext } = useQuery({
-        queryKey: ['aiAdvisorInitialData'],
+        queryKey: ['enhancedAiAdvisorInitialData'],
         queryFn: async () => {
-            console.log('Fetching initial context...');
+            console.log('Fetching optimized initial context...');
             setInitializationStep('fetching_context');
             setSystemError(null);
-            const response = await api.get('/ai-advisor/get-initial-context/');
-            console.log('API response received:', response);
+            const response = await api.get('/ai-advisor/enhanced/get-initial-context/');
+            console.log('Enhanced context received:', response);
             return response.data;
         },
         enabled: initializationStep === 'idle',
         retry: (failureCount, error) => {
-            // Don't retry for permission/config errors
             const errorCode = error?.response?.data?.error_code;
             if (['NO_ORGANIZATION', 'INSUFFICIENT_PERMISSIONS', 'CONFIGURATION_ERROR'].includes(errorCode)) {
                 return false;
@@ -503,26 +589,25 @@ const AIAdvisorPage = () => {
         staleTime: 0,
         gcTime: 0,
         onError: (error) => {
-            handleError(error, 'Context fetch');
+            handleError(error, 'Enhanced context fetch');
         }
     });
 
-    // Handle context data success
     useEffect(() => {
         if (contextData && !isContextLoading && !contextError) {
-            console.log('Fetched initial context (useEffect):', contextData);
+            console.log('Enhanced context ready:', contextData);
             setInitializationStep('context_ready');
         }
     }, [contextData, isContextLoading, contextError]);
 
-    // 3. Start AI session mutation
+    // Start enhanced AI session
     const { mutate: startSession, isPending: isStartingSession } = useMutation({
         mutationFn: (contextData) => {
-            console.log('Starting AI session with context:', contextData);
-            return api.post('/ai-advisor/start-session/', { context: contextData });
+            console.log('Starting enhanced AI session with context:', contextData);
+            return api.post('/ai-advisor/enhanced/start-session/', { context: contextData });
         },
         onSuccess: (response) => {
-            console.log('AI session started successfully:', response);
+            console.log('Enhanced AI session started:', response);
             const data = response.data;
             setSessionId(data.session_id);
             setMessages([{ 
@@ -533,29 +618,27 @@ const AIAdvisorPage = () => {
             }]);
             setInitializationStep('ready');
             
-            // Update health status if provided
             if (data.health_status) {
                 setServiceHealth(prev => prev ? { ...prev, status: data.health_status } : null);
             }
         },
         onError: (error) => {
-            handleError(error, 'Session start');
+            handleError(error, 'Enhanced session start');
         }
     });
 
-    // Auto-start session when context is ready
     useEffect(() => {
         if (initializationStep === 'context_ready' && contextData) {
-            console.log('Triggering session start...');
+            console.log('Starting enhanced session...');
             setInitializationStep('starting_session');
             startSession(contextData);
         }
     }, [initializationStep, contextData, startSession]);
 
-    // 4. Query AI mutation
+    // Enhanced query AI
     const { mutate: queryAI, isPending: isQuerying } = useMutation({
         mutationFn: async ({ session_id, query }) => {
-            const response = await api.post('/ai-advisor/query/', { session_id, query });
+            const response = await api.post('/ai-advisor/enhanced/query/', { session_id, query });
             return response.data;
         },
         onSuccess: (data, variables) => {
@@ -575,13 +658,6 @@ const AIAdvisorPage = () => {
                 error_code: 'QUERY_ERROR'
             };
             
-            // Handle session expiry
-            if (errorInfo.error_code === 'SESSION_EXPIRED' || errorInfo.error_code === 'SESSION_CORRUPTED') {
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
-            }
-            
             const errorMessage = ERROR_MESSAGES[errorInfo.error_code] || errorInfo.error;
             
             setMessages(prev =>
@@ -600,17 +676,25 @@ const AIAdvisorPage = () => {
         const isAiBusy = messages.some(m => m.sender === 'ai' && m.status === 'pending');
 
         if (!queryText || !sessionId || isAiBusy || isQuerying) {
-            console.log('Cannot send message:', { queryText: !!queryText, sessionId: !!sessionId, isAiBusy, isQuerying });
             return;
         }
 
         const userMessage = { id: `user-${Date.now()}`, text: queryText, sender: 'user' };
         const aiPlaceholderId = `ai-placeholder-${Date.now()}`;
+        
+        // Determine potential context types that might be loaded
+        const potentialContextTypes = [];
+        const queryLower = queryText.toLowerCase();
+        if (queryLower.includes('cliente')) potentialContextTypes.push('clients');
+        if (queryLower.includes('tarefa')) potentialContextTypes.push('tasks');
+        if (queryLower.includes('rentabil')) potentialContextTypes.push('profitability');
+        
         const aiPlaceholderMessage = {
             id: aiPlaceholderId,
             sender: 'ai',
             status: 'pending',
             text: 'A processar...',
+            contextTypes: potentialContextTypes
         };
 
         setMessages(prev => [...prev, userMessage, aiPlaceholderMessage]);
@@ -624,32 +708,25 @@ const AIAdvisorPage = () => {
     };
     
     const handleRetryInitialization = () => {
-        console.log('Retrying initialization...');
+        console.log('Retrying enhanced initialization...');
         setMessages([]);
         setSessionId(null);
         setSystemError(null);
         setInitializationStep('idle');
-        queryClient.invalidateQueries(['aiAdvisorInitialData']);
+        setContextTypesUsed([]);
+        queryClient.invalidateQueries(['enhancedAiAdvisorInitialData']);
         refetchInitialContext();
-    };
-
-    const handleGoToSettings = () => {
-        // Navigate to settings page - adjust route as needed
-        window.location.href = '/settings';
     };
     
     const isAiBusy = messages.some(m => m.sender === 'ai' && m.status === 'pending');
     const isChatInterfaceDisabled = initializationStep !== 'ready' || isAiBusy;
 
-    // Show error screen for system errors
     if (systemError) {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', color: 'white', position: 'relative' }}>
-                <BackgroundElements />
                 <ErrorDisplay 
                     error={systemError} 
                     onRetry={handleRetryInitialization}
-                    onGoToSettings={handleGoToSettings}
                 />
             </div>
         );
@@ -657,7 +734,6 @@ const AIAdvisorPage = () => {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', color: 'white', position: 'relative' }}>
-            <BackgroundElements />
             <div style={{
                 ...glassStyle,
                 margin: '1.5rem', padding: '1.5rem', flexGrow: 1,
@@ -676,9 +752,14 @@ const AIAdvisorPage = () => {
                             <Brain size={28} style={{ color: 'rgb(196, 181, 253)' }} />
                         </motion.div>
                         <div>
-                            <h1 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>Consultor AI TarefAI</h1>
+                            <h1 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
+                                TarefAI Enhanced
+                                <span style={{ fontSize: '0.75rem', color: 'rgba(96, 165, 250, 0.8)', marginLeft: '0.5rem' }}>
+                                    Contexto Progressivo
+                                </span>
+                            </h1>
                             <p style={{ color: 'rgba(255,255,255,0.7)', margin: 0, fontSize: '0.875rem' }}>
-                                Seu assistente inteligente para otimização de negócios.
+                                Consultor AI inteligente com carregamento otimizado de dados.
                             </p>
                         </div>
                     </div>
@@ -734,21 +815,21 @@ const AIAdvisorPage = () => {
                                     <User size={18} style={{ color: 'rgb(96, 165, 250)', marginLeft: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
                                 </motion.div>
                             ) : (
-                                <AIMessage key={msg.id} message={msg} />
+                                <AIMessage key={msg.id} message={msg} contextTypes={msg.contextTypes} />
                             )
                         )}
                     </AnimatePresence>
                     
                     {initializationStep === 'fetching_context' && (
                         <motion.div layout className="ai-message-loading">
-                            <Loader2 className="animate-spin" size={18} />
-                            A recolher e analisar dados do seu escritório...
+                            <Database className="animate-spin" size={18} />
+                            A recolher dados otimizados do seu escritório...
                         </motion.div>
                     )}
                     {initializationStep === 'starting_session' && (
                         <motion.div layout className="ai-message-loading">
                             <Sparkles size={18} />
-                            A iniciar sessão com o Consultor AI e a preparar os seus insights...
+                            A iniciar sessão inteligente com o Consultor AI...
                         </motion.div>
                     )}
                     <div ref={messagesEndRef} />
@@ -766,7 +847,7 @@ const AIAdvisorPage = () => {
                         type="text" 
                         value={inputValue} 
                         onChange={(e) => setInputValue(e.target.value)}
-                        placeholder={isChatInterfaceDisabled ? "Aguarde o Consultor AI..." : "Faça uma pergunta sobre seus dados..."}
+                        placeholder={isChatInterfaceDisabled ? "Aguarde o Consultor AI..." : "Pergunte sobre clientes, tarefas, rentabilidade..."}
                         disabled={isChatInterfaceDisabled}
                         style={{
                             flexGrow: 1, 
@@ -800,9 +881,30 @@ const AIAdvisorPage = () => {
                         whileHover={!isChatInterfaceDisabled && inputValue.trim() ? { filter: 'brightness(1.15)' } : {}} 
                         whileTap={!isChatInterfaceDisabled && inputValue.trim() ? { scale: 0.97 } : {}}
                     >
-                        <Send size={18} /> Enviar
+                        <Send size={18} /> 
+                        {isQuerying ? <Loader2 size={18} className="animate-spin" /> : 'Enviar'}
                     </motion.button>
                 </form>
+
+                {/* Context Debug Panel (only in development) */}
+                {process.env.NODE_ENV === 'development' && contextData && (
+                    <details style={{ marginTop: '1rem', fontSize: '0.75rem' }}>
+                        <summary style={{ cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}>
+                            Debug: Contexto Inicial ({contextData.context_mode || 'standard'})
+                        </summary>
+                        <pre style={{ 
+                            marginTop: '0.5rem',
+                            padding: '0.5rem',
+                            background: 'rgba(0,0,0,0.3)',
+                            borderRadius: '4px',
+                            overflow: 'auto',
+                            maxHeight: '200px',
+                            color: 'rgba(255,255,255,0.7)'
+                        }}>
+                            {JSON.stringify(contextData, null, 2)}
+                        </pre>
+                    </details>
+                )}
             </div>
             
             <style jsx global>{`

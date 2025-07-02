@@ -81,4 +81,12 @@ urlpatterns = [
     #documentation
     path('schema/', SpectacularAPIView.as_view(), name='schema'),
     path('docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+
+    #aiadvisor
+    path('ai-advisor/enhanced/get-initial-context/', views.get_enhanced_ai_advisor_initial_context, name='enhanced-ai-get-initial-context'),
+    path('ai-advisor/enhanced/start-session/', views.start_enhanced_ai_advisor_session, name='enhanced-ai-start-session'),
+    path('ai-advisor/enhanced/query/', views.query_enhanced_ai_advisor, name='enhanced-ai-query-advisor'),
+    path('ai-advisor/enhanced/session-info/<str:session_id>/', views.get_ai_session_info, name='ai-session-info'),
+    path('ai-advisor/enhanced/additional-context/', views.get_additional_context, name='ai-additional-context'),
+    path('ai-advisor/enhanced/health/', views.enhanced_ai_advisor_health_check, name='enhanced-ai-health-check'),
 ]

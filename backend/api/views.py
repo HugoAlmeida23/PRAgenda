@@ -55,6 +55,8 @@ from django.db import transaction
 from .models import OrganizationActionLog
 from .serializers import OrganizationActionLogSerializer
 from rest_framework import permissions
+from .services.ai_advisor_service_enhanced import EnhancedAIAdvisorService
+from .services.ai_context_service import AIContextService
 
 logger = logging.getLogger(__name__)
 
@@ -5373,3 +5375,348 @@ class OrganizationActionLogViewSet(viewsets.ReadOnlyModelViewSet):
         if hasattr(user, 'profile') and user.profile.organization:
             return qs.filter(organization=user.profile.organization)
         return qs.none()
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_enhanced_ai_advisor_initial_context(request):
+    """
+    Get optimized initial context data for AI Advisor.
+    Returns only essential metrics and summaries, not full data.
+    """
+    try:
+        profile = Profile.objects.select_related('organization').get(user=request.user)
+        if not profile.organization:
+            return Response({
+                "error": "Usuário não está associado a uma organização.",
+                "error_code": "NO_ORGANIZATION"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para aceder ao consultor AI.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        organization = profile.organization
+        
+        try:
+            # Use the optimized context service
+            context_service = AIContextService()
+            context_data = context_service.get_initial_context(organization, request.user)
+            
+            logger.info(f"Generated optimized AI context for org {organization.id}, user {request.user.username}")
+            
+            # Add metadata about available context types
+            context_data['available_context_types'] = [
+                'clients', 'tasks', 'profitability', 'specific_client', 'generated_reports'
+            ]
+            context_data['context_mode'] = 'progressive'
+            
+            return Response(context_data)
+
+        except Exception as e:
+            logger.error(f"Error generating optimized AI context: {str(e)}", exc_info=True)
+            return Response({
+                "error": "Erro ao recolher dados do escritório. Tente novamente.",
+                "error_code": "DATA_COLLECTION_ERROR"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Profile.DoesNotExist:
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in enhanced AI advisor context: {str(e)}", exc_info=True)
+        return Response({
+            "error": "Erro interno ao preparar dados para o Consultor AI.",
+            "error_code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def start_enhanced_ai_advisor_session(request):
+    """Start AI Advisor session with progressive context loading"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para iniciar sessão com o Consultor AI.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        context_data = request.data.get('context', {})
+        if not context_data:
+            return Response({
+                "error": "Dados de contexto são necessários para iniciar a sessão.",
+                "error_code": "MISSING_CONTEXT"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Use the enhanced AI advisor service
+            advisor_service = EnhancedAIAdvisorService()
+            
+            # Perform health check first
+            health = advisor_service.health_check()
+            if health['status'] == 'unhealthy':
+                return Response({
+                    "error": f"Serviço AI não disponível: {health['message']}",
+                    "error_code": "SERVICE_UNHEALTHY"
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            
+            session_id, initial_message = advisor_service.start_session(context_data, request.user)
+
+            if session_id is None:
+                error_code = "API_ERROR"
+                if "configurado" in initial_message:
+                    error_code = "CONFIGURATION_ERROR"
+                elif "indisponível" in initial_message:
+                    error_code = "SERVICE_UNAVAILABLE"
+                elif "API key" in initial_message:
+                    error_code = "AUTHENTICATION_ERROR"
+                
+                return Response({
+                    "error": initial_message or "Não foi possível iniciar a sessão com o Consultor AI.",
+                    "error_code": error_code
+                }, status=status.HTTP_502_BAD_GATEWAY)
+
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='START_ENHANCED_AI_ADVISOR_SESSION',
+                action_description=f"Sessão aprimorada do Consultor AI iniciada pelo usuário {request.user.username}",
+                related_object=None
+            )
+            
+            return Response({
+                "session_id": session_id,
+                "initial_message": initial_message,
+                "health_status": health['status'],
+                "features": health.get('features', {}),
+                "context_mode": "progressive"
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Enhanced AI Advisor service error: {str(e)}")
+            return Response({
+                "error": "Erro do serviço AI. Contacte o administrador.",
+                "error_code": "SERVICE_ERROR"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    except Profile.DoesNotExist:
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in enhanced start session: {str(e)}", exc_info=True)
+        return Response({
+            "error": "Erro interno ao iniciar a sessão com o Consultor AI.",
+            "error_code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def query_enhanced_ai_advisor(request):
+    """Process query with intelligent context enhancement"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para consultar o Consultor AI.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        session_id = request.data.get('session_id')
+        user_query_text = request.data.get('query')
+
+        if not session_id or not user_query_text:
+            return Response({
+                "error": "session_id e query são obrigatórios.",
+                "error_code": "MISSING_PARAMETERS"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Add debug logging
+        logger.info(f"Processing query for session {session_id}: {user_query_text[:50]}...")
+        
+        try:
+            advisor_service = EnhancedAIAdvisorService()
+            
+            # Check if session exists before processing
+            from django.core.cache import cache
+            conversation_history = cache.get(session_id)
+            session_state = cache.get(f"{session_id}_state")
+            
+            logger.info(f"Session check - History exists: {conversation_history is not None}, State exists: {session_state is not None}")
+            
+            ai_response_text, error_message = advisor_service.process_query(
+                session_id, user_query_text, request.user
+            )
+
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='QUERY_ENHANCED_AI_ADVISOR',
+                action_description=f"Consulta aprimorada ao Consultor AI: {user_query_text[:100]}...",
+                related_object=None
+            )
+            
+            if error_message:
+                logger.error(f"AI Advisor returned error: {error_message}")
+                
+                # Determine error code based on message content
+                error_code = "QUERY_ERROR"
+                if "Sessão inválida ou expirada" in error_message:
+                    error_code = "SESSION_EXPIRED"
+                elif "temporariamente indisponível" in error_message:
+                    error_code = "SERVICE_UNAVAILABLE"
+                elif "corrompida" in error_message:
+                    error_code = "SESSION_CORRUPTED"
+                
+                status_code = status.HTTP_404_NOT_FOUND if error_code == "SESSION_EXPIRED" else status.HTTP_502_BAD_GATEWAY
+                
+                return Response({
+                    "error": error_message,
+                    "error_code": error_code
+                }, status=status_code)
+                
+            logger.info(f"AI query successful for session {session_id}")
+            return Response({
+                "response": ai_response_text
+            })
+
+        except Exception as e:
+            logger.error(f"Enhanced AI Advisor processing error: {str(e)}", exc_info=True)
+            return Response({
+                "error": "Erro no processamento da consulta AI.",
+                "error_code": "SERVICE_ERROR"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    except Profile.DoesNotExist:
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in enhanced query: {str(e)}", exc_info=True)
+        return Response({
+            "error": "Erro interno ao consultar o Consultor AI.",
+            "error_code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_ai_session_info(request, session_id):
+    """Get detailed information about an AI session"""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para aceder a informações de sessão.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            advisor_service = EnhancedAIAdvisorService()
+            session_info = advisor_service.get_session_info(session_id)
+            
+            if not session_info:
+                return Response({
+                    "error": "Sessão não encontrada ou expirada.",
+                    "error_code": "SESSION_NOT_FOUND"
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            return Response(session_info)
+            
+        except Exception as e:
+            logger.error(f"Error getting session info: {str(e)}")
+            return Response({
+                "error": "Erro ao obter informações da sessão.",
+                "error_code": "SERVICE_ERROR"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Profile.DoesNotExist:
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_additional_context(request):
+    """
+    Endpoint to manually request additional context data.
+    Useful for debugging or when AI needs specific data.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.is_org_admin:
+            return Response({
+                "error": "Sem permissão para aceder a dados adicionais.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        context_type = request.data.get('context_type')
+        filters = request.data.get('filters', {})
+        
+        if not context_type:
+            return Response({
+                "error": "context_type é obrigatório.",
+                "error_code": "MISSING_PARAMETERS"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            context_service = AIContextService()
+            context_data = context_service.get_detailed_context(
+                profile.organization, context_type, filters
+            )
+            
+            if 'error' in context_data:
+                return Response({
+                    "error": context_data['error'],
+                    "error_code": "CONTEXT_ERROR"
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response({
+                "context_type": context_type,
+                "filters_applied": filters,
+                "data": context_data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting additional context: {str(e)}")
+            return Response({
+                "error": "Erro ao obter contexto adicional.",
+                "error_code": "SERVICE_ERROR"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Profile.DoesNotExist:
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def enhanced_ai_advisor_health_check(request):
+    """Enhanced health check endpoint for AI Advisor service"""
+    try:
+        advisor_service = EnhancedAIAdvisorService()
+        health = advisor_service.health_check()
+        
+        status_code = status.HTTP_200_OK
+        if health['status'] == 'degraded':
+            status_code = status.HTTP_206_PARTIAL_CONTENT
+        elif health['status'] == 'unhealthy':
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            
+        return Response(health, status=status_code)
+        
+    except Exception as e:
+        logger.error(f"Enhanced health check failed: {str(e)}")
+        return Response({
+            "status": "unhealthy",
+            "message": f"Health check failed: {str(e)}",
+            "timestamp": timezone.now().isoformat()
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
