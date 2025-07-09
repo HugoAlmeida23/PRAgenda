@@ -5720,3 +5720,50 @@ def enhanced_ai_advisor_health_check(request):
             "timestamp": timezone.now().isoformat()
         }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def confirm_enhanced_ai_time_entry(request):
+    """
+    Endpoint to create a TimeEntry from the AI Advisor action (action://confirm-create-time-entry).
+    Expects fields: client, task, minutes_spent, description, date, etc.
+    """
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if not profile.can_log_time:
+            return Response({
+                "error": "Sem permissão para registar tempo.",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        data = request.data.copy()
+        # Set user to current user
+        data['user'] = request.user.id
+        serializer = TimeEntrySerializer(data=data)
+        if serializer.is_valid():
+            time_entry = serializer.save()
+            # Log organization action
+            log_organization_action(
+                request,
+                action_type='AI_CREATE_TIME_ENTRY',
+                action_description=f"Registo de tempo criado via AI: {time_entry.description} ({time_entry.minutes_spent} min) para tarefa {time_entry.task_id}",
+                related_object=time_entry
+            )
+            return Response(TimeEntrySerializer(time_entry).data, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                "error": "Erro de validação ao criar registo de tempo.",
+                "error_code": "VALIDATION_ERROR",
+                "details": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+    except Profile.DoesNotExist:
+        return Response({
+            "error": "Perfil de usuário não encontrado.",
+            "error_code": "PROFILE_NOT_FOUND"
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erro ao criar registo de tempo via AI: {str(e)}", exc_info=True)
+        return Response({
+            "error": "Erro interno ao criar registo de tempo.",
+            "error_code": "INTERNAL_ERROR"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

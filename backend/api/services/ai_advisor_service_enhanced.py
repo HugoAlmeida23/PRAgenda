@@ -48,29 +48,36 @@ class EnhancedAIAdvisorService:
             raise AIAdvisorServiceError(f"Serviço AI não configurado corretamente. Contacte o administrador.")
 
     def _build_initial_system_prompt(self, initial_context):
-        """Build optimized system prompt with minimal essential context"""
+        """Build optimized system prompt with minimal essential context and task creation guidance"""
         try:
             context_summary = self._create_context_summary(initial_context)
-            
+            # --- Conversational Task Creation Guidance ---
+            task_creation_guidance = (
+                "\n\nINSTRUÇÃO IMPORTANTE:\n"
+                "Se o utilizador pedir para criar uma tarefa, conduza o processo de forma conversacional, perguntando um campo de cada vez (cliente, título, prazo, prioridade, etc). "
+                "Quando tiver todos os campos necessários, mostre um resumo e peça confirmação antes de criar. "
+                "Use um botão markdown: [Confirmar Criação](action://confirm-create-task?...). "
+                "Não crie nada sem confirmação explícita do utilizador. "
+                "Se faltar algum campo, pergunte apenas UM campo de cada vez. "
+                "Quando o utilizador confirmar, inclua todos os campos como parâmetros na action. "
+                "Exemplo: [Confirmar Criação](action://confirm-create-task?client=123&title=Enviar%20IVA&deadline=2025-07-10&priority=2)\n"
+            )
             return (
                 "Você é TarefAI, um consultor de negócios especializado em escritórios de contabilidade portugueses. "
                 "Trabalha com euros, segue as normas fiscais portuguesas e fala português de Portugal.\n\n"
-                
                 "SUAS CAPACIDADES:\n"
                 "- Analisar dados do escritório e fornecer insights valiosos\n"
                 "- Solicitar dados específicos quando necessário para dar respostas precisas\n"
                 "- Sugerir melhorias em rentabilidade, gestão de tarefas e processos\n"
                 "- Identificar oportunidades e problemas críticos\n\n"
-                
                 "DADOS INICIAIS DO ESCRITÓRIO:\n"
                 f"{context_summary}\n\n"
-                
                 "IMPORTANTE:\n"
                 "- Quando precisar de dados específicos (ex: detalhes de um cliente, lista de tarefas), peça explicitamente\n"
                 "- Use markdown para formatar tabelas e listas quando apropriado\n"
                 "- Seja específico e mencione nomes/números dos dados fornecidos\n"
                 "- Sempre fundamentar suas análises nos dados disponíveis\n\n"
-                
+                f"{task_creation_guidance}"
                 "Apresente-se como TarefAI, confirme que analisou os dados iniciais do escritório "
                 f"{initial_context.get('organization_name', 'da organização')} e pergunte como pode ajudar a otimizar o escritório."
             )
@@ -189,21 +196,32 @@ class EnhancedAIAdvisorService:
             logger.error(f"Error starting enhanced session: {str(e)}", exc_info=True)
             return None, "Erro interno ao iniciar sessão"
 
+    def _is_time_entry_creation_intent(self, query):
+        query_lower = query.lower()
+        triggers = [
+            'registar tempo', 'registo de tempo', 'adicionar tempo', 'tempo gasto',
+            'time entry', 'log time', 'add time', 'spent', 'passei', 'gastei', 'trabalhei'
+        ]
+        return any(trigger in query_lower for trigger in triggers)
+
+    def _is_chart_request(self, query):
+        query_lower = query.lower()
+        triggers = [
+            'gráfico', 'chart', 'faça um gráfico', 'mostra gráfico', 'gráfico de barras', 'gráfico de linhas', 'line chart', 'pie chart', 'visualização', 'visualize'
+        ]
+        return any(trigger in query_lower for trigger in triggers)
 
     def process_query(self, session_id, user_query_text, user):
-        """Process query with intelligent context enhancement"""
+        """Process query with intelligent context enhancement, task and time entry creation guidance"""
         try:
             # Retrieve conversation history and session state
             conversation_history = cache.get(session_id)
             session_state = cache.get(f"{session_id}_state")
-            
             if not conversation_history:
                 logger.warning(f"Session {session_id} conversation history not found")
                 return None, "Sessão inválida ou expirada. Recarregue a página para iniciar nova conversa."
-            
             if not session_state:
                 logger.warning(f"Session {session_id} state not found, recreating...")
-                # Recreate basic session state instead of failing
                 try:
                     profile = user.profile
                     organization = profile.organization
@@ -221,67 +239,84 @@ class EnhancedAIAdvisorService:
                 except Exception as e:
                     logger.error(f"Could not recreate session state: {str(e)}")
                     return None, "Erro na sessão. Recarregue a página para iniciar nova conversa."
-
-            # Validate conversation history structure
             if not isinstance(conversation_history, list) or len(conversation_history) < 2:
                 logger.error(f"Invalid conversation history format for session {session_id}")
                 cache.delete(session_id)
                 cache.delete(f"{session_id}_state")
                 return None, "Sessão corrompida. Recarregue a página para iniciar nova conversa."
 
-            # Analyze query to determine if additional context is needed
-            additional_context = self._analyze_query_and_get_context(
-                user_query_text, session_state, user
-            )
-            
-            # Prepare current turn with optional additional context
-            current_turn_parts = [{"text": user_query_text}]
-            
-            if additional_context:
-                # If additional_context is a string, use it directly
-                if isinstance(additional_context, str):
-                    context_text = additional_context
-                else:
-                    context_text = self._format_additional_context(additional_context)
-                current_turn_parts.append({"text": f"\n\n[DADOS ADICIONAIS SOLICITADOS]:\n{context_text}"})
-                logger.info(f"Added {len(additional_context) if hasattr(additional_context, 'items') else 'custom'} context items to query")
-
+            # --- Detect time entry creation intent and inject guidance if needed ---
+            if self._is_time_entry_creation_intent(user_query_text):
+                guidance_note = (
+                    "[NOTA DO SISTEMA]: O utilizador quer registar tempo numa tarefa. "
+                    "Conduza o processo perguntando um campo de cada vez (tarefa, cliente, minutos, descrição, data). "
+                    "Quando todos os campos estiverem preenchidos, peça confirmação com um botão markdown action://confirm-create-time-entry. "
+                    "Não registe nada sem confirmação."
+                )
+                current_turn_parts = [
+                    {"text": user_query_text},
+                    {"text": guidance_note}
+                ]
+            # --- Detect task creation intent and inject guidance if needed ---
+            elif self._is_task_creation_intent(user_query_text):
+                guidance_note = (
+                    "[NOTA DO SISTEMA]: O utilizador quer criar uma tarefa. "
+                    "Conduza o processo perguntando um campo de cada vez, conforme instruções. "
+                    "Quando todos os campos estiverem preenchidos, peça confirmação com um botão markdown action://confirm-create-task. "
+                    "Não crie nada sem confirmação."
+                )
+                current_turn_parts = [
+                    {"text": user_query_text},
+                    {"text": guidance_note}
+                ]
+            else:
+                # Analyze query to determine if additional context is needed
+                additional_context = self._analyze_query_and_get_context(
+                    user_query_text, session_state, user
+                )
+                force_chart = self._is_chart_request(user_query_text)
+                current_turn_parts = [{"text": user_query_text}]
+                if additional_context:
+                    if isinstance(additional_context, str):
+                        context_text = additional_context
+                    else:
+                        context_text = self._format_additional_context(additional_context, force_chart=force_chart)
+                    current_turn_parts.append({"text": f"\n\n[DADOS ADICIONAIS SOLICITADOS]:\n{context_text}"})
             # Get AI response
             try:
                 ai_response = self.gemini_service.generate_conversational_response(
                     current_turn_parts=current_turn_parts,
                     history=conversation_history
                 )
-
                 if ai_response and not self._is_error_response(ai_response):
-                    # Update conversation history
                     conversation_history.append({"role": "user", "parts": current_turn_parts})
                     conversation_history.append({"role": "model", "parts": [{"text": ai_response}]})
-                    
-                    # Update session state
-                    self._update_session_state(session_state, user_query_text, additional_context)
-                    
-                    # Prune history if too long
+                    self._update_session_state(session_state, user_query_text, None)
                     if len(conversation_history) > (MAX_CONVERSATION_TURNS + 2):
                         conversation_history = conversation_history[:2] + conversation_history[-(MAX_CONVERSATION_TURNS):]
-                    
-                    # Save back to cache with extended timeout
                     cache.set(session_id, conversation_history, timeout=CONVERSATION_CACHE_TIMEOUT)
                     cache.set(f"{session_id}_state", session_state, timeout=SESSION_STATE_TIMEOUT)
-                    
                     logger.info(f"Query processed successfully for session {session_id}")
                     return ai_response, None
                 else:
                     logger.error(f"Invalid AI response: {ai_response}")
                     return None, "Resposta inválida do serviço AI. Tente novamente."
-                    
             except Exception as e:
                 logger.error(f"Error getting AI response: {str(e)}")
                 return None, "Erro na comunicação com o serviço AI. Tente novamente."
-
         except Exception as e:
             logger.error(f"Error processing enhanced query: {str(e)}", exc_info=True)
             return None, "Erro interno ao processar pergunta. Tente novamente."
+
+    # --- Helper to detect task creation intent ---
+    def _is_task_creation_intent(self, query):
+        query_lower = query.lower()
+        # Simple intent detection for Portuguese and English
+        triggers = [
+            'criar tarefa', 'nova tarefa', 'adicionar tarefa', 'registar tarefa',
+            'create task', 'new task', 'add task', 'register task'
+        ]
+        return any(trigger in query_lower for trigger in triggers)
 
     def _analyze_query_and_get_context(self, query, session_state, user):
         """
@@ -349,15 +384,15 @@ class EnhancedAIAdvisorService:
         
         return filters
 
-    def _format_additional_context(self, additional_context):
-        """Format additional context for AI consumption"""
+    def _format_additional_context(self, additional_context, force_chart=False):
+        """Format additional context for AI consumption, with optional force_chart."""
         formatted_parts = []
         
         for context_type, data in additional_context.items():
             if context_type == 'clients' and 'clients' in data:
                 formatted_parts.append(self._format_clients_context(data['clients']))
             elif context_type == 'tasks' and 'tasks' in data:
-                formatted_parts.append(self._format_tasks_context(data['tasks']))
+                formatted_parts.append(self._format_tasks_context(data['tasks'], force_chart=force_chart))
             elif context_type == 'specific_client':
                 formatted_parts.append(self._format_specific_client_context(data))
             elif context_type == 'profitability':
@@ -366,110 +401,190 @@ class EnhancedAIAdvisorService:
         return "\n\n".join(formatted_parts)
 
     def _format_clients_context(self, clients_data):
-        """Format clients data as markdown table"""
+        """Format clients data as markdown table, chart, action buttons, and app links"""
         if not clients_data:
             return "Nenhum cliente encontrado com os critérios especificados."
-        
         context = "## 📊 CLIENTES DETALHADOS\n\n"
-        context += "| Cliente | Taxa Mensal | Tarefas Ativas | Tags Fiscais | Gestor |\n"
-        context += "|---------|-------------|----------------|--------------|--------|\n"
-        
-        for client in clients_data[:10]:  # Limit to 10 for token efficiency
+        # Add chart if enough data
+        if len(clients_data) >= 2:
+            chart_data = [
+                {"name": c.get("name", "N/A"), "value": float(c.get("monthly_fee", 0))}
+                for c in clients_data[:10]
+            ]
+            chart_block = (
+                "```chart\n" +
+                json.dumps({
+                    "type": "bar",
+                    "data": chart_data,
+                    "xKey": "name",
+                    "yKey": "value",
+                    "barColor": "#6366f1"
+                }, ensure_ascii=False) +
+                "\n```\n\n"
+            )
+            context += chart_block
+        context += (
+            "Cada linha inclui ações rápidas: [Ver Cliente](/clients/ID) e [Criar Tarefa](action://create-task?client=ID).\n\n"
+        )
+        context += "| Cliente | Taxa Mensal | Tarefas Ativas | Tags Fiscais | Gestor | Ações |\n"
+        context += "|---------|-------------|----------------|--------------|--------|--------|\n"
+        for client in clients_data[:10]:
             name = client.get('name', 'N/A')
             fee = f"{client.get('monthly_fee', 0):.2f}€"
             active_tasks = client.get('active_tasks_count', 0)
             tags = ', '.join(client.get('fiscal_tags', [])[:3]) or 'Nenhuma'
             manager = client.get('account_manager', 'N/A')
-            
-            context += f"| {name} | {fee} | {active_tasks} | {tags} | {manager} |\n"
-        
+            client_id = client.get('id', '')
+            link = f"[Ver Cliente](/clients/{client_id})"
+            action = f"[Criar Tarefa](action://create-task?client={client_id})"
+            actions = f"{link} <br> {action}"
+            context += f"| {name} | {fee} | {active_tasks} | {tags} | {manager} | {actions} |\n"
         return context
 
-    def _format_tasks_context(self, tasks_data):
-        """Format tasks data as markdown table"""
+    def _format_tasks_context(self, tasks_data, force_chart=False):
+        """Format tasks data as markdown table, chart, action buttons, and app links. Always include chart if force_chart or if any data."""
         if not tasks_data:
             return "Nenhuma tarefa encontrada com os critérios especificados."
-        
         context = "## 📋 TAREFAS DETALHADAS\n\n"
-        context += "| Tarefa | Cliente | Status | Prioridade | Prazo | Responsável |\n"
-        context += "|--------|---------|--------|------------|-------|-------------|\n"
-        
+        from collections import Counter
         priority_map = {1: 'Urgente', 2: 'Alta', 3: 'Média', 4: 'Baixa', 5: 'Pode Esperar'}
-        
-        for task in tasks_data[:15]:  # Limit to 15 for token efficiency
+        priorities = [priority_map.get(t.get('priority'), 'N/A') for t in tasks_data]
+        counts = Counter(priorities)
+        chart_data = [{"name": k, "value": v} for k, v in counts.items()]
+        if force_chart or len(chart_data) > 0:
+            chart_block = (
+                "```chart\n" +
+                json.dumps({
+                    "type": "bar",
+                    "data": chart_data,
+                    "xKey": "name",
+                    "yKey": "value",
+                    "barColor": "#f59e42"
+                }, ensure_ascii=False) +
+                "\n```\n\n"
+            )
+            context += chart_block
+        context += (
+            "Cada linha inclui ações rápidas: [Ver Tarefa](/tasks/ID) e [Concluir Tarefa](action://complete-task?task=ID) se aplicável.\n\n"
+        )
+        context += "| Tarefa | Cliente | Status | Prioridade | Prazo | Responsável | Ações |\n"
+        context += "|--------|---------|--------|------------|-------|-------------|--------|\n"
+        for task in tasks_data[:15]:
             title = task.get('title', 'N/A')[:30] + '...' if len(task.get('title', '')) > 30 else task.get('title', 'N/A')
             client = task.get('client_name', 'N/A')
             status = task.get('status', 'N/A')
             priority = priority_map.get(task.get('priority'), 'N/A')
             deadline = task.get('deadline', 'N/A')
             assigned = task.get('assigned_to', 'N/A')
-            
-            context += f"| {title} | {client} | {status} | {priority} | {deadline} | {assigned} |\n"
-        
+            task_id = task.get('id', '')
+            link = f"[Ver Tarefa](/tasks/{task_id})"
+            action = f"[Concluir Tarefa](action://complete-task?task={task_id})" if status != 'completed' else ''
+            actions = f"{link} <br> {action}" if action else link
+            context += f"| {title} | {client} | {status} | {priority} | {deadline} | {assigned} | {actions} |\n"
         return context
 
     def _format_specific_client_context(self, client_data):
-        """Format specific client data with full details"""
+        """Format specific client data with full details, chart, links, and actions"""
         client = client_data.get('client', {})
         tasks_summary = client_data.get('tasks_summary', {})
         profitability = client_data.get('recent_profitability', [])
-        
         context = f"## 👤 CLIENTE DETALHADO: {client.get('name', 'N/A')}\n\n"
-        
+        # Chart for recent profitability
+        if profitability and len(profitability) >= 2:
+            chart_data = [
+                {"name": f"{p.get('month')}/{p.get('year')}", "value": float(p.get('profit_margin', 0))}
+                for p in profitability[:6]
+            ]
+            chart_block = (
+                "```chart\n" +
+                json.dumps({
+                    "type": "bar",
+                    "data": chart_data,
+                    "xKey": "name",
+                    "yKey": "value",
+                    "barColor": "#10b981"
+                }, ensure_ascii=False) +
+                "\n```\n\n"
+            )
+            context += chart_block
+        # Action buttons and link
+        client_id = client.get('id', '')
+        actions = f"[Ver Cliente](/clients/{client_id}) <br> [Criar Tarefa](action://create-task?client={client_id})"
+        context += f"Ações rápidas: {actions}\n\n"
         # Basic info
         context += "### Informações Básicas\n"
         context += f"- **Taxa Mensal**: {client.get('monthly_fee', 0):.2f}€\n"
         context += f"- **Gestor de Conta**: {client.get('account_manager', 'N/A')}\n"
         context += f"- **Tags Fiscais**: {', '.join(client.get('fiscal_tags', [])) or 'Nenhuma'}\n"
         context += f"- **Cliente desde**: {client.get('created_at', 'N/A')}\n\n"
-        
         # Tasks summary
         context += "### Resumo de Tarefas\n"
         context += f"- **Ativas**: {tasks_summary.get('active', 0)}\n"
         context += f"- **Concluídas**: {tasks_summary.get('completed', 0)}\n"
         context += f"- **Em Atraso**: {tasks_summary.get('overdue', 0)}\n\n"
-        
         # Recent profitability
         if profitability:
             context += "### Rentabilidade Recente\n"
             for p in profitability[:3]:
                 status = "✅ Rentável" if p.get('is_profitable') else "❌ Não Rentável"
                 context += f"- **{p.get('month')}/{p.get('year')}**: {p.get('profit', 0):.2f}€ ({p.get('profit_margin', 0):.1f}%) {status}\n"
-        
         # Time spent
         time_spent = client_data.get('recent_time_spent_minutes', 0)
         if time_spent > 0:
             hours = time_spent // 60
             minutes = time_spent % 60
             context += f"\n### Tempo Gasto (Últimos 30 dias)\n- **Total**: {hours}h {minutes}m\n"
-        
         return context
 
     def _format_profitability_context(self, profitability_data):
-        """Format profitability data"""
+        """Format profitability data with chart and action button"""
         context = "## 💰 ANÁLISE DE RENTABILIDADE\n\n"
-        
-        # Add profitability details here based on the data structure
-        # This would depend on what's returned by get_detailed_profitability
+        # Try to extract chartable data
+        if isinstance(profitability_data, dict):
+            # Example: profitability_data["current_month"]
+            current = profitability_data.get("current_month", {})
+            if current and all(k in current for k in ("profitable_clients", "unprofitable_clients")):
+                chart_data = [
+                    {"name": "Rentáveis", "value": current.get("profitable_clients", 0)},
+                    {"name": "Não Rentáveis", "value": current.get("unprofitable_clients", 0)}
+                ]
+                chart_block = (
+                    "```chart\n" +
+                    json.dumps({
+                        "type": "pie",
+                        "data": chart_data,
+                        "xKey": "name",
+                        "yKey": "value",
+                        "colors": ["#10b981", "#ef4444"]
+                    }, ensure_ascii=False) +
+                    "\n```\n\n"
+                )
+                context += chart_block
+        # Action button to view profitability report
+        context += "[Ver Relatório de Rentabilidade](action://view-profitability-report)\n\n"
         context += "Dados detalhados de rentabilidade carregados para análise.\n"
-        
         return context
 
     def _format_generated_reports_context(self, reports_data):
         """
-        Format the generated reports context for the LLM.
+        Format the generated reports context for the LLM, with table, download link, and action button.
         """
         if not reports_data:
             return "Nenhum relatório gerado encontrado para a organização."
-        lines = ["Relatórios já gerados disponíveis:"]
+        context = "## 📑 RELATÓRIOS GERADOS\n\n"
+        context += "| Nome | Tipo | Formato | Data | Status | Ações |\n"
+        context += "|------|------|---------|------|--------|--------|\n"
         for r in reports_data:
-            line = f"- {r['name']} ({r['report_type']}, {r['report_format']}, gerado em {r['created_at'][:10]}, status: {r['status']})"
-            if r['storage_url']:
-                line += f" [Download]({r['storage_url']})"
-            if r['description']:
-                line += f" - {r['description']}"
-            lines.append(line)
-        return "\n".join(lines)
+            name = r.get('name', '-')
+            report_type = r.get('report_type', '-')
+            report_format = r.get('report_format', '-')
+            date = r.get('created_at', '-')[:10]
+            status = r.get('status', '-')
+            download = f"[Download]({r['storage_url']})" if r.get('storage_url') else ''
+            view = f"[Ver Relatório](action://view-report?report={r.get('id','')})"
+            actions = f"{download} <br> {view}"
+            context += f"| {name} | {report_type} | {report_format} | {date} | {status} | {actions} |\n"
+        return context
 
     def _update_session_state(self, session_state, query, additional_context):
         """Update session state with query metadata"""

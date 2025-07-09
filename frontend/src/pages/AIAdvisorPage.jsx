@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Loader2, Brain, Sparkles, AlertTriangle, HelpCircle, User, RefreshCw, WifiOff, Settings, CheckCircle, Database, BarChart3, Users, Calendar } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../api';
+import qs from 'qs';
+import { useTaskStore } from '../stores/useTaskStore';
+import { useReportStore } from '../stores/useReportStore';
+import { useClientStore } from '../stores/useClientStore';
 
 
 const glassStyle = {
@@ -29,198 +35,46 @@ const ERROR_MESSAGES = {
     INTERNAL_ERROR: "Erro interno do sistema. Tente novamente ou contacte o suporte."
 };
 
-const parseMarkdown = (text) => {
-    if (!text) return '';
+const ChartRenderer = ({ config }) => {
+    if (!config || typeof config !== 'object') return null;
+    const { type, data, ...rest } = config;
 
-    const lines = text.split('\n');
-    const elements = [];
-    let currentListType = null;
-    let listItems = [];
-    let inTable = false;
-    let tableHeaders = [];
-    let tableRows = [];
+    if (!type || !Array.isArray(data)) return <div style={{color: '#fca5a5'}}>Dados do gráfico inválidos.</div>;
 
-    const flushList = () => {
-        if (listItems.length > 0) {
-            if (currentListType === 'ul') {
-                elements.push(<ul key={`ul-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ul>);
-            } else if (currentListType === 'ol') {
-                elements.push(<ol key={`ol-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ol>);
-            }
-            listItems = [];
-            currentListType = null;
-        }
-    };
-
-    const flushTable = () => {
-        if (tableHeaders.length > 0 && tableRows.length > 0) {
-            elements.push(
-                <div key={`table-${elements.length}`} style={{ margin: '1rem 0', overflowX: 'auto' }}>
-                    <table style={{ 
-                        width: '100%', 
-                        borderCollapse: 'collapse',
-                        background: 'rgba(255,255,255,0.05)',
-                        borderRadius: '8px',
-                        overflow: 'hidden'
-                    }}>
-                        <thead>
-                            <tr style={{ background: 'rgba(255,255,255,0.1)' }}>
-                                {tableHeaders.map((header, i) => (
-                                    <th key={i} style={{ 
-                                        padding: '0.75rem', 
-                                        textAlign: 'left', 
-                                        borderBottom: '1px solid rgba(255,255,255,0.2)',
-                                        fontWeight: '600'
-                                    }}>
-                                        {header}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {tableRows.map((row, i) => (
-                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                                    {row.map((cell, j) => (
-                                        <td key={j} style={{ 
-                                            padding: '0.75rem',
-                                            fontSize: '0.9rem'
-                                        }}>
-                                            {parseInline(cell, `table-${i}-${j}`)}
-                                        </td>
-                                    ))}
-                                </tr>
+    if (type === 'bar') {
+        return (
+            <div style={{ width: '100%', height: 300, margin: '1rem 0', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '1rem' }}>
+                <ResponsiveContainer>
+                    <BarChart data={data} {...rest}>
+                        <XAxis dataKey={rest.xKey || 'name'} stroke="rgba(255,255,255,0.7)" />
+                        <YAxis stroke="rgba(255,255,255,0.7)" />
+                        <Tooltip contentStyle={{ background: '#333', border: '1px solid rgba(255,255,255,0.2)' }} />
+                        <Legend wrapperStyle={{ color: 'white' }} />
+                        <Bar dataKey={rest.yKey || 'value'} fill={rest.barColor || '#8884d8'} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        );
+    }
+    if (type === 'pie') {
+        const COLORS = rest.colors || ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF1943'];
+        return (
+            <div style={{ width: '100%', height: 300, margin: '1rem 0', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '1rem' }}>
+                <ResponsiveContainer>
+                    <PieChart>
+                        <Pie data={data} dataKey={rest.yKey || 'value'} nameKey={rest.xKey || 'name'} cx="50%" cy="50%" outerRadius={100} fill={rest.pieColor || '#8884d8'} label>
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            );
-        }
-        tableHeaders = [];
-        tableRows = [];
-        inTable = false;
-    };
-
-    const parseInline = (lineContent, keyPrefix) => {
-        const parts = [];
-        let currentIndex = 0;
-        
-        const inlinePatterns = [
-            { regex: /\*\*\*(.*?)\*\*\*/g, component: (content, k) => <strong key={k}><em>{content}</em></strong> },
-            { regex: /\*\*(.*?)\*\*/g, component: (content, k) => <strong key={k}>{content}</strong> },
-            { regex: /\*(.*?)\*/g, component: (content, k) => <em key={k}>{content}</em> },
-            { regex: /`(.*?)`/g, component: (content, k) => <code key={k} style={{background: 'rgba(255,255,255,0.1)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.85em'}}>{content}</code> },
-        ];
-
-        const allMatches = [];
-        inlinePatterns.forEach(pattern => {
-            let match;
-            const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
-            while ((match = regex.exec(lineContent)) !== null) {
-                allMatches.push({ start: match.index, end: match.index + match[0].length, content: match[1], component: pattern.component });
-            }
-        });
-
-        allMatches.sort((a, b) => a.start - b.start);
-
-        const validMatches = [];
-        let lastEnd = 0;
-        allMatches.forEach(match => {
-            if (match.start >= lastEnd) {
-                validMatches.push(match);
-                lastEnd = match.end;
-            }
-        });
-        
-        let partIndex = 0;
-        validMatches.forEach(match => {
-            if (match.start > currentIndex) {
-                parts.push(<span key={`${keyPrefix}-text-${partIndex++}`}>{lineContent.slice(currentIndex, match.start)}</span>);
-            }
-            parts.push(match.component(match.content, `${keyPrefix}-match-${partIndex++}`));
-            currentIndex = match.end;
-        });
-
-        if (currentIndex < lineContent.length) {
-            parts.push(<span key={`${keyPrefix}-text-${partIndex++}`}>{lineContent.slice(currentIndex)}</span>);
-        }
-        
-        return parts.length > 0 ? parts : <span key={`${keyPrefix}-original`}>{lineContent}</span>;
-    };
-
-    lines.forEach((line, lineIndex) => {
-        const key = `line-${lineIndex}`;
-
-        // Handle table rows
-        if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-            const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
-            
-            if (!inTable) {
-                flushList();
-                inTable = true;
-                tableHeaders = cells;
-            } else if (cells.every(cell => cell.match(/^[-:\s]+$/))) {
-                // Table separator row, skip
-                return;
-            } else {
-                tableRows.push(cells);
-            }
-            return;
-        } else if (inTable) {
-            flushTable();
-        }
-
-        // Handle headers
-        const headerMatch = line.match(/^(#{1,6})\s+(.*)/);
-        if (headerMatch) {
-            flushList();
-            const level = headerMatch[1].length;
-            const text = headerMatch[2];
-            const HeaderTag = `h${Math.min(level + 2, 6)}`;
-            
-            elements.push(
-                React.createElement(HeaderTag, {
-                    key: key,
-                    style: { 
-                        fontSize: level === 1 ? '1.25rem' : level === 2 ? '1.1rem' : '1rem',
-                        fontWeight: '600',
-                        margin: '1rem 0 0.5rem 0',
-                        color: level === 1 ? 'rgb(96, 165, 250)' : level === 2 ? 'rgb(129, 140, 248)' : 'white'
-                    }
-                }, parseInline(text, `${key}-header`))
-            );
-            return;
-        }
-
-        // Handle lists
-        const ulMatch = line.match(/^(\s*)(?:[-*+])\s+(.*)/);
-        if (ulMatch) {
-            if (currentListType !== 'ul') { flushList(); currentListType = 'ul'; }
-            listItems.push(<li key={`${key}-li`}>{parseInline(ulMatch[2], `${key}-li-content`)}</li>);
-            return;
-        }
-
-        const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/);
-        if (olMatch) {
-            if (currentListType !== 'ol') { flushList(); currentListType = 'ol'; }
-            listItems.push(<li key={`${key}-li`}>{parseInline(olMatch[3], `${key}-li-content`)}</li>);
-            return;
-        }
-
-        flushList();
-
-        if (!line.trim()) {
-            if (elements.length === 0 || elements[elements.length - 1].type !== 'br') {
-                elements.push(<br key={key} />);
-            }
-        } else {
-            elements.push(<div key={key} style={{ marginBottom: '0.5rem' }}>{parseInline(line, `${key}-p-content`)}</div>);
-        }
-    });
-
-    flushList();
-    flushTable();
-    
-    return elements;
+                        </Pie>
+                        <Tooltip contentStyle={{ background: '#333', border: '1px solid rgba(255,255,255,0.2)' }} />
+                        <Legend wrapperStyle={{ color: 'white' }} />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+        );
+    }
+    return <div>Tipo de gráfico não suportado: {type}</div>;
 };
 
 const ContextIndicator = ({ contextTypes, isLoading }) => {
@@ -384,8 +238,119 @@ const SuggestedQuestions = ({ onQuestionClick, isLoading }) => {
     );
 };
 
+// FIX: This component is now self-contained and handles its own parsing.
 const AIMessage = ({ message, contextTypes }) => {
     const { status, text } = message;
+
+    // These parsing functions are now defined *within* the component's scope
+    // and are not passed as props, preventing conflicts.
+
+    const handleAction = useCallback((actionUrl) => {
+        // This function would ideally be passed from the parent or use a global state/context
+        // for now, we'll alert as a placeholder.
+        alert(`Action triggered: ${actionUrl}`);
+        // In a real app, you would use navigate, zustand stores, etc. here.
+        // Example: if (actionUrl.includes('create-task')) taskStore.openCreationModal();
+    }, []);
+
+    const parseInline = useCallback((lineContent, keyPrefix) => {
+        const parts = [];
+        let currentIndex = 0;
+        const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+        let lastLinkIndex = 0;
+        let match;
+        while ((match = linkRegex.exec(lineContent)) !== null) {
+            if (match.index > lastLinkIndex) {
+                parts.push(lineContent.slice(lastLinkIndex, match.index));
+            }
+            const [full, text, url] = match;
+            if (url.startsWith('action://')) {
+                parts.push(
+                    <button
+                        key={`${keyPrefix}-action-${currentIndex}`}
+                        onClick={() => handleAction(url)}
+                        style={{
+                            background: 'linear-gradient(90deg, #6366f1, #a5b4fc)',
+                            color: 'white', border: 'none', borderRadius: '6px',
+                            padding: '0.3rem 0.8rem', margin: '0 0.2rem', cursor: 'pointer',
+                            fontWeight: 500, fontSize: '0.95em',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.08)'
+                        }}
+                    >
+                        {text}
+                    </button>
+                );
+            } else if (url.startsWith('/')) {
+                parts.push(<Link key={`${keyPrefix}-link-${currentIndex}`} to={url} style={{ color: '#60a5fa', textDecoration: 'underline' }}>{text}</Link>);
+            } else {
+                parts.push(<a key={`${keyPrefix}-a-${currentIndex}`} href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>{text}</a>);
+            }
+            lastLinkIndex = match.index + full.length;
+            currentIndex++;
+        }
+        if (lastLinkIndex < lineContent.length) {
+            parts.push(lineContent.slice(lastLinkIndex));
+        }
+        return parts.length > 0 ? parts.map((part, i) => <React.Fragment key={i}>{part}</React.Fragment>) : <>{lineContent}</>;
+    }, [handleAction]);
+
+    const renderTextContent = useCallback((text, keyPrefix) => {
+        if (!text) return null;
+        const elements = [];
+        let listItems = [];
+        let currentListType = null;
+
+        const flushList = () => {
+            if (listItems.length > 0) {
+                const ListTag = currentListType;
+                elements.push(<ListTag key={`${keyPrefix}-list-${elements.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ListTag>);
+                listItems = [];
+                currentListType = null;
+            }
+        };
+
+        text.split('\n').forEach((line, lineIndex) => {
+            const key = `${keyPrefix}-line-${lineIndex}`;
+            const headerMatch = line.match(/^(#{1,6})\s+(.*)/);
+            if (headerMatch) { flushList(); const Tag = `h${Math.min(headerMatch[1].length + 2, 6)}`; elements.push(React.createElement(Tag, { key, style: { fontWeight: '600', margin: '1rem 0 0.5rem 0' } }, parseInline(headerMatch[2], key))); return; }
+            const ulMatch = line.match(/^(\s*)(?:[-*+])\s+(.*)/);
+            if (ulMatch) { if (currentListType !== 'ul') { flushList(); currentListType = 'ul'; } listItems.push(<li key={key}>{parseInline(ulMatch[2], key)}</li>); return; }
+            const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/);
+            if (olMatch) { if (currentListType !== 'ol') { flushList(); currentListType = 'ol'; } listItems.push(<li key={key}>{parseInline(olMatch[3], key)}</li>); return; }
+            
+            flushList();
+            if (line.trim()) { elements.push(<p key={key} style={{ margin: 0, padding: 0 }}>{parseInline(line, key)}</p>); }
+            else if (elements.length > 0 && elements[elements.length - 1].type !== 'br') { elements.push(<br key={key} />); }
+        });
+
+        flushList();
+        return elements;
+    }, [parseInline]);
+
+    const parseMarkdown = useCallback((text) => {
+        if (!text) return null;
+
+        const chartBlockRegex = /```chart\s*([\s\S]*?)```/g;
+        const parts = text.split(chartBlockRegex);
+        const elements = [];
+
+        for (let i = 0; i < parts.length; i++) {
+            if (i % 2 === 0) {
+                // This is a regular text part
+                elements.push(<div key={`text-part-${i}`}>{renderTextContent(parts[i], `text-part-${i}`)}</div>);
+            } else {
+                // This is a chart JSON part
+                try {
+                    const chartConfig = JSON.parse(parts[i]);
+                    elements.push(<ChartRenderer key={`chart-part-${i}`} config={chartConfig} />);
+                } catch (e) {
+                    console.error("Failed to parse chart JSON:", e, "Content:", parts[i]);
+                    elements.push(<div key={`chart-error-${i}`} style={{ color: '#fca5a5', padding: '1rem', border: '1px solid #ef4444' }}>Erro ao renderizar o gráfico.</div>);
+                }
+            }
+        }
+        return elements;
+    }, [renderTextContent]);
 
     const renderContent = () => {
         if (status === 'pending') {
@@ -403,13 +368,13 @@ const AIMessage = ({ message, contextTypes }) => {
         }
         if (status === 'error') {
             return (
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <AlertTriangle size={18} />
                     <span>Erro: {text}</span>
-                 </div>
+                </div>
             );
         }
-        
+
         return (
             <div>
                 {contextTypes && contextTypes.length > 0 && (
@@ -508,9 +473,323 @@ const AIAdvisorPage = () => {
     const [systemError, setSystemError] = useState(null);
     const [serviceHealth, setServiceHealth] = useState(null);
     const [contextTypesUsed, setContextTypesUsed] = useState([]);
+    const [completeTaskModal, setCompleteTaskModal] = useState({ open: false, taskId: null });
+    const [reportViewer, setReportViewer] = useState({ open: false, reportId: null, reportUrl: null, reportFormat: null });
+    const [confirmTaskModal, setConfirmTaskModal] = useState({ open: false, fields: null });
+    const [confirmTimeEntryModal, setConfirmTimeEntryModal] = useState({ open: false, fields: null });
     
     const messagesEndRef = useRef(null);
     const queryClient = useQueryClient();
+    const taskStore = useTaskStore();
+    const reportStore = useReportStore();
+    const navigate = useNavigate();
+
+    // Define handleAction in component scope
+    const handleAction = (actionUrl) => {
+        try {
+            if (!actionUrl.startsWith('action://')) return;
+            const url = new URL(actionUrl.replace('action://', 'http://dummy/'));
+            const actionType = url.pathname.replace(/^\//, '');
+            const params = Object.fromEntries(url.searchParams.entries());
+            switch (actionType) {
+                case 'confirm-create-task':
+                    setConfirmTaskModal({ open: true, fields: params });
+                    break;
+                case 'create-task': {
+                    // Open TaskCreationModal with client prefilled
+                    if (params.client) {
+                        taskStore.resetFormToInitialState();
+                        taskStore.setFormDataField('client', params.client);
+                    }
+                    taskStore.setFormDataField('status', 'pending');
+                    taskStore.setFormDataField('priority', 3);
+                    taskStore.setFormDataField('title', '');
+                    taskStore.setFormDataField('description', '');
+                    taskStore.setFormDataField('deadline', '');
+                    taskStore.setFormDataField('category', '');
+                    taskStore.setFormDataField('assigned_to', null);
+                    taskStore.setFormDataField('workflow', '');
+                    taskStore.setFormDataField('collaborators', []);
+                    taskStore.setFormDataField('workflow_step_assignments', {});
+                    taskStore.setFormDataField('source_scanned_invoice', null);
+                    taskStore.setFormDataField('estimated_time_minutes', '');
+                    taskStore.setFormDataField('metadata', undefined);
+                    taskStore.setFormDataField('showWorkflowConfigInForm', false);
+                    taskStore.setFormDataField('selectedWorkflowForForm', '');
+                    taskStore.setFormDataField('selectedCollaboratorsUi', []);
+                    taskStore.setFormDataField('assignmentMode', 'single');
+                    taskStore.setFormDataField('stepAssignmentsForForm', {});
+                    taskStore.setFormDataField('selectedTask', null);
+                    taskStore.setFormDataField('showForm', false);
+                    taskStore.setFormDataField('showNaturalLanguageForm', false);
+                    taskStore.setFormDataField('naturalLanguageInput', '');
+                    taskStore.setFormDataField('selectedTaskForWorkflowView', null);
+                    taskStore.setFormDataField('showWorkflowConfigInForm', false);
+                    taskStore.setFormDataField('workflowStepsForForm', []);
+                    taskStore.setFormDataField('isLoadingWorkflowStepsForForm', false);
+                    taskStore.setFormDataField('notifications', []);
+                    taskStore.setFormDataField('showTimeEntryModal', false);
+                    taskStore.setFormDataField('selectedTaskForTimeEntry', null);
+                    taskStore.setFormDataField('selectedTaskForWorkflowView', null);
+                    taskStore.setFormDataField('showBatchSelectionModal', false);
+                    taskStore.setFormDataField('selectedInvoiceForTask', null);
+                    taskStore.setFormDataField('selectedBatchForTask', null);
+                    taskStore.setFormDataField('availableClientsForBatch', []);
+                    taskStore.setFormDataField('isTaskCreationModalOpen', true);
+                    break;
+                }
+                case 'complete-task': {
+                    // TODO: Open task completion modal or trigger completion
+                    alert(`Completar tarefa ${params.task}`);
+                    break;
+                }
+                case 'view-report': {
+                    // Navigate to /reports and scroll to the report (could use anchor or filter)
+                    navigate('/reports');
+                    // Optionally, set a filter or highlight the report
+                    break;
+                }
+                case 'view-profitability-report': {
+                    // Navigate to /reports with filter set to profitability_analysis
+                    reportStore.setGeneratedReportsFilter('report_type', 'profitability_analysis');
+                    navigate('/reports');
+                    break;
+                }
+                case 'confirm-create-time-entry':
+                    setConfirmTimeEntryModal({ open: true, fields: params });
+                    break;
+                default:
+                    alert(`Ação não implementada: ${actionType}`);
+            }
+        } catch (e) {
+            console.error('Erro ao processar ação:', e);
+        }
+    };
+
+    // Define parseInline in component scope
+    const parseInline = (lineContent, keyPrefix) => {
+        const parts = [];
+        let currentIndex = 0;
+        // Markdown link: [text](url)
+        const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+        let lastLinkIndex = 0;
+        let match;
+        while ((match = linkRegex.exec(lineContent)) !== null) {
+            if (match.index > lastLinkIndex) {
+                parts.push(<span key={`${keyPrefix}-text-${currentIndex}`}>{lineContent.slice(lastLinkIndex, match.index)}</span>);
+                currentIndex++;
+            }
+            const [full, text, url] = match;
+            if (url.startsWith('action://')) {
+                parts.push(
+                    <button
+                        key={`${keyPrefix}-action-${currentIndex}`}
+                        onClick={() => handleAction(url)}
+                        style={{
+                            background: 'linear-gradient(90deg, #6366f1, #a5b4fc)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '0.3rem 0.8rem',
+                            margin: '0 0.2rem',
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                            fontSize: '0.95em',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.08)'
+                        }}
+                    >
+                        {text}
+                    </button>
+                );
+            } else if (url.startsWith('/')) {
+                parts.push(
+                    <Link key={`${keyPrefix}-link-${currentIndex}`} to={url} style={{ color: '#60a5fa', textDecoration: 'underline' }}>{text}</Link>
+                );
+            } else {
+                parts.push(
+                    <a key={`${keyPrefix}-a-${currentIndex}`} href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>{text}</a>
+                );
+            }
+            lastLinkIndex = match.index + full.length;
+            currentIndex++;
+        }
+        if (lastLinkIndex < lineContent.length) {
+            parts.push(<span key={`${keyPrefix}-text-end`}>{lineContent.slice(lastLinkIndex)}</span>);
+        }
+        return parts.length > 0 ? parts : <span key={`${keyPrefix}-original`}>{lineContent}</span>;
+    };
+
+    // Define parseMarkdown above any code that uses it
+    const parseMarkdown = (text) => {
+        if (!text) return '';
+        // Chart code block detection
+        const chartBlockRegex = /```chart\s*([\s\S]*?)```/g;
+        let chartBlocks = [];
+        let match;
+        let lastIndex = 0;
+        const elements = [];
+        while ((match = chartBlockRegex.exec(text)) !== null) {
+            // Push text before chart
+            if (match.index > lastIndex) {
+                elements.push(...parseMarkdown(text.slice(lastIndex, match.index)));
+            }
+            // Parse chart JSON
+            let chartConfig = null;
+            try {
+                chartConfig = JSON.parse(match[1]);
+            } catch (e) {
+                chartConfig = null;
+            }
+            elements.push(<ChartRenderer key={`chart-${match.index}`} config={chartConfig} />);
+            lastIndex = chartBlockRegex.lastIndex;
+        }
+        if (lastIndex < text.length) {
+            // Parse remaining text
+            const lines = text.slice(lastIndex).split('\n');
+            const elementsFromRest = [];
+            let currentListType = null;
+            let listItems = [];
+            let inTable = false;
+            let tableHeaders = [];
+            let tableRows = [];
+
+            const flushList = () => {
+                if (listItems.length > 0) {
+                    if (currentListType === 'ul') {
+                        elementsFromRest.push(<ul key={`ul-${elementsFromRest.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ul>);
+                    } else if (currentListType === 'ol') {
+                        elementsFromRest.push(<ol key={`ol-${elementsFromRest.length}`} style={{ paddingLeft: '20px', margin: '0.5rem 0' }}>{listItems}</ol>);
+                    }
+                    listItems = [];
+                    currentListType = null;
+                }
+            };
+
+            const flushTable = () => {
+                if (tableHeaders.length > 0 && tableRows.length > 0) {
+                    elementsFromRest.push(
+                        <div key={`table-${elementsFromRest.length}`} style={{ margin: '1rem 0', overflowX: 'auto' }}>
+                            <table style={{ 
+                                width: '100%', 
+                                borderCollapse: 'collapse',
+                                background: 'rgba(255,255,255,0.05)',
+                                borderRadius: '8px',
+                                overflow: 'hidden'
+                            }}>
+                                <thead>
+                                    <tr style={{ background: 'rgba(255,255,255,0.1)' }}>
+                                        {tableHeaders.map((header, i) => (
+                                            <th key={i} style={{ 
+                                                padding: '0.75rem', 
+                                                textAlign: 'left', 
+                                                borderBottom: '1px solid rgba(255,255,255,0.2)',
+                                                fontWeight: '600'
+                                            }}>
+                                                {header}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {tableRows.map((row, i) => (
+                                        <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                            {row.map((cell, j) => (
+                                                <td key={j} style={{ 
+                                                    padding: '0.75rem',
+                                                    fontSize: '0.9rem'
+                                                }}>
+                                                    {parseInline(cell, `table-${i}-${j}`)}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                }
+                tableHeaders = [];
+                tableRows = [];
+                inTable = false;
+            };
+
+            lines.forEach((line, lineIndex) => {
+                const key = `line-${lineIndex}`;
+
+                // Handle table rows
+                if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+                    const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+                    
+                    if (!inTable) {
+                        flushList();
+                        inTable = true;
+                        tableHeaders = cells;
+                    } else if (cells.every(cell => cell.match(/^[-:\s]+$/))) {
+                        // Table separator row, skip
+                        return;
+                    } else {
+                        tableRows.push(cells);
+                    }
+                    return;
+                } else if (inTable) {
+                    flushTable();
+                }
+
+                // Handle headers
+                const headerMatch = line.match(/^(#{1,6})\s+(.*)/);
+                if (headerMatch) {
+                    flushList();
+                    const level = headerMatch[1].length;
+                    const text = headerMatch[2];
+                    const HeaderTag = `h${Math.min(level + 2, 6)}`;
+                    
+                    elementsFromRest.push(
+                        React.createElement(HeaderTag, {
+                            key: key,
+                            style: { 
+                                fontSize: level === 1 ? '1.25rem' : level === 2 ? '1.1rem' : '1rem',
+                                fontWeight: '600',
+                                margin: '1rem 0 0.5rem 0',
+                                color: level === 1 ? 'rgb(96, 165, 250)' : level === 2 ? 'rgb(129, 140, 248)' : 'white'
+                            }
+                        }, parseInline(text, `${key}-header`))
+                    );
+                    return;
+                }
+
+                // Handle lists
+                const ulMatch = line.match(/^(\s*)(?:[-*+])\s+(.*)/);
+                if (ulMatch) {
+                    if (currentListType !== 'ul') { flushList(); currentListType = 'ul'; }
+                    listItems.push(<li key={`${key}-li`}>{parseInline(ulMatch[2], `${key}-li-content`)}</li>);
+                    return;
+                }
+
+                const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/);
+                if (olMatch) {
+                    if (currentListType !== 'ol') { flushList(); currentListType = 'ol'; }
+                    listItems.push(<li key={`${key}-li`}>{parseInline(olMatch[3], `${key}-li-content`)}</li>);
+                    return;
+                }
+
+                flushList();
+
+                if (!line.trim()) {
+                    if (elementsFromRest.length === 0 || elementsFromRest[elementsFromRest.length - 1].type !== 'br') {
+                        elementsFromRest.push(<br key={key} />);
+                    }
+                } else {
+                    elementsFromRest.push(<div key={key} style={{ marginBottom: '0.5rem' }}>{parseInline(line, `${key}-p-content`)}</div>);
+                }
+            });
+
+            flushList();
+            flushTable();
+            
+            return elementsFromRest;
+        }
+        return elements;
+    };
 
     const scrollToBottom = useCallback(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -646,7 +925,7 @@ const AIAdvisorPage = () => {
             setMessages(prev =>
                 prev.map(msg =>
                     msg.id === placeholderId 
-                        ? { ...msg, status: 'completed', text: data.response }
+                        ? { ...msg, status: 'completed', text: data.response, contextTypes: data.context_types_used || [] }
                         : msg
                 )
             );
@@ -668,6 +947,79 @@ const AIAdvisorPage = () => {
                 )
             );
         }
+    });
+
+    // Mutation for completing a task
+    const completeTaskMutation = useMutation({
+        mutationFn: async (taskId) => {
+            // PATCH /tasks/:id/ { status: 'completed' }
+            await api.patch(`/tasks/${taskId}/`, { status: 'completed' });
+        },
+        onSuccess: () => {
+            setCompleteTaskModal({ open: false, taskId: null });
+            // Optionally show notification, refetch tasks, etc.
+        },
+        onError: (err) => {
+            alert('Erro ao completar tarefa: ' + (err?.response?.data?.error || err.message));
+        }
+    });
+
+    // Mutation for creating a task
+    const createTaskMutation = useMutation({
+        mutationFn: async (fields) => {
+            // POST /tasks/ with fields
+            return api.post('/tasks/', fields);
+        },
+        onSuccess: (res, fields) => {
+            setConfirmTaskModal({ open: false, fields: null });
+            setMessages(prev => [...prev, {
+                id: `ai-task-created-${Date.now()}`,
+                sender: 'ai',
+                status: 'completed',
+                text: `✅ Tarefa criada com sucesso: ${fields.title || '(sem título)'}`
+            }]);
+        },
+        onError: (err) => {
+            setMessages(prev => [...prev, {
+                id: `ai-task-create-error-${Date.now()}`,
+                sender: 'ai',
+                status: 'error',
+                text: 'Erro ao criar tarefa: ' + (err?.response?.data?.error || err.message)
+            }]);
+            setConfirmTaskModal({ open: false, fields: null });
+        }
+    });
+
+    // Add mutation for creating time entry
+    const createTimeEntryMutation = useMutation({
+        mutationFn: async (fields) => {
+            return api.post('/ai-advisor/enhanced/confirm-time-entry/', fields);
+        },
+        onSuccess: (res, fields) => {
+            setConfirmTimeEntryModal({ open: false, fields: null });
+            setMessages(prev => [...prev, {
+                id: `ai-timeentry-created-${Date.now()}`,
+                sender: 'ai',
+                status: 'completed',
+                text: `✅ Registo de tempo criado com sucesso: ${fields.description || ''} (${fields.minutes_spent} min)`
+            }]);
+        },
+        onError: (err) => {
+            setMessages(prev => [...prev, {
+                id: `ai-timeentry-create-error-${Date.now()}`,
+                sender: 'ai',
+                status: 'error',
+                text: 'Erro ao criar registo de tempo: ' + (err?.response?.data?.error || err.message)
+            }]);
+            setConfirmTimeEntryModal({ open: false, fields: null });
+        }
+    });
+
+    // Fetch client list for name-to-UUID mapping
+    const { data: clientsList = [] } = useQuery({
+        queryKey: ['clientsForDropdowns'],
+        queryFn: () => api.get("/clients/?is_active=true").then(res => res.data.results || res.data),
+        staleTime: 5 * 60 * 1000,
     });
 
     const handleSendMessage = (e, questionOverride = null) => {
@@ -815,8 +1167,8 @@ const AIAdvisorPage = () => {
                                     <User size={18} style={{ color: 'rgb(96, 165, 250)', marginLeft: '0.5rem', flexShrink: 0, alignSelf: 'flex-start', marginTop: '0.5rem' }} />
                                 </motion.div>
                             ) : (
-                                <AIMessage key={msg.id} message={msg} contextTypes={msg.contextTypes} />
-                            )
+                                <AIMessage key={msg.id} message={msg} contextTypes={msg.contextTypes} /> 
+                                                       )
                         )}
                     </AnimatePresence>
                     
@@ -907,6 +1259,115 @@ const AIAdvisorPage = () => {
                 )}
             </div>
             
+            {/* Complete Task Modal */}
+            {completeTaskModal.open && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ background: '#18181b', padding: '2rem', borderRadius: '12px', minWidth: 320, color: 'white', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
+                        <h3>Concluir Tarefa</h3>
+                        <p>Tem a certeza que deseja marcar esta tarefa como concluída?</p>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setCompleteTaskModal({ open: false, taskId: null })} style={{ background: 'rgba(239,68,68,0.2)', border: 'none', borderRadius: 6, color: 'white', padding: '0.5rem 1.2rem', cursor: 'pointer' }}>Cancelar</button>
+                            <button onClick={() => completeTaskMutation.mutate(completeTaskModal.taskId)} style={{ background: 'linear-gradient(90deg, #10b981, #22d3ee)', border: 'none', borderRadius: 6, color: 'white', padding: '0.5rem 1.2rem', cursor: 'pointer', fontWeight: 600 }}>Concluir</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Report Viewer Modal */}
+            {reportViewer.open && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ background: '#18181b', padding: '1.5rem', borderRadius: '12px', minWidth: 400, minHeight: 400, color: 'white', boxShadow: '0 4px 24px rgba(0,0,0,0.3)', position: 'relative' }}>
+                        <button onClick={() => setReportViewer({ open: false, reportId: null, reportUrl: null, reportFormat: null })} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', color: 'white', fontSize: 22, cursor: 'pointer' }}>×</button>
+                        <h3 style={{ marginBottom: '1rem' }}>Visualizar Relatório</h3>
+                        {reportViewer.reportFormat === 'pdf' ? (
+                            <iframe src={reportViewer.reportUrl} title="Relatório PDF" style={{ width: 600, height: 600, border: 'none', background: 'white' }} />
+                        ) : (
+                            <a href={reportViewer.reportUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>Baixar Relatório</a>
+                        )}
+                    </div>
+                </div>
+            )}
+            {/* Confirm Create Task Modal */}
+            {confirmTaskModal.open && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ background: '#18181b', padding: '2rem', borderRadius: '12px', minWidth: 340, color: 'white', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
+                        <h3>Confirmar Criação de Tarefa</h3>
+                        <div style={{ margin: '1rem 0' }}>
+                            {confirmTaskModal.fields && (
+                                <ul style={{ listStyle: 'none', padding: 0, fontSize: '1rem' }}>
+                                    {Object.entries(confirmTaskModal.fields).map(([k, v]) => (
+                                        <li key={k}><b>{k}:</b> {v}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setConfirmTaskModal({ open: false, fields: null })} style={{ background: 'rgba(239,68,68,0.2)', border: 'none', borderRadius: 6, color: 'white', padding: '0.5rem 1.2rem', cursor: 'pointer' }}>Cancelar</button>
+                            {/* Priority and client mapping fix here */}
+                            <button onClick={() => {
+                                const PRIORITY_MAP = {
+                                    'Urgente': 1,
+                                    'Alta': 2,
+                                    'Normal': 3,
+                                    'Baixa': 4
+                                };
+                                let clientUUID = confirmTaskModal.fields.client;
+                                if (clientsList && Array.isArray(clientsList)) {
+                                    const found = clientsList.find(c => c.name === confirmTaskModal.fields.client);
+                                    if (found) clientUUID = found.id;
+                                }
+                                const fieldsToSend = {
+                                    ...confirmTaskModal.fields,
+                                    priority: PRIORITY_MAP[confirmTaskModal.fields.priority] || confirmTaskModal.fields.priority,
+                                    client: clientUUID
+                                };
+                                createTaskMutation.mutate(fieldsToSend);
+                            }} style={{ background: 'linear-gradient(90deg, #10b981, #22d3ee)', border: 'none', borderRadius: 6, color: 'white', padding: '0.5rem 1.2rem', cursor: 'pointer', fontWeight: 600 }} disabled={createTaskMutation.isPending}>Confirmar</button>
+                        </div>
+                        {createTaskMutation.isPending && <div style={{ marginTop: '1rem', color: '#60a5fa' }}>A criar tarefa...</div>}
+                    </div>
+                </div>
+            )}
+            {/* Confirm Time Entry Modal */}
+            {confirmTimeEntryModal.open && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ background: '#18181b', padding: '2rem', borderRadius: '12px', minWidth: 340, color: 'white', boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
+                        <h3>Confirmar Registo de Tempo</h3>
+                        <div style={{ margin: '1rem 0' }}>
+                            {confirmTimeEntryModal.fields && (
+                                <ul style={{ listStyle: 'none', padding: 0, fontSize: '1rem' }}>
+                                    {Object.entries(confirmTimeEntryModal.fields).map(([k, v]) => (
+                                        <li key={k}><b>{k}:</b> {v}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setConfirmTimeEntryModal({ open: false, fields: null })} style={{ background: 'rgba(239,68,68,0.2)', border: 'none', borderRadius: 6, color: 'white', padding: '0.5rem 1.2rem', cursor: 'pointer' }}>Cancelar</button>
+                            <button onClick={() => {
+                                // Map fields if needed (e.g., client name to UUID, task title to ID)
+                                let fieldsToSend = { ...confirmTimeEntryModal.fields };
+                                // Map client name to UUID if needed
+                                if (fieldsToSend.client && clientsList && Array.isArray(clientsList)) {
+                                    const found = clientsList.find(c => c.name === fieldsToSend.client);
+                                    if (found) fieldsToSend.client = found.id;
+                                }
+                                // Map minutes (e.g., '2h' or '120min') to integer minutes if needed
+                                if (fieldsToSend.minutes_spent && typeof fieldsToSend.minutes_spent === 'string') {
+                                    const minMatch = fieldsToSend.minutes_spent.match(/(\d+)\s*min/);
+                                    const hourMatch = fieldsToSend.minutes_spent.match(/(\d+)\s*h/);
+                                    let total = 0;
+                                    if (hourMatch) total += parseInt(hourMatch[1], 10) * 60;
+                                    if (minMatch) total += parseInt(minMatch[1], 10);
+                                    if (!isNaN(Number(fieldsToSend.minutes_spent))) total = Number(fieldsToSend.minutes_spent);
+                                    if (total > 0) fieldsToSend.minutes_spent = total;
+                                }
+                                createTimeEntryMutation.mutate(fieldsToSend);
+                            }} style={{ background: 'linear-gradient(90deg, #10b981, #22d3ee)', border: 'none', borderRadius: 6, color: 'white', padding: '0.5rem 1.2rem', cursor: 'pointer', fontWeight: 600 }} disabled={createTimeEntryMutation.isPending}>Confirmar</button>
+                        </div>
+                        {createTimeEntryMutation.isPending && <div style={{ marginTop: '1rem', color: '#60a5fa' }}>A criar registo de tempo...</div>}
+                    </div>
+                </div>
+            )}
             <style jsx global>{`
                 .custom-scrollbar-dark::-webkit-scrollbar { width: 6px; }
                 .custom-scrollbar-dark::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 3px; }

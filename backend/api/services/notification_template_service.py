@@ -125,8 +125,7 @@ class NotificationTemplateService:
                     'Olá {user_first_name},\n\n'
                     'O relatório "{report_name}" ({report_type_display}) foi gerado com sucesso por {changed_by_name}.\n'
                     'Formato: {report_format_display}\n'
-                    'Tamanho: {report_file_size_kb} KB\n\n'
-                    'Pode aceder ao relatório na Central de Relatórios ou através do link (se disponível): {report_download_url}'
+                    'Pode aceder ao relatório na Central de Relatórios}'
                 ),
                 'default_priority': 'low'
             }

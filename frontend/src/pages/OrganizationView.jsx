@@ -153,7 +153,8 @@ const OrganizationView = () => {
   } = useQuery({
     queryKey: ['organization'],
     queryFn: fetchOrganization,
-    staleTime: 5 * 60 * 1000
+    staleTime: 5 * 60 * 1000,
+    enabled: permissions.initialized // Só faz fetch quando as permissões estão carregadas
   });
 
   const {
@@ -163,7 +164,7 @@ const OrganizationView = () => {
     queryKey: ['organizationMembers', organization?.id],
     queryFn: () => fetchOrganizationMembers(organization?.id),
     staleTime: 5 * 60 * 1000,
-    enabled: !!organization?.id,
+    enabled: permissions.initialized && !!organization?.id, // Só faz fetch quando as permissões e a organização estão carregadas
   });
 
   const {
@@ -172,7 +173,8 @@ const OrganizationView = () => {
   } = useQuery({
     queryKey: ['userProfile'],
     queryFn: fetchUserProfile,
-    staleTime: 5 * 60 * 1000
+    staleTime: 5 * 60 * 1000,
+    enabled: permissions.initialized // Só faz fetch quando as permissões estão carregadas
   });
 
   // Mutation for creating organization

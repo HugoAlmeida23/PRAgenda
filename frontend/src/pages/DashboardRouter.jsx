@@ -1,19 +1,15 @@
-// src/pages/DashboardRouter.jsx (Corrected)
-
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
-// --- Icon Imports ---
 import {
     Activity, AlertTriangle, Archive as ArchiveIcon, Brain, Calendar, CheckCircle,
     CheckSquare, Clock, DollarSign, ExternalLink, FileText, ListFilter, Loader2,
     PlayCircle, RefreshCw, Settings, TrendingUp, Users, Zap
 } from 'lucide-react';
 
-// --- Child Component Imports & Contexts ---
 import BackgroundElements from '../components/HeroSection/BackgroundElements';
 import AIInsightsPanel from '../components/HeroSection/AIInsightsPanel';
 import QuickActionsGrid from '../components/HeroSection/QuickActionsGrid';
@@ -21,32 +17,29 @@ import { usePermissions } from '../contexts/PermissionsContext';
 import { useTheme } from '../contexts/ThemeContext';
 import api from '../api';
 import LoadingIndicator from '../components/LoadingIndicator';
+import DashboardTour from './DashboardTour';
 
-// --- Fast Animation Variants ---
 const containerVariants = {
     hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.05, delay: 0.1 } } // Fast stagger
+    visible: { opacity: 1, transition: { staggerChildren: 0.05, delay: 0.1 } }
 };
 const itemVariants = {
     hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.2, ease: 'easeOut' } } // Fast easeOut
+    visible: { opacity: 1, y: 0, transition: { duration: 0.2, ease: 'easeOut' } }
 };
 
-// --- Helper Functions (Unchanged) ---
 const formatMinutes = (minutes) => {
     if (typeof minutes !== 'number' || isNaN(minutes)) return '0h 0m';
     const hours = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
     return `${hours}h ${mins}m`;
 };
+
 const formatDate = (dateString, options = { day: '2-digit', month: 'short' }) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('pt-PT', options);
 };
 
-// =================================================================================
-//  THEME-AWARE SUB-COMPONENTS (WITH FAST ANIMATIONS) - Unchanged
-// =================================================================================
 const StatCard = ({ title, value, unit = '', icon: Icon, color, linkTo, isLoading }) => {
     const { theme } = useTheme();
     const cardStyle = useMemo(() => ({
@@ -67,7 +60,8 @@ const StatCard = ({ title, value, unit = '', icon: Icon, color, linkTo, isLoadin
     return linkTo ? <Link to={linkTo} style={{ textDecoration: 'none' }}>{cardContent}</Link> : cardContent;
 };
 
-const MyDaySection = ({ upcomingTasks = [], recentTimeEntries = [], isLoading }) => {
+// --- CHANGE 1: Accept `className` as a prop ---
+const MyDaySection = ({ upcomingTasks = [], recentTimeEntries = [], isLoading, className }) => {
     const { theme } = useTheme();
     const sectionStyle = useMemo(() => ({
         background: theme === 'light' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(30, 35, 45, 0.7)', backdropFilter: 'blur(12px)', borderRadius: '16px', padding: '1.5rem',
@@ -78,7 +72,8 @@ const MyDaySection = ({ upcomingTasks = [], recentTimeEntries = [], isLoading })
     const listItemStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: theme === 'light' ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)', borderRadius: '8px', marginBottom: '0.5rem', fontSize: '0.875rem', textDecoration: 'none', color: 'inherit', cursor: 'pointer' };
     
     return (
-        <motion.div style={sectionStyle} variants={itemVariants}>
+        // --- CHANGE 2: Apply the passed `className` here ---
+        <motion.div className={className} style={sectionStyle} variants={itemVariants}>
             <h2 style={titleStyle}>Foco do Dia</h2>
             {isLoading ? (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '150px' }}>
@@ -100,50 +95,6 @@ const MyDaySection = ({ upcomingTasks = [], recentTimeEntries = [], isLoading })
     );
 };
 
-const FiscalSnapshotSection = ({ fiscalStats, upcomingFiscalDeadlines, permissions, isLoadingStats, isLoadingDeadlines }) => {
-    // ... (This component remains the same)
-    const { theme } = useTheme();
-    const queryClient = useQueryClient();
-    const manualGenerateMutation = useMutation({
-        mutationFn: (params) => api.post('/fiscal/generate-manual/', params),
-        onSuccess: (data) => {
-            toast.success(data.data.message || 'Geração manual concluída!');
-            queryClient.invalidateQueries({ queryKey: ['dashboardFiscalStats', 'dashboardUpcomingFiscal'] });
-        },
-        onError: (err) => toast.error(`Falha na geração: ${err.response?.data?.error || err.message}`),
-    });
-
-    const sectionStyle = useMemo(() => ({ background: theme === 'light' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(30, 35, 45, 0.7)', backdropFilter: 'blur(12px)', borderRadius: '16px', padding: '1.5rem', border: `1px solid ${theme === 'light' ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.15)'}`, color: theme === 'light' ? '#1f2937' : 'white', marginTop: '1.5rem' }), [theme]);
-    const titleStyle = useMemo(() => ({ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: theme === 'light' ? '#111827' : 'white' }), [theme]);
-    
-    if (!permissions.isOrgAdmin && !permissions.canViewAnalytics) return null;
-    const lastGenDate = fiscalStats?.organization_info?.last_generation ? formatDate(fiscalStats.organization_info.last_generation, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Nunca';
-    
-    return (
-        <motion.div style={sectionStyle} variants={itemVariants}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h2 style={titleStyle}><ArchiveIcon size={22} style={{ color: 'rgb(52, 211, 153)', marginRight: '0.5rem' }} />Snapshot Fiscal</h2>
-                <Link to="/fiscal-dashboard" style={{color: 'inherit', textDecoration: 'none'}}>Dashboard Fiscal <ExternalLink size={14} /></Link>
-            </div>
-            {(isLoadingStats || isLoadingDeadlines) ? (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100px' }}>
-                    <Loader2 size={24} className="animate-spin" />
-                </div>
-            ) : (
-                <>
-                    {/* Your fiscal snapshot content here */}
-                    <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', textAlign: 'right', marginTop: '1rem', marginBottom: 0 }}>Última geração: {lastGenDate}</p>
-                </>
-            )}
-        </motion.div>
-    )
-};
-
-
-// =================================================================================
-//  FETCHING FUNCTIONS (UNCHANGED)
-// =================================================================================
-
 const fetchDashboardSummary = async () => {
     const res = await api.get('/dashboard-summary/');
     return res.data;
@@ -156,23 +107,14 @@ const fetchRecentTimeEntries = async () => {
     const res = await api.get('/time-entries/?limit=5&ordering=-date');
     return res.data.results || res.data;
 };
-const fetchFiscalStats = async () => {
-    const res = await api.get('/fiscal/stats/');
-    return res.data;
-};
-const fetchUpcomingFiscalDeadlines = async () => {
-    const res = await api.get('/fiscal/upcoming-deadlines/?days=7&limit=5');
-    return res.data.results || res.data;
-};
-
-// =================================================================================
-//  MAIN DASHBOARD COMPONENT (WITH ERROR HANDLING FIX)
-// =================================================================================
 
 const DashboardRouter = () => {
     const { theme } = useTheme();
     const permissions = usePermissions();
     const queryClient = useQueryClient();
+    
+    const [showTour, setShowTour] = useState(false);
+    const [canShowTour, setCanShowTour] = useState(false);
 
     const { data: summary, isLoading: isLoadingSummary, isError: isErrorSummary, error: errorSummary } = useQuery({
         queryKey: ['dashboardSummary'],
@@ -195,22 +137,7 @@ const DashboardRouter = () => {
         staleTime: 5 * 60 * 1000,
     });
 
-    const { data: fiscalStats, isLoading: isLoadingFiscalStats } = useQuery({
-        queryKey: ['dashboardFiscalStats'],
-        queryFn: fetchFiscalStats,
-        enabled: permissions.initialized && (permissions.isOrgAdmin || permissions.canViewAnalytics),
-        staleTime: 10 * 60 * 1000,
-    });
-
-    const { data: upcomingFiscalDeadlines, isLoading: isLoadingFiscalDeadlines } = useQuery({
-        queryKey: ['dashboardUpcomingFiscal'],
-        queryFn: fetchUpcomingFiscalDeadlines,
-        enabled: permissions.initialized && (permissions.isOrgAdmin || permissions.canViewAnalytics),
-        staleTime: 10 * 60 * 1000,
-    });
-
     const insights = useMemo(() => {
-        // --- FIX: Check for summary before accessing its properties ---
         if (!summary) return [{ type: 'loading', title: 'Analisando...', message: 'A processar seus dados.', icon: Brain, color: 'rgb(147, 51, 234)' }];
         const generated = [];
         if (summary.overdue_tasks > 0) generated.push({ type: 'urgent_tasks', title: 'Tarefas Atrasadas!', message: `Existem ${summary.overdue_tasks} tarefas urgentes.`, icon: AlertTriangle, color: 'rgb(239, 68, 68)', action: '/tasks?overdue=true' });
@@ -224,23 +151,19 @@ const DashboardRouter = () => {
         return actions;
     }, [permissions]);
 
-    // Initial loading state for the whole page
     if (permissions.loading || (isLoadingSummary && !summary)) {
         return <LoadingIndicator />;
     }
 
-    // --- FIX: Specific error handling view for the 500 error ---
     if (isErrorSummary) {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', padding: '2rem', color: theme === 'light' ? '#111827' : 'white' }}>
                  <BackgroundElements />
                  <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '2rem', borderRadius: '16px', textAlign: 'center', maxWidth: '500px' }}>
                     <AlertTriangle size={60} style={{ color: 'rgb(239, 68, 68)', marginBottom: '1rem' }} />
-                    <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>
-                        Erro ao Carregar Dashboard
-                    </h2>
+                    <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Erro ao Carregar Dashboard</h2>
                     <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '2rem' }}>
-                        {errorSummary?.response?.data?.error || "Não foi possível carregar os dados do painel de controlo. O servidor pode estar com problemas."}
+                        {errorSummary?.response?.data?.error || "Não foi possível carregar os dados do painel de controlo."}
                     </p>
                     <motion.button 
                         onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] })} 
@@ -257,36 +180,75 @@ const DashboardRouter = () => {
     return (
         <div style={{ minHeight: '100vh', position: 'relative' }}>
             <BackgroundElements />
-            <motion.div style={{ position: 'relative', zIndex: 10, padding: '1.5rem' }} variants={containerVariants} initial="hidden" animate="visible">
-                <header style={{ marginBottom: '2rem' }}>
-                    <h1 style={{ color: theme === 'light' ? '#111827' : 'white', margin: '0 0 0.25rem 0', fontSize: '2.25rem', fontWeight: 700 }}>Bem-vindo de volta!</h1>
-                    <p style={{ color: theme === 'light' ? '#4b5563' : 'rgba(191, 219, 254, 1)', fontSize: '1.125rem', margin: 0 }}>Seu hub de produtividade e insights.</p>
+            
+            <motion.div 
+                style={{ position: 'relative', zIndex: 10, padding: '1.5rem' }} 
+                variants={containerVariants} 
+                initial="hidden" 
+                animate="visible"
+                onAnimationComplete={() => setCanShowTour(true)}
+            >
+                <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                        <h1 style={{ color: theme === 'light' ? '#111827' : 'white', margin: '0 0 0.25rem 0', fontSize: '2.25rem', fontWeight: 700 }}>Bem-vindo de volta!</h1>
+                        <p style={{ color: theme === 'light' ? '#4b5563' : 'rgba(191, 219, 254, 1)', fontSize: '1.125rem', margin: 0 }}>Seu hub de produtividade e insights.</p>
+                    </div>
+                    <button
+                        onClick={() => setShowTour(true)}
+                        style={{
+                            backgroundColor: '#9333ea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '10px 20px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        VER TOUR
+                    </button>
                 </header>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-                    <AIInsightsPanel insights={insights} isLoading={isLoadingSummary} />
-                    <QuickActionsGrid actions={quickActions} />
+                    <div className="ai-insights-panel">
+                        <AIInsightsPanel insights={insights} isLoading={isLoadingSummary} />
+                    </div>
+                    <div className="quick-actions-grid">
+                        <QuickActionsGrid actions={quickActions} />
+                    </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-                    <StatCard title="Tempo Hoje" value={formatMinutes(summary?.time_tracked_today)} icon={Clock} color="rgb(52, 211, 153)" linkTo="/timeentry" isLoading={isLoadingSummary} />
-                    <StatCard title="Tarefas Ativas" value={summary?.active_tasks} icon={Activity} color="rgb(59, 130, 246)" linkTo="/tasks" isLoading={isLoadingSummary} />
+                    <div className="stat-card-tempo-hoje">
+                        <StatCard title="Tempo Hoje" value={formatMinutes(summary?.time_tracked_today)} icon={Clock} color="rgb(52, 211, 153)" linkTo="/timeentry" isLoading={isLoadingSummary} />
+                    </div>
+                    <div className="stat-card-tarefas-ativas">
+                        <StatCard title="Tarefas Ativas" value={summary?.active_tasks} icon={Activity} color="rgb(59, 130, 246)" linkTo="/tasks" isLoading={isLoadingSummary} />
+                    </div>
                     <StatCard title="Tarefas Atrasadas" value={summary?.overdue_tasks} icon={AlertTriangle} color="rgb(239, 68, 68)" linkTo="/tasks?overdue=true" isLoading={isLoadingSummary} />
                     {(permissions.isOrgAdmin || permissions.canViewProfitability) && <StatCard title="Rentabilidade Média" value={parseFloat(summary?.average_profit_margin || 0).toFixed(1)} unit="%" icon={DollarSign} color="rgb(147, 51, 234)" linkTo="/clientprofitability" isLoading={isLoadingSummary} />}
                 </div>
 
-                <MyDaySection upcomingTasks={recentTasks || []} recentTimeEntries={recentTimeEntries || []} isLoading={isLoadingTasks || isLoadingTimeEntries} />
-                
-                {(permissions.isOrgAdmin || permissions.canViewAnalytics) && (
-                    <FiscalSnapshotSection 
-                        fiscalStats={fiscalStats} 
-                        upcomingFiscalDeadlines={upcomingFiscalDeadlines || []} 
-                        permissions={permissions} 
-                        isLoadingStats={isLoadingFiscalStats} 
-                        isLoadingDeadlines={isLoadingFiscalDeadlines} 
-                    />
-                )}
+                {/* --- CHANGE 3: Remove the wrapper div and pass the className directly --- */}
+                <MyDaySection
+                    className="my-day-section"
+                    upcomingTasks={recentTasks || []}
+                    recentTimeEntries={recentTimeEntries || []}
+                    isLoading={isLoadingTasks || isLoadingTimeEntries}
+                />
             </motion.div>
+            
+            {showTour && canShowTour && (
+                <DashboardTour 
+                    onClose={() => {
+                        setShowTour(false);
+                    }} 
+                />
+            )}
+            
         </div>
     );
 };
