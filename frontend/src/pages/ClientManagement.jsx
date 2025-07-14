@@ -238,6 +238,39 @@ const ClientManagement = () => {
         }
     };
     
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handleExportClients = async () => {
+        console.log('Export clicked');
+        if (isExporting) return;
+        setIsExporting(true);
+        try {
+            toast.info('A exportar clientes...', { toastId: 'export-clientes' });
+            // Usa o api (axios) já configurado
+            const res = await api.get('/clients/export/excel/', {
+                responseType: 'blob',
+            });
+            const blob = res.data;
+            let filename = 'clientes.pdf';
+            const disposition = res.headers['content-disposition'];
+            if (disposition && disposition.indexOf('filename=') !== -1) {
+                filename = disposition.split('filename=')[1].replace(/"/g, '');
+            }
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            //TODO MODERN TOAST
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     if (isLoading) {
         return (
             <PageContainer>
@@ -298,8 +331,12 @@ const ClientManagement = () => {
                         <ActionButton onClick={openFormForNew} whileHover={{ scale: 1.05 }}>
                             <Plus size={18}/> Novo Cliente
                         </ActionButton>
-                        <ActionButton whileHover={{ scale: 1.05 }}>
-                            <Download size={18}/> Exportar
+                        <ActionButton
+                            whileHover={{ scale: 1.05 }}
+                            onClick={handleExportClients}
+                            disabled={isExporting}
+                        >
+                            {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18}/>} Exportar
                         </ActionButton>
                     </HeaderActions>
                 </PageHeader>
@@ -325,7 +362,6 @@ const ClientManagement = () => {
                             </p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(0,0,0,0.1)', padding: '0.25rem', borderRadius: '10px' }}>
-                            {/* <-- FIX: Pass the transient prop '$active' instead of 'active' */}
                             <ViewToggleButton $active={viewMode === 'grid'} onClick={() => setViewMode('grid')}>
                                 <Grid size={16} />
                             </ViewToggleButton>

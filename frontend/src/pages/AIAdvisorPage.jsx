@@ -1105,7 +1105,7 @@ const AIAdvisorPage = () => {
                         </motion.div>
                         <div>
                             <h1 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
-                                TarefAI Enhanced
+                                FlowTask Enhanced
                                 <span style={{ fontSize: '0.75rem', color: 'rgba(96, 165, 250, 0.8)', marginLeft: '0.5rem' }}>
                                     Contexto Progressivo
                                 </span>

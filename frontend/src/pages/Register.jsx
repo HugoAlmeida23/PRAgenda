@@ -172,7 +172,7 @@ function Register() {
                                 WebkitBackgroundClip: 'text',
                                 WebkitTextFillColor: 'transparent'
                             }}>
-                                TarefAI
+                                FlowTask
                             </h1>
                         </div>
                         

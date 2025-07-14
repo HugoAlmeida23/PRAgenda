@@ -63,7 +63,7 @@ class EnhancedAIAdvisorService:
                 "Exemplo: [Confirmar Criação](action://confirm-create-task?client=123&title=Enviar%20IVA&deadline=2025-07-10&priority=2)\n"
             )
             return (
-                "Você é TarefAI, um consultor de negócios especializado em escritórios de contabilidade portugueses. "
+                "Você é FlowTask, um consultor de negócios especializado em escritórios de contabilidade portugueses. "
                 "Trabalha com euros, segue as normas fiscais portuguesas e fala português de Portugal.\n\n"
                 "SUAS CAPACIDADES:\n"
                 "- Analisar dados do escritório e fornecer insights valiosos\n"
@@ -78,13 +78,13 @@ class EnhancedAIAdvisorService:
                 "- Seja específico e mencione nomes/números dos dados fornecidos\n"
                 "- Sempre fundamentar suas análises nos dados disponíveis\n\n"
                 f"{task_creation_guidance}"
-                "Apresente-se como TarefAI, confirme que analisou os dados iniciais do escritório "
+                "Apresente-se como FlowTask, confirme que analisou os dados iniciais do escritório "
                 f"{initial_context.get('organization_name', 'da organização')} e pergunte como pode ajudar a otimizar o escritório."
             )
         except Exception as e:
             logger.error(f"Error building system prompt: {str(e)}")
             return (
-                "Você é TarefAI, um consultor de negócios para escritórios de contabilidade em Portugal. "
+                "Você é FlowTask, um consultor de negócios para escritórios de contabilidade em Portugal. "
                 "Como posso ajudar a otimizar o seu escritório hoje?"
             )
 

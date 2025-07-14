@@ -211,7 +211,7 @@ class NotificationTemplateService:
         if created_by:
             context['changed_by_name'] = created_by.get_full_name() or created_by.username
         else:
-            context['changed_by_name'] = "Sistema TarefAI"
+            context['changed_by_name'] = "Sistema FlowTask"
 
         if report:
             context['report_name'] = report.name

@@ -172,7 +172,7 @@ function Login() {
                                 WebkitBackgroundClip: 'text',
                                 WebkitTextFillColor: 'transparent'
                             }}>
-                                TarefAI
+                                FlowTask
                             </h1>
                         </div>
                         

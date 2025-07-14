@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 from . import views
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from .views import export_clients_excel
 
 router = DefaultRouter()
 router.register(r'profiles', views.ProfileViewSet, basename='profile')
@@ -90,4 +91,5 @@ urlpatterns = [
     path('ai-advisor/enhanced/additional-context/', views.get_additional_context, name='ai-additional-context'),
     path('ai-advisor/enhanced/health/', views.enhanced_ai_advisor_health_check, name='enhanced-ai-health-check'),
     path('ai-advisor/enhanced/confirm-time-entry/', views.confirm_enhanced_ai_time_entry, name='enhanced-ai-confirm-time-entry'),
+    path('clients/export/excel/', export_clients_excel, name='export-clients-excel'),
 ]

@@ -57,6 +57,7 @@ from .serializers import OrganizationActionLogSerializer
 from rest_framework import permissions
 from .services.ai_advisor_service_enhanced import EnhancedAIAdvisorService
 from .services.ai_context_service import AIContextService
+from .services.report_generation_service import ReportGenerationService
 
 logger = logging.getLogger(__name__)
 
@@ -5766,4 +5767,28 @@ def confirm_enhanced_ai_time_entry(request):
             "error": "Erro interno ao criar registo de tempo.",
             "error_code": "INTERNAL_ERROR"
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_clients_excel(request):
+    """
+    Exporta todos os clientes da organização do utilizador autenticado em Excel bem formatado.
+    """
+    profile = Profile.objects.select_related('organization').get(user=request.user)
+    organization = profile.organization
+    if not organization:
+        return Response({'error': 'Utilizador não está associado a uma organização'}, status=400)
+
+    # Gera o relatório de clientes em Excel
+    buffer, content_type = ReportGenerationService.generate_client_summary_report(
+        organization=organization,
+        format_type='pdf'
+    )
+    filename = f"clientes_{organization.name}_{timezone.now().strftime('%Y%m%d_%H%M')}.pdf"
+    response = HttpResponse(
+        buffer,
+        content_type=content_type
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 

@@ -421,7 +421,7 @@ const Logo = ({ theme }) => (
       T
     </div>
     <span style={{ fontWeight: '600', fontSize: '1.1rem' }}>
-      TarefAI
+      FlowTask
     </span>
   </Link>
 );

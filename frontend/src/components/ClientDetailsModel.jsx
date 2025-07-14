@@ -290,18 +290,6 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
 
           {/* Coluna Direita */}
           <div>
-            <ModalSection title="Risco de Churn" icon={<ShieldCheck size={18} />} info="Probabilidade do cliente abandonar o serviço nos próximos meses, calculado com base em tendências de lucro, tarefas atrasadas e margem de lucro.">
-                <ChurnRiskIndicator risk={client.churn_risk} />
-            </ModalSection>
-            <ModalSection title="Análise Financeira" icon={<TrendingUp size={18} />} info="Health Score: Mede a saúde financeira do cliente com base em lucratividade, compliance e cash flow. Quanto mais alto, melhor.">
-                  <FinancialHealthScore score={client.financial_health_score} placement="modal" />
-            </ModalSection>
-            <ModalSection title="Riscos de Compliance" icon={<ShieldCheck size={18} />} info="Riscos de compliance: Problemas fiscais identificados, como tarefas obrigatórias em atraso. Quanto mais riscos, maior a atenção necessária.">
-                <ComplianceRiskPanel risks={client.compliance_risks} />
-            </ModalSection>
-            <ModalSection title="Oportunidades de Receita" icon={<TrendingUp size={18} />}>
-                <RevenueOpportunityPanel opportunities={client.revenue_opportunities} />
-            </ModalSection>
             <ModalSection title="Tags Fiscais" icon={<Tag size={18} style={{ color: 'rgb(196, 181, 253)' }} />}>
               <TagInput tags={formData.fiscal_tags} onTagsChange={handleTagsChange} disabled={!isEditing} />
               <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
@@ -314,7 +302,18 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
                   </p>
               </div>
             </ModalSection>
-            
+            <ModalSection title="Risco de Churn" icon={<ShieldCheck size={18} />} info="Probabilidade do cliente abandonar o serviço nos próximos meses, calculado com base em tendências de lucro, tarefas atrasadas e margem de lucro.">
+                <ChurnRiskIndicator risk={client.churn_risk} />
+            </ModalSection>
+            <ModalSection title="Análise Financeira" icon={<TrendingUp size={18} />} info="Health Score: Mede a saúde financeira do cliente com base em lucratividade, compliance e cash flow. Quanto mais alto, melhor.">
+                  <FinancialHealthScore score={client.financial_health_score} placement="modal" />
+            </ModalSection>
+            <ModalSection title="Riscos de Compliance" icon={<ShieldCheck size={18} />} info="Riscos de compliance: Problemas fiscais identificados, como tarefas obrigatórias em atraso. Quanto mais riscos, maior a atenção necessária.">
+                <ComplianceRiskPanel risks={client.compliance_risks} />
+            </ModalSection>
+            <ModalSection title="Oportunidades de Receita" icon={<TrendingUp size={18} />}>
+                <RevenueOpportunityPanel opportunities={client.revenue_opportunities} />
+            </ModalSection>
             <ModalSection title="Observações" icon={<FileText size={18} style={{ color: 'rgb(251, 191, 36)' }} />}>
               {isEditing ? (
                 <EditField name="notes" value={formData.notes} onChange={handleInputChange} type="textarea" rows={5} />
@@ -355,7 +354,6 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
              }}>
                 <DisplayField label="Criado em" value={new Date(client.created_at).toLocaleDateString('pt-PT')} />
                 <DisplayField label="Última atualização" value={new Date(client.updated_at).toLocaleDateString('pt-PT')} />
-                <DisplayField label="ID do Cliente" value={client.id} />
              </footer>
         )}
       </motion.div>
