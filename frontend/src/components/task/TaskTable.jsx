@@ -260,6 +260,7 @@ const TaskActionsMenu = ({ task, permissions, onEdit, onDelete, onUpdateStatus, 
         actions.push({ icon: Trash2, label: "Excluir", color: 'rgb(239, 68, 68)', onClick: () => onDelete(task.id) });
     }
 
+    const SCALE = 0.8; // If you change the app scale, update this value accordingly
     const toggleMenu = (event) => {
         event.stopPropagation(); 
         if (menuPosition.visible) {
@@ -267,23 +268,20 @@ const TaskActionsMenu = ({ task, permissions, onEdit, onDelete, onUpdateStatus, 
         } else {
             if (buttonRef.current) {
                 const rect = buttonRef.current.getBoundingClientRect();
-                let top = rect.bottom + window.scrollY + 5;
-                
-                // CALCULAR PARA ABRIR À ESQUERDA
-                // Assumimos uma largura de menu (pode ser dinâmica se conseguir medir o menuRef antes de mostrar)
-                const menuWidthEstimate = 180; // Ajuste este valor conforme a largura real do seu menu
-                let left = rect.left + window.scrollX - menuWidthEstimate + rect.width; // Alinha a borda DIREITA do menu com a borda DIREITA do botão
+                // --- FIX: Adjust for app scale so menu appears next to the button ---
+                let top = (rect.bottom + window.scrollY + 5) / SCALE;
+                const menuWidthEstimate = 180; // Adjust as needed
+                let left = (rect.left + window.scrollX - menuWidthEstimate + rect.width) / SCALE;
                 let right = 'auto';
 
                 // Opcional: Se for demasiado para a esquerda e sair da tela, alinhe com a borda esquerda da tela
                 if (left < 0) {
-                    left = 5; // Pequena margem da borda da tela
+                    left = 5;
                 }
-
                 // Ajuste para não ir para fora do ecrã no topo (como antes)
-                const menuHeightEstimate = actions.length * 35 + 20; 
-                if (top + menuHeightEstimate > window.innerHeight + window.scrollY) {
-                    top = rect.top + window.scrollY - menuHeightEstimate - 5;
+                const menuHeightEstimate = actions.length * 35 + 20;
+                if (top + menuHeightEstimate > window.innerHeight / SCALE + window.scrollY) {
+                    top = (rect.top + window.scrollY - menuHeightEstimate - 5) / SCALE;
                 }
 
                 setMenuPosition({ top, left, right, visible: true });

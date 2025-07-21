@@ -13,15 +13,15 @@ import ChurnRiskIndicator from './ChurnRiskIndicator';
 // The main card container. It uses a "transient prop" ($isActive)
 // to avoid passing the prop down to the underlying DOM element.
 const CardContainer = styled(motion.div)`
-  background: ${({ theme, $isActive }) => 
-    $isActive 
-      ? theme.glassBg 
+  background: ${({ theme, $isActive }) =>
+    $isActive
+      ? theme.glassBg
       : (theme.body === 'rgb(243, 244, 246)' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(239, 68, 68, 0.1)')
   };
   backdrop-filter: blur(12px);
-  border: 1px solid ${({ theme, $isActive }) => 
-    $isActive 
-      ? theme.glassBorder 
+  border: 1px solid ${({ theme, $isActive }) =>
+    $isActive
+      ? theme.glassBorder
       : (theme.body === 'rgb(243, 244, 246)' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.3)')
   };
   border-radius: 16px;
@@ -189,125 +189,118 @@ const DetailsButton = styled(motion.button)`
 // --- The Component ---
 
 const ClientCard = ({ client, onEdit, onToggleStatus, onDelete, permissions, onClick }) => {
-    const { isOrgAdmin, canEditClients, canChangeClientStatus, canDeleteClients } = permissions;
-    const fiscalTagsToDisplay = Array.isArray(client.fiscal_tags) ? client.fiscal_tags : [];
-    const isActive = client.is_active;
+  const { isOrgAdmin, canEditClients, canChangeClientStatus, canDeleteClients } = permissions;
+  const fiscalTagsToDisplay = Array.isArray(client.fiscal_tags) ? client.fiscal_tags : [];
+  const isActive = client.is_active;
 
-    return (
-        <CardContainer
-            whileHover={{ scale: 1.02, y: -5 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onClick}
-            $isActive={isActive} // Use transient prop for styled-components
-        >
-            <CardHeader>
-                <IconWrapper>
-                    <User size={20} />
-                </IconWrapper>
-                <ClientInfo>
-                    <ClientName>{client.name}</ClientName>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <StatusPill $isActive={isActive}>
-                            {isActive ? 'Ativo' : 'Inativo'}
-                        </StatusPill>
-                        {client.nif && (
-                            <InfoPill>NIF: {client.nif}</InfoPill>
-                        )}
-                    </div>
-                </ClientInfo>
-            </CardHeader>
-
-            <ContactSection>
-                {client.email && (
-                    <ContactItem><Mail size={16} /><span>{client.email}</span></ContactItem>
-                )}
-                {client.phone && (
-                    <ContactItem><Phone size={16} /><span>{client.phone}</span></ContactItem>
-                )}
-                {client.address && (
-                    <ContactItem>
-                        <MapPin size={16} />
-                        <span>{client.address}</span>
-                    </ContactItem>
-                )}
-            </ContactSection>
-
-            {fiscalTagsToDisplay.length > 0 && (
-                <div style={{ marginBottom: '1rem', marginTop: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                        <Tag size={16} style={{ color: 'rgb(147, 51, 234)' }} />
-                        <h4 style={{ margin: 0, fontSize: '0.8rem', fontWeight: '500', color: 'inherit', opacity: 0.7 }}>
-                            Tags Fiscais:
-                        </h4>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        {fiscalTagsToDisplay.slice(0, 3).map((tag, index) => (
-                            <FiscalTag key={index}>{tag}</FiscalTag>
-                        ))}
-                        {fiscalTagsToDisplay.length > 3 && (
-                            <span style={{ fontSize: '0.7rem', color: 'inherit', opacity: 0.5, alignSelf: 'center' }}>
-                                +{fiscalTagsToDisplay.length - 3} mais
-                            </span>
-                        )}
-                    </div>
-                </div>
+  return (
+    <CardContainer
+      whileHover={{ scale: 1.02, y: -5 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      $isActive={isActive} // Use transient prop for styled-components
+    >
+      <CardHeader>
+        <IconWrapper>
+          <User size={20} />
+        </IconWrapper>
+        <ClientInfo>
+          <ClientName>{client.name}</ClientName>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <StatusPill $isActive={isActive}>
+              {isActive ? 'Ativo' : 'Inativo'}
+            </StatusPill>
+            {client.nif && (
+              <InfoPill>NIF: {client.nif}</InfoPill>
             )}
-            <ClientInfo>
-    <ClientName>{client.name}</ClientName>
-    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <StatusPill $isActive={isActive}>
+          </div>
+        </ClientInfo>
+      </CardHeader>
+
+      <ContactSection>
+        {client.email && (
+          <ContactItem><Mail size={16} /><span>{client.email}</span></ContactItem>
+        )}
+        {client.phone && (
+          <ContactItem><Phone size={16} /><span>{client.phone}</span></ContactItem>
+        )}
+        {client.address && (
+          <ContactItem>
+            <MapPin size={16} />
+            <span>{client.address}</span>
+          </ContactItem>
+        )}
+      </ContactSection>
+
+      {fiscalTagsToDisplay.length > 0 && (
+        <div style={{ marginBottom: '1rem', marginTop: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <Tag size={16} style={{ color: 'rgb(147, 51, 234)' }} />
+            <h4 style={{ margin: 0, fontSize: '0.8rem', fontWeight: '500', color: 'inherit', opacity: 0.7 }}>
+              Tags Fiscais:
+            </h4>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {fiscalTagsToDisplay.slice(0, 3).map((tag, index) => (
+              <FiscalTag key={index}>{tag}</FiscalTag>
+            ))}
+            {fiscalTagsToDisplay.length > 3 && (
+              <span style={{ fontSize: '0.7rem', color: 'inherit', opacity: 0.5, alignSelf: 'center' }}>
+                +{fiscalTagsToDisplay.length - 3} mais
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      <ClientInfo>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '2rem'}}>
+          <StatusPill $isActive={isActive}>
             {isActive ? 'Ativo' : 'Inativo'}
-        </StatusPill>
-        {/* NEWLY ADDED */}
-        <ChurnRiskIndicator risk={client.churn_risk} /> 
-    </div>
-</ClientInfo>
-            <CardFooter>
-                <MonthlyFeeBox>
-                    <FeeLabel>Avença Mensal:</FeeLabel>
-                    <FeeValue>
-                        {client.monthly_fee ? `${client.monthly_fee} €` : 'Não definida'}
-                    </FeeValue>
-                </MonthlyFeeBox>
+          </StatusPill>
+          <ChurnRiskIndicator risk={client.churn_risk} />
+        </div>
+      </ClientInfo>
+      <CardFooter>
+        <MonthlyFeeBox>
+          <FeeLabel>Avença Mensal:</FeeLabel>
+          <FeeValue>
+            {client.monthly_fee ? `${client.monthly_fee} €` : 'Não definida'}
+          </FeeValue>
+        </MonthlyFeeBox>
 
-                <ActionsContainer>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {(isOrgAdmin || canEditClients) && (
-                            <ActionButton onClick={(e) => { e.stopPropagation(); onEdit(client); }} title="Editar cliente">
-                                <Edit size={16} />
-                            </ActionButton>
-                        )}
-                        {(isOrgAdmin || canChangeClientStatus) && (
-                            <ActionButton 
-                                onClick={(e) => { e.stopPropagation(); onToggleStatus(client); }} 
-                                title={isActive ? "Desativar" : "Ativar"}
-                                bgColor={isActive ? 'rgba(251, 146, 60, 0.2)' : 'rgba(52, 211, 153, 0.2)'}
-                                borderColor={isActive ? 'rgba(251, 146, 60, 0.3)' : 'rgba(52, 211, 153, 0.3)'}
-                                color={isActive ? 'rgb(251, 146, 60)' : 'rgb(52, 211, 153)'}
-                            >
-                                {isActive ? <XCircle size={16} /> : <CheckCircle size={16} />}
-                            </ActionButton>
-                        )}
-                        {(isOrgAdmin || canDeleteClients) && (
-                            <ActionButton 
-                                onClick={(e) => { e.stopPropagation(); onDelete(client.id); }} 
-                                title="Excluir cliente"
-                                bgColor='rgba(239, 68, 68, 0.2)'
-                                borderColor='rgba(239, 68, 68, 0.3)'
-                                color='rgb(239, 68, 68)'
-                            >
-                                <Trash2 size={16} />
-                            </ActionButton>
-                        )}
-                    </div>
+        <ActionsContainer>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {(isOrgAdmin || canChangeClientStatus) && (
+              <ActionButton
+                onClick={(e) => { e.stopPropagation(); onToggleStatus(client); }}
+                title={isActive ? "Desativar" : "Ativar"}
+                bgColor={isActive ? 'rgba(251, 146, 60, 0.2)' : 'rgba(52, 211, 153, 0.2)'}
+                borderColor={isActive ? 'rgba(251, 146, 60, 0.3)' : 'rgba(52, 211, 153, 0.3)'}
+                color={isActive ? 'rgb(251, 146, 60)' : 'rgb(52, 211, 153)'}
+              >
+                {isActive ? <XCircle size={16} /> : <CheckCircle size={16} />}
+              </ActionButton>
+            )}
+            {(isOrgAdmin || canDeleteClients) && (
+              <ActionButton
+                onClick={(e) => { e.stopPropagation(); onDelete(client.id); }}
+                title="Excluir cliente"
+                bgColor='rgba(239, 68, 68, 0.2)'
+                borderColor='rgba(239, 68, 68, 0.3)'
+                color='rgb(239, 68, 68)'
+              >
+                <Trash2 size={16} />
+              </ActionButton>
+            )}
+          </div>
 
-                    <DetailsButton whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                        Detalhes <ArrowRight size={14} />
-                    </DetailsButton>
-                </ActionsContainer>
-            </CardFooter>
-        </CardContainer>
-    );
+          <DetailsButton whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            Detalhes <ArrowRight size={14} />
+          </DetailsButton>
+        </ActionsContainer>
+      </CardFooter>
+    </CardContainer>
+  );
 };
 
 export default ClientCard;

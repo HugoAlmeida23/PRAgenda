@@ -134,21 +134,19 @@ export const PermissionsProvider = ({ children }) => {
     } catch (error) {
       console.error('PermissionsContext: Error fetching user permissions:', error);
 
-      // --- THE KEY FIX IS HERE ---
-      // Specifically handle the 401 Unauthorized error to break the loop.
       if (error.response && error.response.status === 401) {
-        console.log('PermissionsContext: Received 401 Unauthorized. Token is invalid or expired. Logging out.');
+        console.log('PermissionsContext: Received 401 Unauthorized. Token is invalid or expired. Logging out and redirecting to login.');
         localStorage.removeItem(ACCESS_TOKEN);
         localStorage.removeItem(REFRESH_TOKEN);
         setPermissions(prev => ({
           ...prev,
           loading: false,
           error: 'Session expired. Please log in again.',
-          initialized: false, // Mark as NOT initialized
+          initialized: false, 
         }));
-        // DO NOT RETRY. The loop is broken. The user will be redirected by ProtectedRoute.
+        // Redirect to login page (force reload to clear all state)
+        window.location.href = '/login';
       } else {
-        // For any other error (like 500 server error or network down)
         setPermissions(prev => ({
           ...prev,
           loading: false,

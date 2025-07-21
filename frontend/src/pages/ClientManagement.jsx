@@ -133,19 +133,50 @@ const ClientManagement = () => {
     // For brevity, assuming mutations and handlers exist as before
     const createClientMutation = useMutation({
         mutationFn: (formData) => api.post('/clients/', formData),
-        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeForm(); }
+        onSuccess: () => {
+            queryClient.invalidateQueries(['clientsData']);
+            closeForm();
+            toast.success('Cliente criado com sucesso!');
+        },
+        onError: (error) => {
+            toast.error('Erro ao criar cliente: ' + (error?.response?.data?.detail || error.message));
+        }
     });
     const updateClientMutation = useMutation({
         mutationFn: ({ id, ...formData }) => api.patch(`/clients/${id}/`, formData),
-        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); closeDetailsModal(); }
+        onSuccess: () => {
+            queryClient.invalidateQueries(['clientsData']);
+            closeForm();
+            closeDetailsModal();
+            toast.success('Cliente atualizado com sucesso!');
+        },
+        onError: (error) => {
+            toast.error('Erro ao atualizar cliente: ' + (error?.response?.data?.detail || error.message));
+        }
     });
     const toggleClientStatusMutation = useMutation({
         mutationFn: (clientId) => api.patch(`/clients/${clientId}/toggle_status/`),
-        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); }
+        onSuccess: () => {
+            queryClient.invalidateQueries(['clientsData']);
+            closeForm();
+            closeDetailsModal();
+            toast.success('Status do cliente alterado com sucesso!');
+        },
+        onError: (error) => {
+            toast.error('Erro ao alterar status do cliente: ' + (error?.response?.data?.detail || error.message));
+        }
     });
     const deleteClientMutation = useMutation({
         mutationFn: (clientId) => api.delete(`/clients/${clientId}/`),
-        onSuccess: () => { queryClient.invalidateQueries(['clientsData']); }
+        onSuccess: () => {
+            queryClient.invalidateQueries(['clientsData']);
+            closeForm();
+            closeDetailsModal();
+            toast.success('Cliente excluído com sucesso!');
+        },
+        onError: (error) => {
+            toast.error('Erro ao excluir cliente: ' + (error?.response?.data?.detail || error.message));
+        }
     });
 
     const clients = data?.clients || [];
@@ -246,7 +277,6 @@ const ClientManagement = () => {
         setIsExporting(true);
         try {
             toast.info('A exportar clientes...', { toastId: 'export-clientes' });
-            // Usa o api (axios) já configurado
             const res = await api.get('/clients/export/excel/', {
                 responseType: 'blob',
             });

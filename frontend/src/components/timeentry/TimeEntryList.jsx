@@ -121,7 +121,6 @@ const TimeEntryList = ({
                                             <td style={{ padding: '1rem', fontSize: '0.875rem' }}>{formatMinutesFunc(entry.minutes_spent)}</td>
                                             <td style={{ padding: '1rem' }}>
                                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                    <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onDuplicateEntry(entry)} title="Duplicar" style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', padding: '0.5rem', color: 'white', cursor: 'pointer' }}><Copy size={16} /></motion.button>
                                                     {(permissions.isOrgAdmin || permissions.canEditAllTime || (permissions.canEditOwnTime && entry.user === permissions.userId)) && (
                                                         <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onDeleteEntry(entry.id)} title="Excluir" style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '0.5rem', color: 'rgb(239,68,68)', cursor: 'pointer' }}><Trash2 size={16} /></motion.button>
                                                     )}

@@ -9,6 +9,13 @@ from .ai_context_service import AIContextService
 import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError
 from django.utils import timezone
+import re
+from ..models import Client, Profile, Task
+from ..serializers import TaskSerializer
+from django.contrib.auth.models import User
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
+from rest_framework import status
 
 logger = logging.getLogger(__name__)
 
@@ -212,101 +219,186 @@ class EnhancedAIAdvisorService:
         return any(trigger in query_lower for trigger in triggers)
 
     def process_query(self, session_id, user_query_text, user):
-        """Process query with intelligent context enhancement, task and time entry creation guidance"""
+        """
+        Processa a query do utilizador com extração inteligente de campos para criação de tarefas.
+        Conversação natural: só pergunta o que falta, permite input multi-campo, valida entidades e apresenta resumo dinâmico.
+        Agora permite confirmação textual ("confirmo", "sim", etc.) e cria a tarefa real.
+        """
         try:
-            # Retrieve conversation history and session state
             conversation_history = cache.get(session_id)
             session_state = cache.get(f"{session_id}_state")
-            if not conversation_history:
-                logger.warning(f"Session {session_id} conversation history not found")
-                return None, "Sessão inválida ou expirada. Recarregue a página para iniciar nova conversa."
-            if not session_state:
-                logger.warning(f"Session {session_id} state not found, recreating...")
-                try:
-                    profile = user.profile
-                    organization = profile.organization
-                    session_state = {
-                        'user_id': user.id,
-                        'organization_id': organization.id,
-                        'context_sent': ['initial'],
-                        'conversation_metadata': {
-                            'topics_discussed': [],
-                            'data_requests': []
-                        }
-                    }
-                    cache.set(f"{session_id}_state", session_state, timeout=SESSION_STATE_TIMEOUT)
-                    logger.info(f"Recreated session state for {session_id}")
-                except Exception as e:
-                    logger.error(f"Could not recreate session state: {str(e)}")
-                    return None, "Erro na sessão. Recarregue a página para iniciar nova conversa."
-            if not isinstance(conversation_history, list) or len(conversation_history) < 2:
-                logger.error(f"Invalid conversation history format for session {session_id}")
-                cache.delete(session_id)
-                cache.delete(f"{session_id}_state")
-                return None, "Sessão corrompida. Recarregue a página para iniciar nova conversa."
+            if not conversation_history or not session_state:
+                return None, "Sessão inválida ou expirada. Recarregue a página."
 
-            # --- Detect time entry creation intent and inject guidance if needed ---
-            if self._is_time_entry_creation_intent(user_query_text):
-                guidance_note = (
-                    "[NOTA DO SISTEMA]: O utilizador quer registar tempo numa tarefa. "
-                    "Conduza o processo perguntando um campo de cada vez (tarefa, cliente, minutos, descrição, data). "
-                    "Quando todos os campos estiverem preenchidos, peça confirmação com um botão markdown action://confirm-create-time-entry. "
-                    "Não registe nada sem confirmação."
-                )
-                current_turn_parts = [
-                    {"text": user_query_text},
-                    {"text": guidance_note}
-                ]
-            # --- Detect task creation intent and inject guidance if needed ---
-            elif self._is_task_creation_intent(user_query_text):
-                guidance_note = (
-                    "[NOTA DO SISTEMA]: O utilizador quer criar uma tarefa. "
-                    "Conduza o processo perguntando um campo de cada vez, conforme instruções. "
-                    "Quando todos os campos estiverem preenchidos, peça confirmação com um botão markdown action://confirm-create-task. "
-                    "Não crie nada sem confirmação."
-                )
-                current_turn_parts = [
-                    {"text": user_query_text},
-                    {"text": guidance_note}
-                ]
-            else:
-                # Analyze query to determine if additional context is needed
-                additional_context = self._analyze_query_and_get_context(
-                    user_query_text, session_state, user
-                )
-                force_chart = self._is_chart_request(user_query_text)
-                current_turn_parts = [{"text": user_query_text}]
-                if additional_context:
-                    if isinstance(additional_context, str):
-                        context_text = additional_context
-                    else:
-                        context_text = self._format_additional_context(additional_context, force_chart=force_chart)
-                    current_turn_parts.append({"text": f"\n\n[DADOS ADICIONAIS SOLICITADOS]:\n{context_text}"})
-            # Get AI response
-            try:
-                ai_response = self.gemini_service.generate_conversational_response(
-                    current_turn_parts=current_turn_parts,
-                    history=conversation_history
-                )
-                if ai_response and not self._is_error_response(ai_response):
-                    conversation_history.append({"role": "user", "parts": current_turn_parts})
-                    conversation_history.append({"role": "model", "parts": [{"text": ai_response}]})
-                    self._update_session_state(session_state, user_query_text, None)
-                    if len(conversation_history) > (MAX_CONVERSATION_TURNS + 2):
-                        conversation_history = conversation_history[:2] + conversation_history[-(MAX_CONVERSATION_TURNS):]
-                    cache.set(session_id, conversation_history, timeout=CONVERSATION_CACHE_TIMEOUT)
-                    cache.set(f"{session_id}_state", session_state, timeout=SESSION_STATE_TIMEOUT)
-                    logger.info(f"Query processed successfully for session {session_id}")
+            if 'task_creation_fields' not in session_state:
+                session_state['task_creation_fields'] = {}
+            fields = session_state['task_creation_fields']
+
+            extracted = self._extract_task_fields(user_query_text)
+            fields.update({k: v for k, v in extracted.items() if v})
+
+            missing = self._missing_task_fields(fields)
+
+            if not missing:
+                if self._is_confirmation(user_query_text):
+                    # --- NOVO: Criar tarefa real ---
+                    try:
+                        # Mapear client (nome ou id) para UUID
+                        client_obj = None
+                        client_val = fields.get('client')
+                        if client_val:
+                            try:
+                                # Tenta UUID direto
+                                client_obj = Client.objects.get(id=client_val)
+                            except Exception:
+                                # Tenta por nome
+                                client_obj = Client.objects.filter(name__iexact=client_val).first()
+                        if not client_obj:
+                            ai_response = "❌ Cliente não encontrado. Por favor, indique um cliente válido."
+                            session_state['task_creation_fields'] = {}
+                            self._finalize_ai_response(session_id, session_state, conversation_history, user_query_text, ai_response)
+                            return ai_response, None
+                        # Mapear responsável para UUID
+                        assigned_to_obj = None
+                        responsible_val = fields.get('responsible')
+                        if responsible_val:
+                            try:
+                                assigned_to_obj = User.objects.get(username=responsible_val)
+                            except Exception:
+                                assigned_to_obj = User.objects.filter(first_name__iexact=responsible_val).first()
+                            if not assigned_to_obj:
+                                ai_response = "❌ Responsável não encontrado. Por favor, indique um utilizador válido."
+                                session_state['task_creation_fields'] = {}
+                                self._finalize_ai_response(session_id, session_state, conversation_history, user_query_text, ai_response)
+                                return ai_response, None
+                        # Preparar dados para o serializer
+                        data = {
+                            'title': fields.get('title'),
+                            'description': fields.get('description'),
+                            'client': str(client_obj.id),
+                            'assigned_to': str(assigned_to_obj.id) if assigned_to_obj else None,
+                            'status': 'pending',
+                            'priority': fields.get('priority', 3),
+                            'deadline': fields.get('deadline'),
+                        }
+                        # Criar request fake para contexto do serializer
+                        factory = APIRequestFactory()
+                        fake_request = factory.post('/tasks/', data)
+                        fake_request.user = user
+                        serializer = TaskSerializer(data=data, context={'request': fake_request})
+                        if serializer.is_valid():
+                            serializer.save(created_by=user)
+                            ai_response = "✅ Tarefa criada com sucesso!"
+                        else:
+                            ai_response = f"❌ Erro ao criar tarefa: {serializer.errors}"
+                        session_state['task_creation_fields'] = {}
+                    except Exception as e:
+                        ai_response = f"❌ Erro inesperado ao criar tarefa: {str(e)}"
+                        session_state['task_creation_fields'] = {}
+                    self._finalize_ai_response(session_id, session_state, conversation_history, user_query_text, ai_response)
                     return ai_response, None
                 else:
-                    logger.error(f"Invalid AI response: {ai_response}")
-                    return None, "Resposta inválida do serviço AI. Tente novamente."
-            except Exception as e:
-                logger.error(f"Error getting AI response: {str(e)}")
-                return None, "Erro na comunicação com o serviço AI. Tente novamente."
+                    resumo = self._task_summary(fields)
+                    confirm_url = self._build_confirm_task_url(fields)
+                    ai_response = (
+                        f"Perfeito! Eis o resumo da tarefa:\n\n{resumo}\n\nConfirma a criação? Pode responder 'confirmo' ou clicar em [Confirmar]({confirm_url})"
+                    )
+            else:
+                next_field = missing[0]
+                ai_response = self._ask_for_field(next_field, fields)
+
+            self._finalize_ai_response(session_id, session_state, conversation_history, user_query_text, ai_response)
+            return ai_response, None
         except Exception as e:
-            logger.error(f"Error processing enhanced query: {str(e)}", exc_info=True)
-            return None, "Erro interno ao processar pergunta. Tente novamente."
+            logger.error(f"Erro no novo fluxo de criação de tarefa: {str(e)}", exc_info=True)
+            return None, "Erro interno ao processar criação de tarefa. Tente novamente."
+
+    def _finalize_ai_response(self, session_id, session_state, conversation_history, user_query_text, ai_response):
+        cache.set(f"{session_id}_state", session_state, timeout=SESSION_STATE_TIMEOUT)
+        conversation_history.append({"role": "user", "parts": [{"text": user_query_text}]})
+        conversation_history.append({"role": "model", "parts": [{"text": ai_response}]})
+        cache.set(session_id, conversation_history, timeout=CONVERSATION_CACHE_TIMEOUT)
+
+    def _extract_task_fields(self, text):
+        """Extrai cliente, título, data, prioridade, responsável, descrição do input do utilizador."""
+        fields = {}
+        # Cliente (ex: cliente 1, Cliente: SoftSolutions)
+        m = re.search(r'cliente\s*:?\s*([\w\s\d]+)', text, re.IGNORECASE)
+        if m:
+            fields['client'] = m.group(1).strip()
+        # Título
+        m = re.search(r't[ií]tulo\s*:?\s*([\w\s\d]+)', text, re.IGNORECASE)
+        if m:
+            fields['title'] = m.group(1).strip()
+        # Data (formato dd/mm/yyyy ou yyyy-mm-dd)
+        m = re.search(r'(\d{2}[/-]\d{2}[/-]\d{4}|\d{4}-\d{2}-\d{2})', text)
+        if m:
+            fields['deadline'] = m.group(1).replace('/', '-')
+        # Prioridade (palavra ou número)
+        m = re.search(r'(urgente|alta|normal|baixa|\b[1-5]\b)', text, re.IGNORECASE)
+        if m:
+            val = m.group(1).lower()
+            if val == 'urgente': fields['priority'] = 1
+            elif val == 'alta': fields['priority'] = 2
+            elif val == 'normal': fields['priority'] = 3
+            elif val == 'baixa': fields['priority'] = 4
+            elif val.isdigit(): fields['priority'] = int(val)
+        # Responsável
+        m = re.search(r'respons[aá]vel\s*:?\s*([\w\d_\-]+)', text, re.IGNORECASE)
+        if m:
+            fields['responsible'] = m.group(1).strip()
+        # Descrição
+        m = re.search(r'descri[cç][aã]o\s*:?\s*([\w\s\d]+)', text, re.IGNORECASE)
+        if m:
+            fields['description'] = m.group(1).strip()
+        # Se disser "descrição: ..." no fim
+        m = re.search(r'descri[cç][aã]o\s*:?\s*(.*)$', text, re.IGNORECASE)
+        if m and not fields.get('description'):
+            fields['description'] = m.group(1).strip()
+        return fields
+
+    def _missing_task_fields(self, fields):
+        """Retorna lista dos campos que ainda faltam para criar a tarefa."""
+        required = ['client', 'title', 'deadline', 'priority', 'responsible', 'description']
+        return [f for f in required if not fields.get(f)]
+
+    def _ask_for_field(self, field, fields):
+        """Gera pergunta natural para o campo em falta."""
+        perguntas = {
+            'client': "Para que cliente é esta tarefa?",
+            'title': "Qual o título da tarefa?",
+            'deadline': "Qual a data limite? (ex: 24/07/2025)",
+            'priority': "Qual a prioridade? (1=Urgente, 2=Alta, 3=Normal, 4=Baixa)",
+            'responsible': "Quem será o responsável pela tarefa? (nome de utilizador)",
+            'description': "Pode dar uma breve descrição da tarefa?"
+        }
+        # Se já houver contexto, tornar a pergunta mais natural
+        contexto = []
+        if fields.get('client'): contexto.append(f"Cliente: {fields['client']}")
+        if fields.get('title'): contexto.append(f"Título: {fields['title']}")
+        if fields.get('deadline'): contexto.append(f"Data: {fields['deadline']}")
+        if fields.get('priority'): contexto.append(f"Prioridade: {fields['priority']}")
+        if fields.get('responsible'): contexto.append(f"Responsável: {fields['responsible']}")
+        if fields.get('description'): contexto.append(f"Descrição: {fields['description']}")
+        contexto_str = '\n'.join(contexto)
+        if contexto_str:
+            return f"Já tenho:\n{contexto_str}\n\n{perguntas[field]}"
+        return perguntas[field]
+
+    def _task_summary(self, fields):
+        """Gera resumo compacto da tarefa para confirmação."""
+        return (f"- Cliente: {fields.get('client','-')}\n"
+                f"- Título: {fields.get('title','-')}\n"
+                f"- Data: {fields.get('deadline','-')}\n"
+                f"- Prioridade: {fields.get('priority','-')}\n"
+                f"- Responsável: {fields.get('responsible','-')}\n"
+                f"- Descrição: {fields.get('description','-')}")
+
+    def _build_confirm_task_url(self, fields):
+        """Constrói o URL de confirmação para o botão markdown."""
+        from urllib.parse import urlencode
+        params = {k: v for k, v in fields.items() if v}
+        return f"action://confirm-create-task?{urlencode(params)}"
 
     # --- Helper to detect task creation intent ---
     def _is_task_creation_intent(self, query):
@@ -749,3 +841,9 @@ class EnhancedAIAdvisorService:
             return result == "test"
         except Exception:
             return False
+
+    def _is_confirmation(self, text):
+        confirma = [
+            'confirmo', 'sim', 'pode criar', 'criar', 'ok', 'está certo', 'faça', 'pode avançar', 'yes', 'confirm', 'go ahead'
+        ]
+        return any(c in text.lower() for c in confirma)

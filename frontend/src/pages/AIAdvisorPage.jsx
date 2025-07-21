@@ -1311,15 +1311,43 @@ const AIAdvisorPage = () => {
                                     'Baixa': 4
                                 };
                                 let clientUUID = confirmTaskModal.fields.client;
+                                let found = null;
                                 if (clientsList && Array.isArray(clientsList)) {
-                                    const found = clientsList.find(c => c.name === confirmTaskModal.fields.client);
+                                    // Se for número (ex: '1'), mapear para o índice na lista
+                                    if (/^\d+$/.test(clientUUID)) {
+                                        const idx = parseInt(clientUUID, 10) - 1;
+                                        if (idx >= 0 && idx < clientsList.length) {
+                                            found = clientsList[idx];
+                                        }
+                                    }
+                                    // Se não for número, tentar por nome
+                                    if (!found) {
+                                        found = clientsList.find(c => c.name === clientUUID);
+                                    }
                                     if (found) clientUUID = found.id;
+                                    else {
+                                        alert("Cliente não encontrado. Por favor, selecione um cliente válido.");
+                                        return;
+                                    }
                                 }
-                                const fieldsToSend = {
+                                // Novo: mapear 'responsible' para 'assigned_to' (UUID)
+                                let fieldsToSend = {
                                     ...confirmTaskModal.fields,
                                     priority: PRIORITY_MAP[confirmTaskModal.fields.priority] || confirmTaskModal.fields.priority,
                                     client: clientUUID
                                 };
+                                // Se existir 'responsible', tentar mapear para UUID de utilizador
+                                if (fieldsToSend.responsible) {
+                                    // Supondo que tens uma lista de utilizadores carregada (usersList)
+                                    if (window.usersList && Array.isArray(window.usersList)) {
+                                        const foundUser = window.usersList.find(u => u.username === fieldsToSend.responsible || u.name === fieldsToSend.responsible);
+                                        if (foundUser) {
+                                            fieldsToSend.assigned_to = foundUser.id;
+                                        }
+                                    }
+                                    // Remover o campo 'responsible' do payload
+                                    delete fieldsToSend.responsible;
+                                }
                                 createTaskMutation.mutate(fieldsToSend);
                             }} style={{ background: 'linear-gradient(90deg, #10b981, #22d3ee)', border: 'none', borderRadius: 6, color: 'white', padding: '0.5rem 1.2rem', cursor: 'pointer', fontWeight: 600 }} disabled={createTaskMutation.isPending}>Confirmar</button>
                         </div>

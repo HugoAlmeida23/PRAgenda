@@ -15,8 +15,8 @@ class NotificationService:
 
     @staticmethod
     def create_notification(
-        user, task, notification_type, title, message,
-        workflow_step=None, priority='normal', created_by=None,
+        user, notification_type, title, message,
+        task=None, workflow_step=None, priority='normal', created_by=None,
         metadata=None, scheduled_for=None, check_existing_recent=False,
         recent_threshold_hours=24
     ):

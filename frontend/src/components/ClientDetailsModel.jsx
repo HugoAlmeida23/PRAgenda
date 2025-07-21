@@ -215,7 +215,7 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
         exit={{ y: 50, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         style={{
-          width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto',
+          width: '100%', maxWidth: '1500px', maxHeight: '110vh', overflowY: 'auto',
           background: 'rgba(17, 24, 39, 0.9)', backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px',
           display: 'flex', flexDirection: 'column'
@@ -332,29 +332,47 @@ const ClientDetailsModal = ({ client, users = [], onClose, onSave, permissions }
         </main>
         
         {/* Footer */}
-        {isEditing ? (
+        {isEditing && (
             <footer style={{
                 display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', padding: '1.5rem',
                 borderTop: '1px solid rgba(255, 255, 255, 0.1)', background: 'rgba(17, 24, 39, 0.8)'
             }}>
-                <motion.button onClick={handleCancelEdit} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                    style={{ padding: '0.75rem 1.5rem', background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', color: 'white', cursor: 'pointer' }}>
+                <motion.button
+                    onClick={handleCancelEdit}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    style={{
+                        padding: '0.75rem 1.5rem',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        cursor: 'pointer'
+                    }}
+                >
                     Cancelar
                 </motion.button>
-                <motion.button onClick={handleSave} disabled={isSaving} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                    style={{ padding: '0.75rem 1.5rem', background: 'rgba(52, 211, 153, 0.2)', border: '1px solid rgba(52, 211, 153, 0.3)', borderRadius: '8px', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <motion.button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    style={{
+                        padding: '0.75rem 1.5rem',
+                        background: 'rgba(52, 211, 153, 0.2)',
+                        border: '1px solid rgba(52, 211, 153, 0.3)',
+                        borderRadius: '8px',
+                        color: 'white',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                    }}
+                >
                     {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                     {isSaving ? 'Salvando...' : 'Salvar'}
                 </motion.button>
             </footer>
-        ) : (
-             <footer style={{
-                padding: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem'
-             }}>
-                <DisplayField label="Criado em" value={new Date(client.created_at).toLocaleDateString('pt-PT')} />
-                <DisplayField label="Última atualização" value={new Date(client.updated_at).toLocaleDateString('pt-PT')} />
-             </footer>
         )}
       </motion.div>
     </motion.div>
